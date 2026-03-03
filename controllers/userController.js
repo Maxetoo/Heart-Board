@@ -28,25 +28,42 @@ const updateProfile = async (req, res) => {
   res.status(StatusCodes.OK).json({ message: 'Profile updated.', user });
 };
 
+
 const getPublicProfile = async (req, res) => {
   const { username } = req.params;
+  const { view } = req.query;
+
   const user = await User.findOne({ username }).select(
-    'username profileImage accountType createdAt'
+    'username profileImage accountType createdAt stats'
   );
 
   if (!user) {
     throw new CustomError.NotFoundError('User not found.');
   }
 
-  const boards = await Board.find({
-    owner: user._id,
-    visibility: 'public',
-    isActive: true,
-  })
-    .select('title description slug stats tier createdAt')
-    .sort({ createdAt: -1 });
+  let boards;
 
-  res.status(200).json({ user, boards });
+  if (view === 'tagged') {
+    boards = await Board.find({
+      receipent:        user._id,
+      receipentFlagged: false,
+      isActive:         true,
+      visibility:       { $in: ['public', 'link-only'] },
+    })
+      .select('title description slug stats tier tags owner createdAt')
+      .populate('owner', 'username profileImage')
+      .sort({ createdAt: -1 });
+  } else {
+    boards = await Board.find({
+      owner:      user._id,
+      visibility: 'public',
+      isActive:   true,
+    })
+      .select('title description slug stats tier tags createdAt')
+      .sort({ createdAt: -1 });
+  }
+
+  res.status(StatusCodes.OK).json({ user, boards, view: view || 'owned' });
 };
 
 const changePassword = async (req, res) => {

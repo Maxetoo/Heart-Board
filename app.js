@@ -84,7 +84,8 @@ const AuthRouter = require('./routes/authRoute');
 const UserRouter = require('./routes/userRoute'); 
 const BoardRouter = require('./routes/boardRoute');
 const MessageRouter = require('./routes/messageRoute');
-const SubscriptionRoute = require('./routes/subscriptionRoute');
+const SubscriptionRouter = require('./routes/subscriptionRoute');
+const BoardPaymentRouter = require('./routes/boardPaymentRoute');
 
 
 
@@ -93,8 +94,8 @@ app.use('/api/v1/auth', AuthRouter);
 app.use('/api/v1/user', UserRouter);
 app.use('/api/v1/board', BoardRouter);
 app.use('/api/v1/message', MessageRouter);
-app.use('/api/v1/subscription', SubscriptionRoute);
-
+app.use('/api/v1/subscription', SubscriptionRouter);
+app.use('/api/v1/board/payments', BoardPaymentRouter);
 
 // Serve the frontend application
 app.get('*', (req, res) => {

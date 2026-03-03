@@ -1,0 +1,97 @@
+:root {
+    /* colors */
+    --background-color: #F6F8FA;
+    --primary-color: #FE6349;
+    --secondary-color: #F6F8FA;
+    --stroke-color: #000000;
+    --white-color: #ffffff;
+    --text-color: #1A1B25;
+    --light-text-color: #676E8B;
+    --error-color: #e74c3c;
+    --warning-color: #f39c12;
+    --success-color: #27ae60;
+    /* typography */
+    --font-size-base: 16px;
+    --font-size-sm: 0.9em;
+    --font-size-md: 1em;
+    --font-size-lg: 1.2em;
+    --font-size-xl: 1.5em;
+    --font-size-xxl: 2em;
+    --font-size-vvl: 3em;
+    /* font weight  */
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --line-height-base: 1.5;
+    --letter-spacing-base: normal;
+    /* spacing */
+    --spacing-xs: 0.5rem;
+    --spacing-sm: 1rem;
+    --spacing-md: 1.5rem;
+    --spacing-lg: 3rem;
+    --spacing-xl: 5rem;
+    --spacing-xxl: 8rem;
+    --spacing-vvl: 10rem;
+    /* inner spacing  */
+    --padding-sm: 0.5rem;
+    --padding-md: 1rem;
+    --padding-lg: 2rem;
+    /* sizing */
+    --max-width-container: 1200px;
+    --width-sidebar: 250px;
+    --height-header: 60px;
+    --height-footer: 80px;
+    /* border radius*/
+    --border-radius-sm: 4px;
+    --border-radius-md: 8px;
+    --border-radius-lg: 16px;
+    /* border thickness  */
+    --border-width-thin: 1px;
+    --border-width-thick: 2px;
+    /* border state */
+    --border-style: solid;
+    /* shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.2);
+    /* transitions */
+    --transition-duration-fast: 150ms;
+    --transition-duration-normal: 300ms;
+    --transition-duration-slow: 500ms;
+    --transition-timing-function: ease-in-out;
+    /* z-Index */
+    --z-index-fixed-header: 500;
+    --z-index-dropdown: 1000;
+    --z-index-modal: 1100;
+    /* opacity */
+    --opacity-disabled: 0.6;
+    --opacity-hover: 0.8;
+    /* animation */
+    --animation-duration: 0.3s;
+    --animation-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --cursor-pointer: pointer;
+    /* buttons */
+    --standard-btn-height: 50px;
+}
+
+[data-theme="dark"] {
+    /* colors */
+    --background-color: #0B1220;
+    --primary-color: #FF7A5A;
+    --secondary-color: #071027;
+    --stroke-color: rgba(255, 255, 255, 0.08);
+    --white-color: #ffffff;
+    --text-color: #E6EEF8;
+    --light-text-color: #9AA6BF;
+    --error-color: #FF6B6B;
+    --warning-color: #F6B24A;
+    --success-color: #2ECC71;
+    /* shadows (stronger on dark) */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.8);
+    /* optional surfaces */
+    --surface-card: #0F1724;
+    --surface-muted: #09101A;
+}

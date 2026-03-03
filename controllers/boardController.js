@@ -59,21 +59,83 @@ const createBoard = async (req, res) => {
 
 
 // get all boards for the authenticated user (with pagination)
+// const getMyBoards = async (req, res) => {
+//   const page = Math.max(1, parseInt(req.query.page) || 1);
+//   const limit = Math.min(50, parseInt(req.query.limit) || 12);
+//   const skip = (page - 1) * limit;
+
+//   const [boards, total] = await Promise.all([
+//     Board.find({ owner: req.user.userId, isActive: true })
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(limit),
+//     Board.countDocuments({ owner: req.user.userId, isActive: true }),
+//   ]);
+
+//   res.status(StatusCodes.OK).json({
+//     boards,
+//     pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+//   });
+// };
+
 const getMyBoards = async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = Math.min(50, parseInt(req.query.limit) || 12);
-  const skip = (page - 1) * limit;
+  const page   = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit  = Math.min(50, parseInt(req.query.limit) || 12);
+  const skip   = (page - 1) * limit;
+  const userId = req.user.userId;
+  const { view = 'owned', tier, visibility, status } = req.query;
+
+  if (!['owned', 'tagged'].includes(view)) {
+    throw new CustomError.BadRequestError('view must be owned or tagged.');
+  }
+
+  const filter = view === 'tagged'
+    ? { receipent: userId }          
+    : { owner: userId };             
+
+  // shared optional filters
+  if (tier)       filter.tier       = tier;
+  if (visibility) filter.visibility = visibility;
+
+  
+  if (status === 'inactive') {
+    filter.isActive = false;
+  } else if (status === 'all') {
+    // return all 
+  } else {
+    filter.isActive = true; // default
+  }
+
+  if (view === 'tagged' && req.query.flagged !== undefined) {
+    filter.receipentFlagged = req.query.flagged === 'true';
+  }
 
   const [boards, total] = await Promise.all([
-    Board.find({ owner: req.user.userId, isActive: true })
+    Board.find(filter)
+      .populate(
+        view === 'tagged' ? 'owner' : null,   
+        'username profileImage'
+      )
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit),
-    Board.countDocuments({ owner: req.user.userId, isActive: true }),
+      .limit(limit)
+      .select('title description slug stats tier tags visibility isActive receipentFlagged receiprentFlagReason owner createdAt'),
+    Board.countDocuments(filter),
   ]);
 
+  let taggedSummary = null;
+  if (view === 'tagged') {
+    const [unflagged, flagged] = await Promise.all([
+      Board.countDocuments({ receipent: userId, isActive: true, receipentFlagged: false }),
+      Board.countDocuments({ receipent: userId, isActive: true, receipentFlagged: true }),
+    ]);
+    taggedSummary = { unflagged, flagged, total: unflagged + flagged };
+  }
+
   res.status(StatusCodes.OK).json({
+    view,
     boards,
+    ...(taggedSummary && { taggedSummary }),
     pagination: { total, page, limit, pages: Math.ceil(total / limit) },
   });
 };
@@ -180,9 +242,6 @@ const likeBoard = async (req, res) => {
 };
 
 
-
-
-
 // share a board (returns shareable URL and increments share count)
 const shareBoard = async (req, res) => {
   const {id} = req.params;
@@ -224,6 +283,62 @@ const discoverBoards = async (req, res) => {
   });
 };
 
+
+const flagBoard = async (req, res) => {
+  const { reason } = req.body;
+  const userId = req.user.userId;
+
+  if (!reason || !reason.trim()) {
+    throw new CustomError.BadRequestError('A reason is required to flag a board.');
+  }
+
+  const board = await Board.findOne({ slug: req.params.slug, isActive: true });
+
+  if (!board) {
+    throw new CustomError.NotFoundError('Board not found.');
+  }
+
+  // Only the designated recipient can flag it
+  if (!board.receipent || board.receipent.toString() !== userId.toString()) {
+    throw new CustomError.ForbiddenError('Only the designated recipient can flag this board.');
+  }
+
+  if (board.receipentFlagged) {
+    throw new CustomError.BadRequestError('This board has already been flagged.');
+  }
+
+  board.receipentFlagged = true;
+  board.receiprentFlagReason = reason.trim();
+  await board.save();
+
+  res.status(StatusCodes.OK).json({ message: 'Board flagged successfully.' });
+};
+
+
+const unflagBoard = async (req, res) => {
+  const userId = req.user.userId;
+
+  const board = await Board.findOne({ slug: req.params.slug, isActive: true });
+
+  if (!board) {
+    throw new CustomError.NotFoundError('Board not found.');
+  }
+
+  if (!board.receipent || board.receipent.toString() !== userId.toString()) {
+    throw new CustomError.ForbiddenError('Only the designated recipient can unflag this board.');
+  }
+
+  if (!board.receipentFlagged) {
+    throw new CustomError.BadRequestError('This board is not flagged.');
+  }
+
+  board.receipentFlagged = false;
+  board.receiprentFlagReason = null;
+  await board.save();
+
+  res.status(StatusCodes.OK).json({ message: 'Flag removed.' });
+};
+
 module.exports = {
   createBoard,
   getMyBoards,
@@ -233,4 +348,6 @@ module.exports = {
   likeBoard,
   shareBoard,
   discoverBoards,
+  flagBoard,
+  unflagBoard,
 };

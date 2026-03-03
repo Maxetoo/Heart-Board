@@ -23,6 +23,16 @@ const BoardSchema = new Schema({
     default: null,
   },
 
+  receipentFlagged: {
+    type: Boolean,
+    default: false,
+  },
+
+  receiprentFlagReason: {
+    type: String,
+    default: null,
+  },
+
   title: {
     type: String,
     required: [true, 'Board title is required.'],
@@ -84,5 +94,27 @@ BoardSchema.methods.canAcceptMessage = function () {
   const limit = this.getMessageLimit();
   return limit === -1 || this.stats.messages < limit;
 };
+
+// Update user stats when boards are created or removed
+BoardSchema.post('save', async function(doc) {
+  try {
+    const mongooseLocal = require('mongoose');
+    const User = mongooseLocal.model('User');
+    await User.recalculateStats(doc.owner);
+  } catch (err) {
+    // swallow errors to avoid breaking main flow
+    console.error('Failed to recalc user stats after board save:', err.message);
+  }
+});
+
+BoardSchema.post('remove', async function(doc) {
+  try {
+    const mongooseLocal = require('mongoose');
+    const User = mongooseLocal.model('User');
+    await User.recalculateStats(doc.owner);
+  } catch (err) {
+    console.error('Failed to recalc user stats after board remove:', err.message);
+  }
+});
 
 module.exports = mongoose.model('Board', BoardSchema);

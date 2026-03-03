@@ -1,84 +1,80 @@
-const BoardPayment = require('../models/BoardPayment');
-const Board = require('../models/Board');
-const { stripe } = require('../configs/stripeConfig');
-// Price per tier upgrade in cents (USD) — move to config/env
+const BoardPayment = require('../models/boardPaymentModel');
+const Board = require('../models/boardModel');
+const { stripe, TIER_ORDER, TIER_UPGRADE_PRICES} = require('../configs/stripeConfig');
+const CustomError = require('../error');
+const {StatusCodes} = require('http-status-codes');
 
 
-// ─── Create Board Tier Upgrade Payment ───────────────────────────────────────
 
-/**
- * POST /api/boards/:id/upgrade
- * Requires auth + board ownership
- * Body: { toTier: 'standard' | 'premium' }
- *
- * Creates a Stripe PaymentIntent for a one-time board upgrade.
- * The client confirms the payment using the returned clientSecret.
- * On success, webhook finalises the tier change.
- */
+// upgrade board 
 const createBoardUpgrade = async (req, res) => {
+  const userId = req.user.userId;
   const { toTier } = req.body;
 
   if (!['standard', 'premium'].includes(toTier)) {
-    return res.status(400).json({ message: 'toTier must be standard or premium.' });
+    throw new CustomError.BadRequestError('toTier must be either standard or premium.');
   }
 
-  const board = await Board.findOne({ _id: req.params.id, owner: req.user.id, isActive: true });
+  const board = await Board.findOne({ _id: req.params.id, owner: userId, isActive: true });
+
   if (!board) {
-    return res.status(404).json({ message: 'Board not found or you do not own it.' });
+    throw new CustomError.NotFoundError('Board not found or you do not own it.');
   }
 
   if (TIER_ORDER[toTier] <= TIER_ORDER[board.tier]) {
-    return res.status(400).json({
-      message: `Board is already on ${board.tier} tier. Choose a higher tier.`,
-    });
+    throw new CustomError.BadRequestError(`Board is already on ${board.tier} tier. Choose a higher tier.`);
   }
 
   const priceKey = `${board.tier}→${toTier}`;
   const amount = TIER_UPGRADE_PRICES[priceKey];
   if (!amount) {
-    return res.status(400).json({ message: 'Unsupported tier upgrade path.' });
+    throw new CustomError.BadRequestError('Unsupported tier upgrade path.');
   }
 
-  // Create Stripe PaymentIntent (one-time charge)
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount,
-    currency: 'usd',
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: `Board Upgrade: ${board.tier} → ${toTier}`,
+          },
+          unit_amount: amount, 
+        },
+        quantity: 1,
+      },
+    ],
+    mode: 'payment',
+    success_url: `${process.env.CLIENT_URL}/upgrade/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.CLIENT_URL}/upgrade/cancel`,
     metadata: {
       boardId: board._id.toString(),
-      userId: req.user.id.toString(),
+      userId: userId.toString(),
       fromTier: board.tier,
       toTier,
     },
   });
 
-  // Record the payment as pending
+  // Record payment in DB with pending status
   const payment = await BoardPayment.create({
     board: board._id,
-    paidBy: req.user.id,
+    paidBy: userId,
     fromTier: board.tier,
     toTier,
     amount,
     currency: 'usd',
     status: 'pending',
-    externalPaymentId: paymentIntent.id,
+    externalPaymentId: session.id, 
   });
 
-  res.status(200).json({
-    clientSecret: paymentIntent.client_secret,
+  res.status(StatusCodes.CREATED).json({
+    paymentUrl: session.url,
     payment: { id: payment._id, fromTier: payment.fromTier, toTier: payment.toTier, amount },
   });
 };
 
-// ─── Stripe Webhook for Board Payments ───────────────────────────────────────
-
-/**
- * POST /api/boards/payment/webhook
- * Raw body required.
- *
- * Handles:
- *   - payment_intent.succeeded  → upgrade board tier
- *   - payment_intent.payment_failed → mark as failed
- */
+// stripe webhook for board payment
 const boardPaymentWebhook = async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
@@ -86,7 +82,7 @@ const boardPaymentWebhook = async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_BOARD_WEBHOOK_SECRET);
   } catch (err) {
-    return res.status(400).json({ message: `Webhook error: ${err.message}` });
+    throw new CustomError.BadRequestError(`Webhook error: ${err.message}`);
   }
 
   switch (event.type) {
@@ -118,34 +114,25 @@ const boardPaymentWebhook = async (req, res) => {
       break;
   }
 
-  res.status(200).json({ received: true });
+  res.status(StatusCodes.OK).json({ received: true });
 };
 
-// ─── Get Upgrade History for a Board ─────────────────────────────────────────
-
-/**
- * GET /api/boards/:id/upgrades
- * Requires auth + board ownership
- */
+// get all payments for a board
 const getBoardPayments = async (req, res) => {
-  const board = await Board.findOne({ _id: req.params.id, owner: req.user.id, isActive: true });
+  const userId = req.user.userId;
+  const board = await Board.findOne({ _id: req.params.id, owner: userId, isActive: true });
   if (!board) {
-    return res.status(404).json({ message: 'Board not found or you do not own it.' });
+    throw new CustomError.NotFoundError('Board not found or you do not own it.');
   }
 
   const payments = await BoardPayment.find({ board: board._id })
     .sort({ createdAt: -1 })
     .select('-externalPaymentId');
 
-  res.status(200).json({ payments, currentTier: board.tier });
+  res.status(StatusCodes.OK).json({ payments, currentTier: board.tier });
 };
 
-// ─── Admin: All Board Payments ────────────────────────────────────────────────
-
-/**
- * GET /api/boards/payments/all
- * Requires admin role
- */
+// all board payments (admin only)
 const listAllBoardPayments = async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, parseInt(req.query.limit) || 20);
@@ -164,7 +151,7 @@ const listAllBoardPayments = async (req, res) => {
     BoardPayment.countDocuments(filter),
   ]);
 
-  res.status(200).json({
+  res.status(StatusCodes.OK).json({
     payments,
     pagination: { total, page, limit, pages: Math.ceil(total / limit) },
   });

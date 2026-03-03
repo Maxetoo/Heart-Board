@@ -39,4 +39,29 @@ externalPaymentId: { type: String, default: null },
 
 SponsorshipSchema.index({ board: 1, status: 1 });
 
+// Recalculate owner stats when sponsorships are created/removed
+SponsorshipSchema.post('save', async function(doc) {
+  try {
+    const Board = require('./boardModel');
+    const mongooseLocal = require('mongoose');
+    const User = mongooseLocal.model('User');
+    const board = await Board.findById(doc.board).select('owner').lean();
+    if (board && board.owner) await User.recalculateStats(board.owner);
+  } catch (err) {
+    console.error('Failed to recalc user stats after sponsorship save:', err.message);
+  }
+});
+
+SponsorshipSchema.post('remove', async function(doc) {
+  try {
+    const Board = require('./boardModel');
+    const mongooseLocal = require('mongoose');
+    const User = mongooseLocal.model('User');
+    const board = await Board.findById(doc.board).select('owner').lean();
+    if (board && board.owner) await User.recalculateStats(board.owner);
+  } catch (err) {
+    console.error('Failed to recalc user stats after sponsorship remove:', err.message);
+  }
+});
+
 module.exports = mongoose.model('Sponsorship', SponsorshipSchema);

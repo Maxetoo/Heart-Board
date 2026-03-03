@@ -1,0 +1,60 @@
+@import url('./variables.css');
+@import url('https://fonts.googleapis.com/css2?family=Varela+Round&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Coiny&family=Outfit:wght@100..900&family=Sigmar+One&display=swap');
+* {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+}
+
+body {
+    -webkit-tap-highlight-color: transparent;
+    font-family: 'Varela Round', sans-serif;
+    font-weight: 400;
+    background: var(--background-color);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    margin: 0;
+    padding: 0;
+    font-weight: inherit;
+}
+
+p,
+li,
+h1,
+h2,
+h3,
+h4,
+nav,
+input,
+select,
+textarea,
+button {
+    font-family: 'Varela Round', sans-serif;
+    font-weight: normal;
+}
+
+h1 {
+    font-weight: 700;
+}
+
+button {
+    user-select: none;
+    cursor: pointer;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+    background: none;
+    border: none;
+    outline: none;
+}

@@ -54,6 +54,11 @@ const UserSchema = new mongoose.Schema({
         default: 'user'
     },
 
+    country: {
+        type: String,
+        required: false,
+    },
+
     isEmailVerified: {
         type: Boolean,
         default: false
@@ -101,6 +106,14 @@ const UserSchema = new mongoose.Schema({
         type: String,
         enum: ['personal', 'enterprise'],
         default: 'personal'
+    },
+    
+    stats: {
+        totalBoards: { type: Number, default: 0 },
+        totalMessages: { type: Number, default: 0 },
+        totalLikes: { type: Number, default: 0 },
+        totalCurators: { type: Number, default: 0 },
+        totalBoardsUpgraded: { type: Number, default: 0 },
     }
 }, {
     timestamps: true
@@ -165,6 +178,51 @@ UserSchema.statics.findOrCreateOAuthUser = async function(profile, provider) {
     } catch (error) {
         throw new CustomError.BadRequestError(`An error occurred: ${error.message}`);
     }
+};
+
+// Recalculate aggregated stats for a user based on related collections
+UserSchema.statics.recalculateStats = async function(userId) {
+    const User = this;
+    const Board = require('./boardModel');
+    const Message = require('./message');
+    const BoardLike = require('./boardLikeModel');
+    const BoardPayment = require('./boardPaymentModel');
+    const Sponsorship = require('./sponsporship');
+
+    // Get boards owned by user
+    const boards = await Board.find({ owner: userId }).select('_id').lean();
+    const boardIds = boards.map(b => b._id);
+
+    const totalBoards = boards.length;
+    const totalMessages = boardIds.length ? await Message.countDocuments({ board: { $in: boardIds } }) : 0;
+    const totalLikes = boardIds.length ? await BoardLike.countDocuments({ board: { $in: boardIds } }) : 0;
+
+    // Unique curators: users who liked, messaged, or sponsored the owner's boards
+    let curators = new Set();
+    if (boardIds.length) {
+        const likeUsers = await BoardLike.distinct('user', { board: { $in: boardIds } });
+        likeUsers.forEach(u => curators.add(String(u)));
+
+        const messageUsers = await Message.distinct('sender', { board: { $in: boardIds } });
+        messageUsers.forEach(u => curators.add(String(u)));
+
+        const sponsorUsers = await Sponsorship.distinct('sponsor', { board: { $in: boardIds } });
+        sponsorUsers.forEach(u => curators.add(String(u)));
+    }
+    const totalCurators = curators.size;
+
+    const totalBoardsUpgraded = boardIds.length ? await BoardPayment.countDocuments({ board: { $in: boardIds }, status: 'succeeded' }) : 0;
+
+    // Update user document
+    await User.findByIdAndUpdate(userId, {
+        $set: {
+            'stats.totalBoards': totalBoards,
+            'stats.totalMessages': totalMessages,
+            'stats.totalLikes': totalLikes,
+            'stats.totalCurators': totalCurators,
+            'stats.totalBoardsUpgraded': totalBoardsUpgraded,
+        }
+    });
 };
 
 

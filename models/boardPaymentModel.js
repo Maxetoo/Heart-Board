@@ -43,3 +43,28 @@ const BoardPaymentSchema = new Schema({
 }, { timestamps: true });
 
 module.exports = mongoose.model('BoardPayment', BoardPaymentSchema);
+
+// Recalculate owner stats when a payment record changes (e.g., succeeded)
+BoardPaymentSchema.post('save', async function(doc) {
+  try {
+    const Board = require('./boardModel');
+    const mongooseLocal = require('mongoose');
+    const User = mongooseLocal.model('User');
+    const board = await Board.findById(doc.board).select('owner').lean();
+    if (board && board.owner) await User.recalculateStats(board.owner);
+  } catch (err) {
+    console.error('Failed to recalc user stats after board payment save:', err.message);
+  }
+});
+
+BoardPaymentSchema.post('remove', async function(doc) {
+  try {
+    const Board = require('./boardModel');
+    const mongooseLocal = require('mongoose');
+    const User = mongooseLocal.model('User');
+    const board = await Board.findById(doc.board).select('owner').lean();
+    if (board && board.owner) await User.recalculateStats(board.owner);
+  } catch (err) {
+    console.error('Failed to recalc user stats after board payment remove:', err.message);
+  }
+});

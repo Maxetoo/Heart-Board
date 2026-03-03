@@ -18,4 +18,6 @@ const TIER_ORDER = { basic: 0, standard: 1, premium: 2 };
 module.exports = {
     stripe,
     STRIPE_PRICE_IDS,
+    TIER_UPGRADE_PRICES,
+    TIER_ORDER,
 };
