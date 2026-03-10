@@ -1,5 +1,8 @@
 import React, { useState } from 'react'
 import styled from 'styled-components'
+import { useDispatch, useSelector} from 'react-redux';
+import {login, fillLoginInputs} from '../../slices/authSlice';
+import {ErrorNotificationPopup} from '../../helpers';
 import { Link } from 'react-router-dom';
 import { FcGoogle } from "react-icons/fc";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
@@ -7,14 +10,31 @@ import {URL} from '../../paths/url';
 
 const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const { loginInputs, 
+    loginLoad, 
+    loginError, 
+    loginErrorMsg, 
+  } = useSelector((state) => state.auth);
+  const { email, password } = loginInputs;
+  const dispatch = useDispatch();
+
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    dispatch(login({email, password}))
+  }
+
+  const handleLoginWithGoogle = () => {
+    window.location.href = `${URL}/api/v1/auth/google`;
+  }
 
   return (
     <Wrapper>
+      <ErrorNotificationPopup trigger={loginError} message={loginErrorMsg || 'An error occured'} />
       <h1>Good to have you back</h1>
-      <p className='header_desc'>Sign in with the correct details you use for registration</p>
-
+      <p className='header_desc'>Sign in with the correct details you used for registration</p>
       <div className="login_outline">
-        <div className="google_auth">
+        <div className="google_auth" onClick={handleLoginWithGoogle}>
           <FcGoogle className='icon' />
           <span>Continue with Google</span>
         </div>
@@ -28,6 +48,11 @@ const LoginPage = () => {
             <input type="email" 
             placeholder='Email' 
             name='email'
+            value={email}
+            onChange={(e) => dispatch(fillLoginInputs({
+              name: e.target.name,
+              value: e.target.value
+            }))}
             required />
           </label>
           <label htmlFor="password">
@@ -37,6 +62,11 @@ const LoginPage = () => {
                 placeholder='Password' 
                 name='password'
                 className='password_input'
+                value={password}
+                onChange={(e) => dispatch(fillLoginInputs({
+                  name: e.target.name,
+                  value: e.target.value
+                }))}
                 required 
               />
               <span className="eye_icon" onClick={() => setShowPassword(!showPassword)}>
@@ -47,7 +77,10 @@ const LoginPage = () => {
           <Link to="/forgot-password">
             <p className='forgot_password'>Forgot password?</p>
           </Link>
-          <button type="submit">Login</button>
+          <button type="submit" 
+          className={`${loginLoad ? 'btn_load' : ''}`}
+          onClick={(e) => handleLogin(e)}
+          onSubmit={(e) => handleLogin(e)}>Login</button>
         </form>
 
         <p className='signup'>

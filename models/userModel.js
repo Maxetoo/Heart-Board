@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const validator = require('validator');
 const bcrypt = require('bcrypt')
+const Board = require('./boardModel');
+const Message = require('./message');
+const BoardLike = require('./boardLikeModel');
+const BoardPayment = require('./boardPaymentModel');
+const Sponsorship = require('./sponsporship');
 
 
 
@@ -183,12 +188,7 @@ UserSchema.statics.findOrCreateOAuthUser = async function(profile, provider) {
 // Recalculate aggregated stats for a user based on related collections
 UserSchema.statics.recalculateStats = async function(userId) {
     const User = this;
-    const Board = require('./boardModel');
-    const Message = require('./message');
-    const BoardLike = require('./boardLikeModel');
-    const BoardPayment = require('./boardPaymentModel');
-    const Sponsorship = require('./sponsporship');
-
+    
     // Get boards owned by user
     const boards = await Board.find({ owner: userId }).select('_id').lean();
     const boardIds = boards.map(b => b._id);
@@ -200,13 +200,13 @@ UserSchema.statics.recalculateStats = async function(userId) {
     // Unique curators: users who liked, messaged, or sponsored the owner's boards
     let curators = new Set();
     if (boardIds.length) {
-        const likeUsers = await BoardLike.distinct('user', { board: { $in: boardIds } });
+        const likeUsers = await BoardLike.distinct('user', { board: { $in: boardIds } }).exec();
         likeUsers.forEach(u => curators.add(String(u)));
 
-        const messageUsers = await Message.distinct('sender', { board: { $in: boardIds } });
+        const messageUsers = await Message.distinct('sender', { board: { $in: boardIds } }).exec();
         messageUsers.forEach(u => curators.add(String(u)));
 
-        const sponsorUsers = await Sponsorship.distinct('sponsor', { board: { $in: boardIds } });
+        const sponsorUsers = await Sponsorship.distinct('sponsor', { board: { $in: boardIds } }).exec();
         sponsorUsers.forEach(u => curators.add(String(u)));
     }
     const totalCurators = curators.size;

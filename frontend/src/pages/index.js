@@ -8,6 +8,15 @@ import ResetPasswordPage from './auth/ResetPasswordPage'
 // account setup page
 import AccountSetupPage from './account/AccountSetupPage'
 
+// home page 
+import HomePage from './home/HomePage'
+
+// message 
+import PostMessagePage from './message/PostMessagePage';
+import CreateMessagePage from './message/CreateMessagePage';
+import EditBoardPage from './message/EditBoardPage';
+import EditMessagePage from './message/EditMessagePage';
+
 // error page for unmatched routes
 import ErrorPage from './error/ErrorPage';
 
@@ -17,6 +26,11 @@ export {
     ForgotPasswordPage,
     RecoveryPasswordPage,
     ResetPasswordPage,
-    AccountSetupPage,    
-    ErrorPage
+    AccountSetupPage,
+    HomePage, 
+    PostMessagePage,
+    ErrorPage,
+    CreateMessagePage,
+    EditBoardPage,
+    EditMessagePage
 }

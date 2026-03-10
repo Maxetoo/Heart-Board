@@ -4,9 +4,40 @@ const {StatusCodes} = require('http-status-codes');
 const Board = require('../models/boardModel');
 const Subscription = require('../models/subscription');
 
+const checkUsername = async (req, res) => {
+  const { username } = req.params;
+
+  if (!username || username.trim().length < 3) {
+    return res.status(StatusCodes.OK).json({ available: false, message: 'Username must be at least 3 characters.' });
+  }
+
+  const taken = await User.findOne({ username: username.trim().toLowerCase() });
+
+  res.status(StatusCodes.OK).json({
+    available: !taken,
+    message: taken ? 'Username is already taken.' : 'Username is available.',
+  });
+};
+
+
+
+const getMyProfile = async(req, res) => {
+  const userId = req.user.userId;
+
+  const user = await User.findOne({ _id: userId }).select(
+    'username profileImage accountType createdAt stats'
+  );
+
+  if (!user) {
+    throw new CustomError.NotFoundError('User not found.');
+  }
+
+  res.status(StatusCodes.OK).json({ user });
+
+}
 
 const updateProfile = async (req, res) => {
-  const { username, profileImage } = req.body;
+  const { username, profileImage, country, accountType} = req.body;
   const userId = req.user.userId;
 
   if (username) {
@@ -19,6 +50,9 @@ const updateProfile = async (req, res) => {
   const updates = {};
   if (username) updates.username = username;
   if (profileImage) updates.profileImage = profileImage;
+  if (country) updates.country = country;
+  if (accountType) updates.accountType = accountType;
+
 
   const user = await User.findByIdAndUpdate(userId, updates, {
     new: true,
@@ -159,6 +193,8 @@ const updateUserRole = async (req, res) => {
 };
 
 module.exports = {
+  checkUsername,
+  getMyProfile,
   getPublicProfile,
   updateProfile,
   changePassword,

@@ -1,13 +1,17 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
+import { useDispatch, useSelector } from 'react-redux'
 import {
     CreateUsername,
     SelectAccountTier,
     SelectAccountType,
     SelectCountry
-} from '../../components/account';
-
+} from '../../components/account'
+import {updateProfileStatus} from '../../slices/authSlice';
+import { updateProfile, clearUserNotifications } from '../../slices/userSlice'
+import { createCheckoutSession, clearSubscriptionNotifications } from '../../slices/subscriptionSlice'
+import { ErrorNotificationPopup } from '../../helpers'
 
 const STEPS = [
   { title: 'Select Account Type' },
@@ -18,11 +22,41 @@ const STEPS = [
 
 const AccountSetupPage = () => {
   const navigate = useNavigate()
+  const dispatch = useDispatch()
+
+  const {
+    updateProfileLoad,
+    updateProfileError,
+    updateProfileErrorMsg,
+    updateProfileSuccess,
+  } = useSelector((state) => state.user)
+
+  const {
+    checkoutLoad,
+    checkoutError,
+    checkoutErrorMsg,
+  } = useSelector((state) => state.subscription)
+
   const [step, setStep] = useState(0)
   const [accountType, setAccountType] = useState('')
   const [username, setUsername] = useState('')
   const [country, setCountry] = useState('')
   const [tier, setTier] = useState('')
+
+  // Once profile update succeeds, handle tier selection
+  useEffect(() => {
+    if (!updateProfileSuccess) return
+
+    dispatch(clearUserNotifications())
+
+    if (tier === 'free') {
+      // Free plan — no checkout needed, go straight to dashboard
+      navigate('/dashboard')
+    } else {
+      // Paid plan — open Stripe checkout (slice handles the redirect)
+      dispatch(createCheckoutSession({ plan: tier }))
+    }
+  }, [dispatch, updateProfileSuccess])
 
   const isStepValid = () => {
     if (step === 0) return !!accountType
@@ -32,18 +66,42 @@ const AccountSetupPage = () => {
     return false
   }
 
+  const isLoading = updateProfileLoad || checkoutLoad
+
   const handleContinue = () => {
-    if (!isStepValid()) return
-    if (step < 3) setStep(step + 1)
-    else navigate('/dashboard')
+    if (!isStepValid() || isLoading) return
+
+    if (step < STEPS.length - 1) {
+      setStep(step + 1)
+      return
+    }
+
+    dispatch(updateProfile({ username, accountType, country }))
+    dispatch(updateProfileStatus())
   }
 
   const handleBack = () => {
-    if (step > 0) setStep(step - 1)
+    if (step > 0) {
+      dispatch(clearUserNotifications())
+      dispatch(clearSubscriptionNotifications())
+      setStep(step - 1)
+    }
+  }
+
+  const errorVisible = updateProfileError || checkoutError
+  const errorMsg = updateProfileErrorMsg || checkoutErrorMsg || 'An error occurred'
+
+  const buttonLabel = () => {
+    if (updateProfileLoad) return 'Saving...'
+    if (checkoutLoad) return 'Redirecting...'
+    if (step === STEPS.length - 1) return 'Finish Setup'
+    return 'Continue'
   }
 
   return (
     <Wrapper>
+      <ErrorNotificationPopup trigger={errorVisible} message={errorMsg} />
+
       <p className="step_label">STEP {step + 1}/{STEPS.length}</p>
       <h1>{STEPS[step].title}</h1>
 
@@ -72,13 +130,20 @@ const AccountSetupPage = () => {
 
         <div className="actions">
           {step > 0 && (
-            <button className="back_btn" onClick={handleBack}>Back</button>
+            <button
+              className="back_btn"
+              onClick={handleBack}
+              disabled={isLoading}
+            >
+              Back
+            </button>
           )}
           <button
-            className={`continue_btn ${isStepValid() ? 'valid' : 'disabled'}`}
+            className={`continue_btn ${isStepValid() && !isLoading ? 'valid' : 'disabled'}`}
             onClick={handleContinue}
+            disabled={!isStepValid() || isLoading}
           >
-            {step === 3 ? 'Finish Setup' : 'Continue'}
+            {buttonLabel()}
           </button>
         </div>
 
@@ -162,9 +227,14 @@ const Wrapper = styled.div`
       cursor: pointer;
       transition: border-color 0.2s;
 
-      &:hover {
+      &:hover:not(:disabled) {
         border-color: var(--primary-color);
         color: var(--primary-color);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
     }
 

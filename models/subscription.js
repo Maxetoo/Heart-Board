@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const PLAN_LIMITS = {
-  free:       { boardLimit: 3 },
+  free:       { boardLimit: 20 },
   pro:        { boardLimit: 15},
   enterprise: { boardLimit: -1 },
 };
@@ -11,7 +11,7 @@ const SubscriptionSchema = new Schema({
   
     user: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'User', 
     required: true,
     unique: true,
   },

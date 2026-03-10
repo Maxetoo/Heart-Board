@@ -1,6 +1,8 @@
 const express = require('express');
 const UserRoute = express.Router();
 const { getPublicProfile,
+  checkUsername,
+  getMyProfile,
   updateProfile,
   changePassword,
   deleteAccount,
@@ -9,8 +11,10 @@ const { getPublicProfile,
 const { authentication, adminAuthorization, superAdminAuthorization} = require('../middlewares/authMiddleware');
 
 // User Routes  
+UserRoute.route('/check-username/:username').get(checkUsername);
+UserRoute.route('/me').get(authentication, getMyProfile);
 UserRoute.route('/profile').patch(authentication, updateProfile);
-UserRoute.route('/change-password').patch(authentication, changePassword);
+UserRoute.route('/change-password').patch(authentication, changePassword); 
 UserRoute.route('/delete-account').delete(authentication, deleteAccount);
 
 // Admin Routes

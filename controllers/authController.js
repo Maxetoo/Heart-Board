@@ -8,12 +8,16 @@ const crypto = require('crypto');
 
 
 const register = async (req, res) => {
-  const { email, password, username } = req.body;
+  const { email, password } = req.body;
 
-  const existing = await User.findOne({ $or: [{ email }, { username }] });
+  if (!email || !password) {
+    throw new CustomError.BadRequestError('Email and Password are required.');
+  }
+
+  const existing = await User.findOne({ email });
 
   if (existing) {
-    throw new CustomError.BadRequestError('Email or username already in use.');
+    throw new CustomError.BadRequestError('Email already in use.');
   }
 
   // generate email verification token
@@ -23,7 +27,6 @@ const register = async (req, res) => {
   const user = await User.create({
     email,
     password,
-    username,
     oauthProvider: 'email',
     emailVerificationToken: verificationToken,
     emailVerificationExpiry: verificationExpiry,
@@ -70,14 +73,45 @@ const verifyEmail = async (req, res) => {
 };
 
 
-const login = async (req, res) => {
-  const { email, password, username} = req.body;
+const resendVerificationEmail = async (req, res) => {
+  const { email } = req.body;
 
-  if (!(email || username) || !password) {
-    throw new CustomError.BadRequestError('Email or username and password are required.');
+  if (!email) {
+    throw new CustomError.BadRequestError('Email is required.');
+  }
+  
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    throw new CustomError.NotFoundError('If that email exists, a verification email has been sent.');
   }
 
-  const user = await User.findOne({ $or: [{ email }, { username }] })
+  if (user.isEmailVerified) {
+    throw new CustomError.BadRequestError('Email is already verified. Please log in.');
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const verificationExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+
+  user.emailVerificationToken = verificationToken;
+  user.emailVerificationExpiry = verificationExpiry;
+  await user.save();
+
+  // send verification email
+  //   TODO
+
+  res.status(StatusCodes.OK).json({ message: 'If that email exists, a verification email has been sent.' });
+}
+
+
+const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    throw new CustomError.BadRequestError('Email and Password are required.');
+  }
+
+  const user = await User.findOne({ email })
 
   if (!user) {
     throw new CustomError.UnauthorizedError('Invalid credentials.');
@@ -178,13 +212,15 @@ const forgotPassword = async (req, res) => {
   const user = await User.findOne({ email });
 
   if (!user) {
-    throw new CustomError.NotFoundError('If that email exists, a reset link has been sent.');
+    res.status(StatusCodes.OK).json({ message: 'If that email exists, a reset link has been sent.' });
+    return;
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
   user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-
   user.resetPasswordExpiry = new Date(Date.now() + 60 * 60 * 1000); 
+
+
   await user.save();
 
   // email the reset link to the user
@@ -196,10 +232,18 @@ const forgotPassword = async (req, res) => {
 
 
 const resetPassword = async (req, res) => {
-  const { token, newPassword } = req.body;
+  const { token, newPassword, confirmPassword } = req.body;
 
-  if (!token || !newPassword) {
-    throw new CustomError.BadRequestError('Reset token and new password are required.');
+  if (!token) {
+    throw new CustomError.BadRequestError('Reset token is required.');
+  }
+
+  if (!newPassword || !confirmPassword) {
+    throw new CustomError.BadRequestError('New password and confirmation are required.');
+  }
+
+  if (newPassword !== confirmPassword) {
+    throw new CustomError.BadRequestError('Passwords do not match.');
   }
 
   const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
@@ -226,6 +270,7 @@ const resetPassword = async (req, res) => {
 module.exports = {
   register,
   verifyEmail,
+  resendVerificationEmail,
   login,
   oauthCallback,
   logout,

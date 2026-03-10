@@ -3,6 +3,7 @@ const AuthRoute = express.Router();
 const { 
   register,
   verifyEmail,
+  resendVerificationEmail,
   login,
   oauthCallback,
   logout,
@@ -15,6 +16,7 @@ const passport = require('../configs/passport');
 // Auth Route 
 AuthRoute.route('/register').post(register);
 AuthRoute.route('/verify-email').post(verifyEmail);
+AuthRoute.route('/resend-verification-email').post(resendVerificationEmail);
 AuthRoute.route('/login').post(login);
 AuthRoute.route('/logout').post(logout);
 AuthRoute.route('/forgot-password').post(forgotPassword);

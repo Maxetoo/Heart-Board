@@ -43,27 +43,25 @@ const limiter = rateLimit({
 // Apply rate limiter
 app.use(limiter);
 
-
-// Helmet security setup
 app.use(helmet());
 app.use(helmet.contentSecurityPolicy({
   directives: {
-    imgSrc: ["'self'", "data:", "https://ik.imagekit.io"],
+    defaultSrc: ["'self'"],
+    imgSrc:     ["'self'", "data:", "https://res.cloudinary.com"],
+    mediaSrc:   ["'self'", "https://res.cloudinary.com"],  
+    connectSrc: ["'self'", "https://api.cloudinary.com"],
   },
 }));
 
-
-// CORS configuration for Express
 app.use(cors({
-  origin: [`${origin}`,'https://ik.imagekit.io'],
+  origin:      [origin, 'https://res.cloudinary.com'],
   credentials: true,
 }));
 
 
-
 // Additional middlewares
-app.use(compression());
 app.use(fileUploader({ useTempFiles: true }));
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(process.env.COOKIE));
@@ -86,6 +84,7 @@ const BoardRouter = require('./routes/boardRoute');
 const MessageRouter = require('./routes/messageRoute');
 const SubscriptionRouter = require('./routes/subscriptionRoute');
 const BoardPaymentRouter = require('./routes/boardPaymentRoute');
+const UploadRouter = require('./routes/uploadRoute');
 
 
 
@@ -96,11 +95,8 @@ app.use('/api/v1/board', BoardRouter);
 app.use('/api/v1/message', MessageRouter);
 app.use('/api/v1/subscription', SubscriptionRouter);
 app.use('/api/v1/board/payments', BoardPaymentRouter);
+app.use('/api/v1/upload', UploadRouter);
 
-// Serve the frontend application
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
-});
 
 
 // Error handling middlewares
@@ -109,6 +105,11 @@ const NotFoundMiddleware = require('./middlewares/notFoundRoute');
 
 app.use(NotFoundMiddleware);
 app.use(ErrorMiddleware);
+
+// Serve the frontend application
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+});
 
 // MongoDB connection using MongoClient
 const client = new MongoClient(process.env.MONGO_URL, {
@@ -167,3 +168,5 @@ cron.schedule('*/5 * * * *', async () => {
 }); 
 
 startApp().catch(console.dir);
+
+require('./workers/uploadAndPostWorker')

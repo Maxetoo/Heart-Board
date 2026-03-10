@@ -1,5 +1,12 @@
 import React, { useState } from 'react'
 import styled from 'styled-components'
+import { useDispatch, useSelector } from 'react-redux'
+import { 
+  signup,
+  handleSignupInputChange,
+  handleAgreeTermsAndConditions,
+} from '../../slices/authSlice'
+import { ErrorNotificationPopup} from '../../helpers';
 import { Link } from 'react-router-dom';
 import { FcGoogle } from "react-icons/fc";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
@@ -8,14 +15,36 @@ import {URL} from '../../paths/url';
 
 const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const dispatch = useDispatch()
+  const {
+    agreeTermsAndCondition,
+    signupLoad,
+    signupError,
+    signupErrorMsg,
+    signupInputs,
+    setProfile
+
+  } = useSelector((store) => store.auth)
+  const { email, password } = signupInputs;
+
+  const handleSignup = (e) => {
+      e.preventDefault();
+      dispatch(signup({email, password}))
+  }
+  
+  const handleLoginWithGoogle = () => {
+      window.location.href = `${URL}/api/v1/auth/google`;
+  }
+
 
   return (
     <Wrapper>
+      <ErrorNotificationPopup trigger={signupError} message={signupErrorMsg || 'An error occured'} />
       <h1>Let’s get you started</h1>
       <p className='header_desc'>Fill the form below with the right details and set yourself up really quick</p>
 
       <div className="login_outline">
-        <div className="google_auth">
+        <div className="google_auth" onClick={handleLoginWithGoogle}>
           <FcGoogle className='icon' />
           <span>Continue with Google</span>
         </div>
@@ -29,6 +58,11 @@ const SignupPage = () => {
             <input type="email" 
             placeholder='Email' 
             name='email'
+            value={email}
+            onChange={(e) => dispatch(handleSignupInputChange({
+              name: e.target.name,
+              value: e.target.value
+            }))}
             required />
           </label>
           <label htmlFor="password">
@@ -38,6 +72,11 @@ const SignupPage = () => {
                 placeholder='Password' 
                 name='password'
                 className='password_input'
+                value={password}
+                onChange={(e) => dispatch(handleSignupInputChange({
+                  name: e.target.name,
+                  value: e.target.value
+                }))}
                 required 
               />
               <span className="eye_icon" onClick={() => setShowPassword(!showPassword)}>
@@ -48,7 +87,26 @@ const SignupPage = () => {
           <Link to="/forgot-password">
             <p className='forgot_password'>Forgot password?</p>
           </Link>
-          <button type="submit">Login</button>
+
+          <label className="terms_checkbox">
+          <input
+            type="checkbox"
+            checked={agreeTermsAndCondition}
+            onChange={(e) => dispatch(handleAgreeTermsAndConditions(e.target.checked))}
+            required
+          />
+          <span className="terms_text">
+            By continuing, you agree to our{' '}
+            <a href="/terms" target="_blank" rel="noopener noreferrer">Terms & Conditions</a>
+          </span>
+        </label>
+
+          <button type="submit" 
+          className={`${signupLoad ? 'btn_load' : ''}`}
+          onClick={(e) => handleSignup(e)}
+          onSubmit={(e) => handleSignup(e)}
+          disabled={!agreeTermsAndCondition}
+          >Signup</button>
         </form>
 
         <p className='signup'>
@@ -57,7 +115,7 @@ const SignupPage = () => {
         </p>
       </div>
 
-      <AccountCreationSuccess isVisible={true} />
+      <AccountCreationSuccess isVisible={setProfile} />
     </Wrapper>
   )
 }
@@ -184,6 +242,12 @@ const Wrapper = styled.div`
     cursor: pointer;
   }
 
+  button:disabled {
+    background: var(--primary-color);
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .btn_load {
     opacity: 0.8;
   }
@@ -224,6 +288,40 @@ const Wrapper = styled.div`
       font-size: 1.5em;
     }
   }
+
+  .terms_checkbox {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.terms_checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #000000;
+}
+
+.terms_text {
+  font-size: 0.95em;
+  color: var(--light-text-color);
+  line-height: 1.5;
+}
+
+.terms_text a {
+  color: var(--primary-color);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.terms_text a:hover {
+  opacity: 0.8;
+}
 
   .signup {
     margin-top: 1.5rem;

@@ -13,6 +13,7 @@
     "@reduxjs/toolkit": "^2.11.2",
     "axios": "^1.13.6",
     "contentful": "^11.10.5",
+    "html2canvas": "^1.4.1",
     "jodit-react": "^5.3.21",
     "js-cookie": "^3.0.5",
     "lucide-react": "^0.576.0",

@@ -4,8 +4,7 @@ const Subscription = require('../models/subscription');
 const Sponsorship = require('../models/sponsporship');
 const Like = require('../models/boardLikeModel');
 const CustomError = require('../error');
-const {StatusCodes} = require('http-status-codes');
-
+const { StatusCodes } = require('http-status-codes');
 
 // helper to check board ownership and existence
 const requireBoardOwner = async (res, boardId, userId) => {
@@ -23,103 +22,126 @@ const requireBoardOwner = async (res, boardId, userId) => {
 
 const createBoard = async (req, res) => {
   const userId = req.user.userId;
-  const { title, description, visibility, receipent} = req.body;
+  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId } = req.body;
 
-  const subscription = await Subscription.findOne({ user: req.user.userId });
-  const limits = subscription.getLimits();
+  let createdBoard = null;  
 
-  // enforce board limit for non-unlimited plans
-  if (limits.boardLimit !== -1) {
-    const boardCount = await Board.countDocuments({
-      owner: userId,
-      isActive: true,
-    });
+  try {
+    const subscription = await Subscription.findOne({ user: req.user.userId });
+    const limits = subscription.getLimits();
 
-    if (boardCount >= limits.boardLimit) {
-      throw new CustomError.BadRequestError(`Your ${subscription.plan} plan allows a maximum of ${limits.boardLimit} boards. Upgrade to create more.`)
+    if (limits.boardLimit !== -1) {
+      const boardCount = await Board.countDocuments({ owner: userId, isActive: true });
+      if (boardCount >= limits.boardLimit) {
+        throw new CustomError.BadRequestError(
+          `Your ${subscription.plan} plan allows a maximum of ${limits.boardLimit} boards. Upgrade to create more.`
+        );
+      }
     }
+
+    let receipentId = null;
+    if (receipent?.length > 0 && receipent.trim()) {
+      const receipentUser = await User.findOne({
+        username: receipent.trim().toLowerCase(),
+        isActive: true,
+      });
+      if (!receipentUser) {
+        throw new CustomError.BadRequestError('Receipent user not found.');
+      }
+      receipentId = receipentUser._id;
+    }
+
+    const board = await Board.create({
+      owner: userId,
+      title,
+      description,
+      event,
+      visibility: visibility || 'public',
+      receipent,
+      coverImage: coverImage || null,
+      tags:       Array.isArray(tags) ? tags : [],
+    });
+    createdBoard = board;
+
+    if (coverImagePublicId) {
+      try {
+        await uploadSendingQueue.add(
+          'verify-and-guard',
+          {
+            boardId:            board._id,
+            cloudinaryPublicId: coverImagePublicId,
+            fileType:           'image',
+          },
+          {
+            delay:            3000,
+            attempts:         3,
+            backoff:          { type: 'exponential', delay: 2000 },
+            removeOnComplete: true,
+            removeOnFail:     { age: 86400 },
+          }
+        );
+      } catch (queueErr) {
+        console.error('[createBoard] Failed to enqueue cleanup guard:', queueErr.message);
+      }
+    }
+
+    res.status(StatusCodes.CREATED).json({ message: 'Board created.', board });
+
+  } catch (err) {
+    if (coverImagePublicId) {
+      try {
+        await deleteFromCloudinary(coverImagePublicId, 'image');
+      } catch (cleanupErr) {
+        console.error('[createBoard] Cloudinary rollback failed:', cleanupErr.message);
+      }
+    }
+
+    if (createdBoard?._id) {
+      try {
+        await Board.findByIdAndDelete(createdBoard._id);
+      } catch (rollbackErr) {
+        console.error('[createBoard] Board rollback failed:', rollbackErr.message);
+      }
+    }
+
+    throw err;
   }
-
-  const user = await User.findOne({username: receipent, isActive: true});
-
-  if (receipent && !user) {
-    throw new CustomError.BadRequestError('Receipent user not found.');
-  }
-
-  const board = await Board.create({
-    owner: userId,
-    title,
-    description,
-    visibility: visibility || 'private',
-    receipent
-  });
-
-  res.status(StatusCodes.CREATED).json({ message: 'Board created.', board });
 };
 
-
-// get all boards for the authenticated user (with pagination)
-// const getMyBoards = async (req, res) => {
-//   const page = Math.max(1, parseInt(req.query.page) || 1);
-//   const limit = Math.min(50, parseInt(req.query.limit) || 12);
-//   const skip = (page - 1) * limit;
-
-//   const [boards, total] = await Promise.all([
-//     Board.find({ owner: req.user.userId, isActive: true })
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(limit),
-//     Board.countDocuments({ owner: req.user.userId, isActive: true }),
-//   ]);
-
-//   res.status(StatusCodes.OK).json({
-//     boards,
-//     pagination: { total, page, limit, pages: Math.ceil(total / limit) },
-//   });
-// };
 
 const getMyBoards = async (req, res) => {
   const page   = Math.max(1, parseInt(req.query.page)  || 1);
   const limit  = Math.min(50, parseInt(req.query.limit) || 12);
   const skip   = (page - 1) * limit;
   const userId = req.user.userId;
-  const { view = 'owned', tier, visibility, status } = req.query;
+  const { view = 'owned', tier, visibility, status, event } = req.query;
 
   if (!['owned', 'tagged'].includes(view)) {
     throw new CustomError.BadRequestError('view must be owned or tagged.');
   }
 
-  const filter = view === 'tagged'
-    ? { receipent: userId }          
-    : { owner: userId };             
+  const filter = view === 'tagged' ? { receipent: userId } : { owner: userId };
 
-  // shared optional filters
   if (tier)       filter.tier       = tier;
   if (visibility) filter.visibility = visibility;
+  if (event)      filter.event      = event;
 
-  
-  if (status === 'inactive') {
-    filter.isActive = false;
-  } else if (status === 'all') {
-    // return all 
-  } else {
-    filter.isActive = true; // default
-  }
+  if (status === 'inactive')    filter.isActive = false;
+  else if (status !== 'all')    filter.isActive = true;
 
   if (view === 'tagged' && req.query.flagged !== undefined) {
     filter.receipentFlagged = req.query.flagged === 'true';
   }
 
+  const query = Board.find(filter);
+  if (view === 'tagged') query.populate('owner', 'username profileImage');
+
   const [boards, total] = await Promise.all([
-    Board.find(filter)
-      .populate(
-        view === 'tagged' ? 'owner' : null,   
-        'username profileImage'
-      )
+    query
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('title description slug stats tier tags visibility isActive receipentFlagged receiprentFlagReason owner createdAt'),
+      .select('title description slug stats tier tags visibility isActive receipentFlagged receiprentFlagReason owner coverImage createdAt'),
     Board.countDocuments(filter),
   ]);
 
@@ -141,9 +163,8 @@ const getMyBoards = async (req, res) => {
 };
 
 
-// get single board by slug (with visibility check)
 const getBoardBySlug = async (req, res) => {
-  const {slug} = req.params;
+  const { slug } = req.params;
   const board = await Board.findOne({ slug, isActive: true }).populate(
     'owner',
     'username profileImage'
@@ -155,15 +176,12 @@ const getBoardBySlug = async (req, res) => {
 
   const isOwner = req.user && board.owner._id.toString() === req.user.userId.toString();
 
-  // visibility gate
   if (board.visibility === 'private' && !isOwner) {
     return res.status(StatusCodes.FORBIDDEN).json({ message: 'This board is private.' });
   }
 
-  // increment visits (non-blocking)
   Board.findByIdAndUpdate(board._id, { $inc: { 'stats.visits': 1 } }).exec();
 
-  // load active sponsorships for display
   const sponsors = await Sponsorship.find({ board: board._id, status: 'active' })
     .populate('sponsor', 'username profileImage')
     .select('sponsor amount message isAnonymous createdAt');
@@ -172,51 +190,43 @@ const getBoardBySlug = async (req, res) => {
 };
 
 
-// update board (only owner)
+
 const updateBoard = async (req, res) => {
-  const {id} = req.params;
-  const board = await requireBoardOwner(res, id, req.user.userId);
+  const { id } = req.params;
+  const board  = await requireBoardOwner(res, id, req.user.userId);
   if (!board) return;
 
-  const { title, description, visibility } = req.body;
-  if (title !== undefined) board.title = title;
+  const { title, description, visibility, coverImage } = req.body;
+  if (title       !== undefined) board.title       = title;
   if (description !== undefined) board.description = description;
-  if (visibility !== undefined) board.visibility = visibility;
+  if (visibility  !== undefined) board.visibility  = visibility;
+  if (coverImage  !== undefined) board.coverImage  = coverImage;   
 
   await board.save();
   res.status(StatusCodes.OK).json({ message: 'Board updated.', board });
 };
 
 
-// delete board
 const deleteBoard = async (req, res) => {
-  const {id} = req.params;
-  const board = await requireBoardOwner(res, id, req.user.userId);
+  const { id } = req.params;
+  const board  = await requireBoardOwner(res, id, req.user.userId);
   if (!board) return;
 
   board.isActive = false;
   await board.save();
-
   res.status(StatusCodes.OK).json({ message: 'Board deleted.' });
 };
 
-// like and unlike a board 
+
 const likeBoard = async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
+  const { id }   = req.params;
+  const userId   = req.user?.userId;
 
-  if (!id) {
-    throw new CustomError.BadRequestError('Board id is required');
-  }
-
-  if (!userId) {
-    throw new CustomError.BadRequestError('Please sign in');
-  }
+  if (!id)     throw new CustomError.BadRequestError('Board id is required');
+  if (!userId) throw new CustomError.BadRequestError('Please sign in');
 
   const board = await Board.findById(id);
-  if (!board) {
-    throw new CustomError.NotFoundError('Board not found');
-  }
+  if (!board) throw new CustomError.NotFoundError('Board not found');
 
   const existingLike = await Like.findOne({ board: id, user: userId });
 
@@ -224,28 +234,19 @@ const likeBoard = async (req, res) => {
     await existingLike.deleteOne();
     board.stats.likes -= 1;
     await board.save();
-
-    return res.status(StatusCodes.OK).json({
-      liked: false,
-      likeCount: board.stats.likes
-    });
+    return res.status(StatusCodes.OK).json({ liked: false, likeCount: board.stats.likes });
   }
 
   await Like.create({ board: id, user: userId });
   board.stats.likes += 1;
   await board.save();
-
-  res.status(StatusCodes.OK).json({
-    liked: true,
-    likeCount: board.stats.likes
-  });
+  res.status(StatusCodes.OK).json({ liked: true, likeCount: board.stats.likes });
 };
 
 
-// share a board (returns shareable URL and increments share count)
 const shareBoard = async (req, res) => {
-  const {id} = req.params;
-  const board = await Board.findOneAndUpdate(
+  const { id } = req.params;
+  const board  = await Board.findOneAndUpdate(
     { _id: id, isActive: true, visibility: { $ne: 'private' } },
     { $inc: { 'stats.shares': 1 } },
     { new: true }
@@ -260,12 +261,11 @@ const shareBoard = async (req, res) => {
 };
 
 
-// disocver public boards with pagination and sorting
 const discoverBoards = async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
   const limit = Math.min(50, parseInt(req.query.limit) || 12);
-  const skip = (page - 1) * limit;
-  const sort = req.query.sort === 'popular' ? { 'stats.visits': -1 } : { createdAt: -1 };
+  const skip  = (page - 1) * limit;
+  const sort  = req.query.sort === 'popular' ? { 'stats.visits': -1 } : { createdAt: -1 };
 
   const [boards, total] = await Promise.all([
     Board.find({ visibility: 'public', isActive: true })
@@ -273,7 +273,8 @@ const discoverBoards = async (req, res) => {
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .select('title description slug stats tier owner createdAt'),
+      // coverImage included so discover grid can render thumbnails
+      .select('title description slug stats tier owner coverImage createdAt'),
     Board.countDocuments({ visibility: 'public', isActive: true }),
   ]);
 
@@ -286,19 +287,15 @@ const discoverBoards = async (req, res) => {
 
 const flagBoard = async (req, res) => {
   const { reason } = req.body;
-  const userId = req.user.userId;
+  const userId     = req.user.userId;
 
   if (!reason || !reason.trim()) {
     throw new CustomError.BadRequestError('A reason is required to flag a board.');
   }
 
   const board = await Board.findOne({ slug: req.params.slug, isActive: true });
+  if (!board) throw new CustomError.NotFoundError('Board not found.');
 
-  if (!board) {
-    throw new CustomError.NotFoundError('Board not found.');
-  }
-
-  // Only the designated recipient can flag it
   if (!board.receipent || board.receipent.toString() !== userId.toString()) {
     throw new CustomError.ForbiddenError('Only the designated recipient can flag this board.');
   }
@@ -307,8 +304,8 @@ const flagBoard = async (req, res) => {
     throw new CustomError.BadRequestError('This board has already been flagged.');
   }
 
-  board.receipentFlagged = true;
-  board.receiprentFlagReason = reason.trim();
+  board.receipentFlagged      = true;
+  board.receiprentFlagReason  = reason.trim();
   await board.save();
 
   res.status(StatusCodes.OK).json({ message: 'Board flagged successfully.' });
@@ -317,12 +314,9 @@ const flagBoard = async (req, res) => {
 
 const unflagBoard = async (req, res) => {
   const userId = req.user.userId;
+  const board  = await Board.findOne({ slug: req.params.slug, isActive: true });
 
-  const board = await Board.findOne({ slug: req.params.slug, isActive: true });
-
-  if (!board) {
-    throw new CustomError.NotFoundError('Board not found.');
-  }
+  if (!board) throw new CustomError.NotFoundError('Board not found.');
 
   if (!board.receipent || board.receipent.toString() !== userId.toString()) {
     throw new CustomError.ForbiddenError('Only the designated recipient can unflag this board.');
@@ -332,12 +326,13 @@ const unflagBoard = async (req, res) => {
     throw new CustomError.BadRequestError('This board is not flagged.');
   }
 
-  board.receipentFlagged = false;
+  board.receipentFlagged     = false;
   board.receiprentFlagReason = null;
   await board.save();
 
   res.status(StatusCodes.OK).json({ message: 'Flag removed.' });
 };
+
 
 module.exports = {
   createBoard,

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const CustomError = require('../error');
 const Board = require('./boardModel');
 const User  = require('./userModel');
 
@@ -60,45 +61,52 @@ const MessageSchema = new Schema({
     default: false,
   },
 
+  canvasData: {
+    type: mongoose.Schema.Types.Mixed,  
+    default: null,
+  },
+
 }, { timestamps: true });
 
 
-MessageSchema.pre('validate', function (next) {
+MessageSchema.pre('validate', function () {
   if (this.context === 'board' && !this.board) {
-    return next(new Error('board is required for board messages.'));
+    throw new CustomError.BadRequestError('board is required for board messages.');
   }
   if (this.context === 'direct' && !this.recipient) {
-    return next(new Error('recipient is required for direct messages.'));
+    throw new CustomError.BadRequestError('recipient is required for direct messages.');
   }
   if (this.context === 'direct' && this.sender?.toString() === this.recipient?.toString()) {
-    return next(new Error('You cannot send a direct message to yourself.'));
+    throw new CustomError.BadRequestError('You cannot send a direct message to yourself.');
   }
-  next();
 });
 
-MessageSchema.index({ board: 1, createdAt: -1 });                         
-MessageSchema.index({ recipient: 1, sender: 1, createdAt: -1 });          
-MessageSchema.index({ recipient: 1, isRead: 1 });                          
+MessageSchema.index({ board: 1, createdAt: -1 });
+MessageSchema.index({ recipient: 1, sender: 1, createdAt: -1 });
+MessageSchema.index({ recipient: 1, isRead: 1 });
 
 
-MessageSchema.post('save', async function (doc) {
+async function recalcStatsForBoard(doc) {
   if (doc.context !== 'board' || !doc.board) return;
   try {
     const board = await Board.findById(doc.board).select('owner').lean();
     if (board?.owner) await User.recalculateStats(board.owner);
   } catch (err) {
-    console.error('Failed to recalc user stats after message save:', err.message);
+    console.error('Failed to recalc user stats after message change:', err.message);
   }
+}
+
+MessageSchema.post('save', async function (doc) {
+  await recalcStatsForBoard(doc);
 });
 
 MessageSchema.post('deleteOne', { document: true, query: false }, async function (doc) {
-  if (doc.context !== 'board' || !doc.board) return;
-  try {
-    const board = await Board.findById(doc.board).select('owner').lean();
-    if (board?.owner) await User.recalculateStats(board.owner);
-  } catch (err) {
-    console.error('Failed to recalc user stats after message delete:', err.message);
-  }
+  await recalcStatsForBoard(doc);
 });
+
+MessageSchema.post('findOneAndDelete', async function (doc) {
+  if (doc) await recalcStatsForBoard(doc);
+});
+
 
 module.exports = mongoose.model('Message', MessageSchema);

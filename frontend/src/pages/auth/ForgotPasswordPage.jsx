@@ -1,14 +1,31 @@
 import React from 'react'
 import styled from 'styled-components'
+import { useDispatch, useSelector } from 'react-redux'
+import { resetPassword, handleResetPasswordInput} from '../../slices/authSlice';
+import { ErrorNotificationPopup, SuccessNotificationPopup } from '../../helpers';
 import { Link } from 'react-router-dom';
 import { FcGoogle } from "react-icons/fc";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 import {URL} from '../../paths/url';
 
 const ForgotPasswordPage = () => {
-
+  const { 
+        resetPasswordEmail,
+        resetPasswordLoad,
+        resetPasswordError,
+        resetPasswordSent,
+        passwordResetMessage,
+    } = useSelector((state) => state.auth);
+    const dispatch = useDispatch();
+  
+    const handleSubmit = (e) => {
+        e.preventDefault()
+        dispatch(resetPassword({email: resetPasswordEmail }))
+    }
   return (
     <Wrapper>
+      <ErrorNotificationPopup trigger={resetPasswordError} message={passwordResetMessage || 'An error occured'} />
+      <SuccessNotificationPopup trigger={resetPasswordSent} message={passwordResetMessage} />
       <h1>Recover your password</h1>
       <p className='header_desc'>Enter the email you use in registering to recovery your password</p>
 
@@ -18,10 +35,17 @@ const ForgotPasswordPage = () => {
             <input type="email" 
             placeholder='Email' 
             name='email'
-            required />
+            required 
+            value={resetPasswordEmail}
+            onChange={(e) => dispatch(handleResetPasswordInput(e.target.value))}
+            />
           </label>
 
-          <button type="submit">Send Recovery Code</button>
+          <button type="submit" 
+          className={`${resetPasswordLoad ? 'btn_load' : ''}`}
+          onClick={(e) => handleSubmit(e)}
+          onSubmit={(e) => handleSubmit(e)}
+          >Send Recovery Code</button>
         </form>
       </div>
     </Wrapper>

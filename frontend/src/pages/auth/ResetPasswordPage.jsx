@@ -1,17 +1,39 @@
 import React, { useState } from 'react'
 import styled from 'styled-components'
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams} from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux'
+import { handleChangePasswordInputs, changePassword} from '../../slices/authSlice';
 import {PasswordResetSuccess} from '../../components/auth';
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
-import {URL} from '../../paths/url';
+import { ErrorNotificationPopup } from '../../helpers';
 
 const ResetPasswordPage = () => {
   const [showPassword, setShowPassword] = useState(false);
-//   const [showSuccess, setShowSuccess] = useState(true);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token");
+
+  const { 
+      changePasswordInputs: {
+        newPassword,
+        confirmPassword
+    },
+      changePasswordLoad,
+      changePasswordError,
+      changePasswordErrorMsg,
+      changePasswordSuccess
+    } = useSelector((state) => state.auth);
+    const dispatch = useDispatch();
+     
+    const handleSubmit = (e) => {
+      e.preventDefault()
+      dispatch(changePassword({newPassword, confirmPassword, token}))
+    }
+
 
   return (
     <Wrapper>
+       <ErrorNotificationPopup trigger={changePasswordError} message={changePasswordErrorMsg || 'An error occured'} />
       <h1>Enter New Password</h1>
       <p className='header_desc'>This is the password you would use to access your account from now</p>
 
@@ -25,6 +47,8 @@ const ResetPasswordPage = () => {
                 name='password'
                 className='password_input'
                 required 
+                value={newPassword}
+                onChange={(e) => dispatch(handleChangePasswordInputs({newPassword: e.target.value, confirmPassword}))}
               />
               <span className="eye_icon" onClick={() => setShowPassword(!showPassword)}>
                 {showPassword ? <AiOutlineEyeInvisible /> : <AiOutlineEye />}
@@ -40,6 +64,8 @@ const ResetPasswordPage = () => {
                 name='confirm_password'
                 className='password_input'
                 required 
+                value={confirmPassword}
+                onChange={(e) => dispatch(handleChangePasswordInputs({confirmPassword: e.target.value, newPassword}))}
               />
               <span className="eye_icon" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
                 {showConfirmPassword ? <AiOutlineEyeInvisible /> : <AiOutlineEye />}
@@ -47,11 +73,15 @@ const ResetPasswordPage = () => {
             </div>
           </label>
 
-          <button type="submit">Save Password</button>
+          <button type="submit" 
+          className={`${changePasswordLoad ? 'btn_load' : ''}`} 
+          onClick={(e) => handleSubmit(e)}
+          onSubmit={(e) => handleSubmit(e)}
+          >Save Password</button>
         </form>
       </div>
 
-      <PasswordResetSuccess isVisible={true} />
+      <PasswordResetSuccess isVisible={changePasswordSuccess} />
     </Wrapper>
   )
 }
