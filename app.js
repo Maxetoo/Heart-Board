@@ -120,6 +120,7 @@ const NotFoundMiddleware = require('./middlewares/notFoundRoute');
 app.use(NotFoundMiddleware);
 app.use(ErrorMiddleware);
 
+
 // Serve the frontend application for all non-API routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
