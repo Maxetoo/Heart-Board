@@ -1,5 +1,6 @@
-const express = require('express');
+const express    = require('express');
 const BoardRoute = express.Router();
+
 const {
   createBoard,
   getMyBoards,
@@ -11,19 +12,53 @@ const {
   discoverBoards,
   flagBoard,
   unflagBoard,
-} = require('../controllers/boardController')
-const { authentication } = require('../middlewares/authMiddleware');
+  getBoardLikes
+} = require('../controllers/boardController');
 
-// Board Routes
-BoardRoute.route('/').post(authentication, createBoard);
-BoardRoute.route('/').get(authentication, getMyBoards);
-BoardRoute.route('/discover').get(authentication, discoverBoards);
-BoardRoute.route('/:id').patch(authentication, updateBoard);
-BoardRoute.route('/:id').delete(authentication, deleteBoard);
-BoardRoute.route('/:slug').get(authentication, getBoardBySlug);
-BoardRoute.route('/:slug/flag').patch(authentication, flagBoard);
-BoardRoute.route('/:slug/unflag').patch(authentication, unflagBoard);
-BoardRoute.route('/:id/like').post(authentication, likeBoard);
-BoardRoute.route('/:id/share').post(authentication, shareBoard);
+const { authentication, checkUser} = require('../middlewares/authMiddleware');
+const { cache, TTL, keys } = require('../middlewares/cacheMiddleware');
+
+
+BoardRoute.post('/', authentication, createBoard);
+
+
+BoardRoute.get(
+  '/',
+  authentication,
+  cache(TTL.MY_BOARDS, req => {
+    // Normalise key order so ?view=tagged&page=1 and ?page=1&view=tagged hit the same key
+    const p = new URLSearchParams(req.query);
+    const sorted = new URLSearchParams([...p.entries()].sort());
+    return keys.myBoards(req.user.userId, sorted.toString());
+  }),
+  getMyBoards
+);
+
+// ── Discover feed — cache per sort/page params ────────────────────────────────
+BoardRoute.get(
+  '/discover',
+  checkUser,
+  cache(TTL.DISCOVER, req => keys.discover(new URLSearchParams(req.query).toString())),
+  discoverBoards
+);
+
+BoardRoute.route('/likes/me').get(authentication, getBoardLikes);
+
+
+BoardRoute.patch( '/:id',       authentication, updateBoard);
+BoardRoute.delete('/:id',       authentication, deleteBoard);
+BoardRoute.patch( '/:slug/flag',   authentication, flagBoard);
+BoardRoute.patch( '/:slug/unflag', authentication, unflagBoard);
+BoardRoute.post(  '/:id/like',     authentication, likeBoard);
+BoardRoute.post(  '/:id/share',    authentication, shareBoard);
+
+// ── Single board by slug — cache per slug ─────────────────────────────────────
+// MUST be last to avoid matching /:id or /:slug before the named routes above
+BoardRoute.get(
+  '/:slug',
+  checkUser,
+  cache(TTL.BOARD, req => keys.board(req.params.slug)),
+  getBoardBySlug
+);
 
 module.exports = BoardRoute;

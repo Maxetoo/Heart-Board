@@ -1,20 +1,9 @@
 import React from 'react'
 import styled from 'styled-components'
-import { BsCheckLg } from "react-icons/bs"
-import { BsBuildings, BsPerson } from "react-icons/bs"
+import { BsCheckLg, BsBuildings, BsPerson } from "react-icons/bs"
 
 const SelectAccountType = ({ selected, setSelected }) => {
   const options = [
-    {
-      id: 'enterprise',
-      label: 'Enterprise',
-      icon: <BsBuildings />,
-      features: [
-        'Manage multiple team members',
-        'Advanced analytics dashboard',
-        'Priority customer support',
-      ],
-    },
     {
       id: 'personal',
       label: 'Personal',
@@ -24,6 +13,16 @@ const SelectAccountType = ({ selected, setSelected }) => {
         'Simple and easy to use',
       ],
     },
+    {
+      id: 'enterprise',
+      label: 'Enterprise',
+      icon: <BsBuildings />,
+      disabled: true,
+      features: [
+        'Manage multiple team members',
+        'Shared board ownership across team'
+      ],
+    },
   ]
 
   return (
@@ -31,17 +30,22 @@ const SelectAccountType = ({ selected, setSelected }) => {
       {options.map((opt) => (
         <div
           key={opt.id}
-          className={`option_card ${selected === opt.id ? 'active' : ''}`}
-          onClick={() => setSelected(opt.id)}
+          className={`option_card ${selected === opt.id ? 'active' : ''} ${opt.disabled ? 'disabled' : ''}`}
+          onClick={() => !opt.disabled && setSelected(opt.id)}
         >
           <div className="option_header">
-            <div className={`icon_circle ${selected === opt.id ? 'active' : ''}`}>
+            <div className={`icon_circle ${selected === opt.id ? 'active' : ''} ${opt.disabled ? 'disabled' : ''}`}>
               {opt.icon}
             </div>
             <span className="option_label">{opt.label}</span>
-            <div className={`radio ${selected === opt.id ? 'active' : ''}`}>
-              {selected === opt.id && <div className="radio_dot" />}
-            </div>
+            {opt.disabled
+              ? <ComingSoon>Coming soon</ComingSoon>
+              : (
+                <div className={`radio ${selected === opt.id ? 'active' : ''}`}>
+                  {selected === opt.id && <div className="radio_dot" />}
+                </div>
+              )
+            }
           </div>
 
           <ul className="feature_list">
@@ -58,6 +62,17 @@ const SelectAccountType = ({ selected, setSelected }) => {
   )
 }
 
+const ComingSoon = styled.span`
+  font-size: 0.7em;
+  font-weight: 600;
+  color: #9CA3AF;
+  background: #F3F4F6;
+  padding: 3px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+  flex-shrink: 0;
+`
+
 const Wrapper = styled.div`
   display: flex;
   flex-direction: column;
@@ -68,16 +83,22 @@ const Wrapper = styled.div`
     padding: 1rem 1.2rem;
     cursor: pointer;
     background: #FAFAFA;
+    border: solid 0.5px transparent;
     transition: border-color 0.2s;
 
     &.active {
-      border: solid 0.5px;
       border-color: var(--primary-color);
       background: rgba(var(--primary-rgb, 248, 113, 113), 0.04);
     }
 
-    &:hover {
+    &:hover:not(.disabled) {
       border-color: var(--primary-color);
+    }
+
+    &.disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      background: #F9FAFB;
     }
   }
 
@@ -104,6 +125,11 @@ const Wrapper = styled.div`
     &.active {
       background: var(--primary-color);
       color: #fff;
+    }
+
+    &.disabled {
+      background: #F3F4F6;
+      color: #D1D5DB;
     }
   }
 
@@ -154,7 +180,6 @@ const Wrapper = styled.div`
     color: var(--light-text-color);
 
     .check {
-      /* color: var(--primary-color); */
       font-size: 0.8em;
       flex-shrink: 0;
     }

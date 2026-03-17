@@ -1,3 +1,119 @@
+// import React from 'react'
+// import styled from 'styled-components'
+// import { useNavigate } from 'react-router-dom'
+// import { BsX } from 'react-icons/bs'
+// import useFonts from '../../hooks/UseFonts'
+// import PostCreationComponent from '../../components/message/PostCreationComponent'
+
+// const PostMessagePage = () => {
+//   const navigate = useNavigate()
+//   useFonts() 
+
+//   return (
+//     <Wrapper>
+//       <div className="page_header">
+//         <button className="close_btn" onClick={() => navigate(-1)}><BsX /></button>
+//         <h2 className="page_title">Board your appreciation</h2>
+//         {/* <div className="tier_badge">Free Tier</div> */}
+//       </div>
+
+//       <div className="page_body">
+//         <div className="setup_outline">
+//           <PostCreationComponent type="board" />
+//         </div>
+//       </div>
+//     </Wrapper>
+//   )
+// }
+
+// const Wrapper = styled.div`
+//   width: 100vw;
+//   min-height: 100vh;
+//   display: flex;
+//   flex-direction: column;
+//   background: var(--bg-color, #F7F5F0);
+
+//   .page_header {
+//     position: sticky;
+//     top: 0;
+//     z-index: 10;
+//     width: 100%;
+//     height: 64px;
+//     display: flex;
+//     align-items: center;
+//     justify-content: space-between;
+//     padding: 0 1.5rem;
+//     background: var(--bg-color, #F7F5F0);
+//     border-bottom: 1px solid rgba(0,0,0,0.06);
+//     box-sizing: border-box;
+//   }
+
+//   .close_btn {
+//     width: 36px;
+//     height: 36px;
+//     border-radius: 50%;
+//     border: 1.5px solid #ECEFF3;
+//     background: transparent;
+//     display: flex;
+//     align-items: center;
+//     justify-content: center;
+//     font-size: 1.3em;
+//     color: var(--text-color, #111);
+//     cursor: pointer;
+//     transition: border-color 0.2s, color 0.2s;
+//     &:hover { border-color: var(--primary-color, #EF5A42); color: var(--primary-color, #EF5A42); }
+//   }
+
+//   .page_title {
+//     font-size: 1em;
+//     font-weight: 700;
+//     color: var(--text-color, #111);
+//     margin: 0;
+//     position: absolute;
+//     left: 50%;
+//     transform: translateX(-50%);
+//   }
+
+//   .tier_badge {
+//     padding: 0.35rem 1rem;
+//     border-radius: 99px;
+//     border: 1.5px solid #ECEFF3;
+//     background: #fff;
+//     font-size: 0.85em;
+//     font-weight: 500;
+//     color: var(--text-color, #111);
+//     white-space: nowrap;
+//   }
+
+//   .page_body {
+//     flex: 1;
+//     display: flex;
+//     flex-direction: column;
+//     align-items: center;
+//     padding: 2rem 1rem 4rem;
+//     overflow-y: auto;
+//   }
+
+//   .setup_outline {
+//     width: 100%;
+//     max-width: 480px;
+//     background: #fff;
+//     border-radius: 16px;
+//     display: flex;
+//     flex-direction: column;
+//     padding: 1.5rem;
+//     gap: 1rem;
+//     box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+//   }
+
+//   @media only screen and (min-width: 768px) {
+//     .setup_outline { padding: 2rem; }
+//     .page_body { justify-content: center; }
+//   }
+// `
+
+// export default PostMessagePage
+
 // import React, { useState, useRef, useEffect } from 'react'
 // import styled from 'styled-components'
 // import {
@@ -5706,23 +5822,29 @@
 import React from 'react'
 import styled from 'styled-components'
 import { BsX } from 'react-icons/bs'
+import { useSearchParams, useNavigate} from 'react-router-dom'
 import useFonts from '../../hooks/UseFonts'
 import PostCreationComponent from '../../components/message/PostCreationComponent'
 
-const PostMessagePage = ({ onClose }) => {
+const PostMessagePage = () => {
+  const navigate = useNavigate()
   useFonts()
+  const [searchParams] = useSearchParams()
+  const mention = searchParams.get('mention') || null
 
   return (
     <Wrapper>
       <div className="page_header">
-        <button className="close_btn" onClick={onClose}><BsX /></button>
-        <h2 className="page_title">Board your appreciation</h2>
-        <div className="tier_badge">Free Tier</div>
+        <button className="close_btn" onClick={() => navigate(-1)}><BsX /></button>
+        <h2 className="page_title">
+          {mention ? `Appreciate @${mention}` : 'Board your appreciation'}
+        </h2>
+        {/* <div className="tier_badge">Free Tier</div> */}
       </div>
 
       <div className="page_body">
         <div className="setup_outline">
-          <PostCreationComponent type="board" />
+          <PostCreationComponent type="board" initialMention={mention} />
         </div>
       </div>
     </Wrapper>

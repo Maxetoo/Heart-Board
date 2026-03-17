@@ -4,6 +4,7 @@ const {StatusCodes} = require('http-status-codes');
 const Subscription = require('../models/subscription');
 const {createCookies} = require('../helpers/jwtHelper')
 const crypto = require('crypto');
+const emailSendingQueue = require('../events/emailSendingEvent');  
 
 
 
@@ -36,15 +37,29 @@ const register = async (req, res) => {
   // Create a free subscription for the new user
   await Subscription.create({ user: user._id });
 
-  // send verification email
-  //   TODO 
-
+  
     const token = {
         userId: user._id,
         role: user.role,
     };
 
-    createCookies(res, token);
+  createCookies(res, token);
+
+  // send verification email
+  const protocol = req.protocol; 
+  const host = req.get('host'); 
+
+  const verification_url = `${protocol}://${host}/verify-email?verificationToken=${verificationToken}`;
+
+  const emailDetails = {
+      email, 
+      verification_url
+  }
+    
+  await emailSendingQueue.add('send-verification-email', { 
+      funcName: 'resendVerificationEmail',
+      args: [emailDetails]
+  });
 
   res.status(StatusCodes.CREATED).json({
     message: 'Registration successful. Please check your email to verify your account.',
@@ -53,14 +68,14 @@ const register = async (req, res) => {
 
 
 const verifyEmail = async (req, res) => {
-  const { token } = req.query;
+  const { verificationToken } = req.query;
 
   const user = await User.findOne({
-    emailVerificationToken: token,
+    emailVerificationToken: verificationToken,
     emailVerificationExpiry: { $gt: Date.now() },
   });
 
-  if (!token || !user) {
+  if (!verificationToken || !user) {
     throw new CustomError.BadRequestError('Invalid or expired verification token.');
   }
 
@@ -91,14 +106,27 @@ const resendVerificationEmail = async (req, res) => {
   }
 
   const verificationToken = crypto.randomBytes(32).toString('hex');
-  const verificationExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+  const verificationExpiry = new Date(Date.now() + 1 * 60 * 60 * 1000);
 
   user.emailVerificationToken = verificationToken;
   user.emailVerificationExpiry = verificationExpiry;
   await user.save();
 
   // send verification email
-  //   TODO
+  const protocol = req.protocol; 
+  const host = req.get('host'); 
+
+  const verification_url = `${protocol}://${host}/?verificationToken=${verificationToken}`;
+
+  const emailDetails = {
+      email, 
+      verification_url
+    }
+    
+    await emailSendingQueue.add('send-verification-email', { 
+        funcName: 'resendVerificationEmail',
+        args: [emailDetails]
+    });
 
   res.status(StatusCodes.OK).json({ message: 'If that email exists, a verification email has been sent.' });
 }
@@ -223,8 +251,21 @@ const forgotPassword = async (req, res) => {
 
   await user.save();
 
-  // email the reset link to the user
-  //   await sendPasswordResetEmail(user.email, resetToken);
+  // send verification email
+  const protocol = req.protocol; 
+  const host = req.get('host'); 
+
+  const reset_url = `${protocol}://${host}/reset-password?token=${resetToken}`;
+
+  const resetDetails = {
+        email, 
+        reset_url
+    }
+    
+    await emailSendingQueue.add('send-reset-password-email', { 
+        funcName: 'resetPasswordEmail',
+        args: [resetDetails]
+    });
 
   res.status(StatusCodes.OK).json({ message: 'If that email exists, a reset link has been sent.' });
 };

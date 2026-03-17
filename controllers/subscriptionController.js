@@ -1,71 +1,94 @@
 const Subscription = require('../models/subscription');
-const User = require('../models/userModel');
-const {stripe, STRIPE_PRICE_IDS} = require('../configs/stripeConfig')
-const CustomError = require('../error');
-const {StatusCodes} = require('http-status-codes');
+const User         = require('../models/userModel');
+const CustomError  = require('../error');
+const { StatusCodes } = require('http-status-codes');
+const {
+  getSubscriberInfo,
+  getActiveEntitlements,
+  verifyWebhookSecret,
+  RC_ENTITLEMENTS,
+} = require('../configs/revenueCatConfig');
+const { invalidate, keys } = require('../middlewares/cacheMiddleware');
 
 
-
-// get my subs 
 const getMySubscription = async (req, res) => {
   const userId = req.user.userId;
   const subscription = await Subscription.findOne({ user: userId });
-
-  if (!subscription) {
-    throw new CustomError.NotFoundError('Subscription not found.');
-  }
-
+  if (!subscription) throw new CustomError.NotFoundError('Subscription not found.');
   res.status(StatusCodes.OK).json({ subscription, limits: subscription.getLimits() });
 };
 
-// create checkout session for upgrading subscription
-const createCheckoutSession = async (req, res) => {
-  const { plan } = req.body;
+
+const verifyPurchase = async (req, res) => {
+  const { appUserId, plan } = req.body;
   const userId = req.user.userId;
 
+  if (!appUserId) throw new CustomError.BadRequestError('appUserId is required.');
   if (!['pro', 'enterprise'].includes(plan)) {
     throw new CustomError.BadRequestError('Invalid plan. Choose pro or enterprise.');
   }
 
-  const subscription = await Subscription.findOne({ user: userId});
-  if (subscription.plan === plan) {
-    throw new CustomError.BadRequestError(`You are already on the ${plan} plan.`);
+  // Fetch entitlements directly from RevenueCat REST API
+  let subscriber;
+  try {
+    subscriber = await getSubscriberInfo(appUserId);
+  } catch (err) {
+    throw new CustomError.BadRequestError('Could not verify purchase with RevenueCat.');
   }
 
-  const priceId = STRIPE_PRICE_IDS[plan];
-  if (!priceId) {
-    throw new CustomError.BadRequestError('Plan price not configured.');
-  }
- 
-  const user = await User.findById(userId);
+  const entitlements = subscriber.entitlements ?? {};
+  const planEntitlement = RC_ENTITLEMENTS.PRO;
+  const isActive = entitlements[planEntitlement]
+    && (
+      entitlements[planEntitlement].expires_date === null ||
+      new Date(entitlements[planEntitlement].expires_date) > new Date()
+    );
 
-  // Reuse existing Stripe customer or create a new one
-  let customerId = subscription.externalCustomerId;
-
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: user.email,
-      metadata: { userId: user._id.toString() },
-    });
-    customerId = customer.id;
-    subscription.externalCustomerId = customerId;
-    await subscription.save();
+  if (!isActive) {
+    throw new CustomError.BadRequestError('No active entitlement found for this plan. Please complete the purchase first.');
   }
 
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    metadata: { userId: user._id.toString(), plan },
-    success_url: `${process.env.ALLOWED_ORIGIN}/settings/subscription?success=true`,
-    cancel_url:  `${process.env.ALLOWED_ORIGIN}/settings/subscription?cancelled=true`,
+  // Find the active subscription product to get period end
+  const subscriptions = subscriber.subscriptions ?? {};
+  let currentPeriodEnd = null;
+  let productId = null;
+
+  for (const [prodId, sub] of Object.entries(subscriptions)) {
+    if (sub.expires_date && new Date(sub.expires_date) > new Date()) {
+      currentPeriodEnd = new Date(sub.expires_date);
+      productId = prodId;
+      break;
+    }
+  }
+
+  const subscription = await Subscription.findOneAndUpdate(
+    { user: userId },
+    {
+      plan,
+      status:                'active',
+      currentPeriodEnd,
+      revenueCatUserId:      appUserId,
+      revenueCatProductId:   productId,
+      revenueCatEntitlement: planEntitlement,
+    },
+    { new: true }
+  );
+
+  if (plan === 'enterprise') {
+    await User.findByIdAndUpdate(userId, { accountType: 'enterprise' });
+  }
+
+  // Bust profile cache so new limits are reflected immediately
+  await invalidate(keys.profile(userId));
+
+  res.status(StatusCodes.OK).json({
+    message: `Successfully activated ${plan} plan.`,
+    subscription,
+    limits: subscription.getLimits(),
   });
-
-  res.status(StatusCodes.OK).json({ url: session.url });
 };
 
 
-// cancel subscription 
 const cancelSubscription = async (req, res) => {
   const userId = req.user.userId;
   const subscription = await Subscription.findOne({ user: userId });
@@ -74,95 +97,108 @@ const cancelSubscription = async (req, res) => {
     throw new CustomError.BadRequestError('You are on the free plan — nothing to cancel.');
   }
 
-  if (!subscription.externalSubscriptionId) {
-    throw new CustomError.BadRequestError('No active subscription found to cancel.');
-  }
-
-  // Cancel at period end so user isn't cut off immediately
-  await stripe.subscriptions.update(subscription.externalSubscriptionId, {
-    cancel_at_period_end: true,
-  });
-
   subscription.status = 'cancelled';
   await subscription.save();
 
+  await invalidate(keys.profile(userId));
+
   res.status(StatusCodes.OK).json({
-    message: 'Subscription will cancel at the end of the current billing period.',
+    message: 'Subscription marked as cancelled. Access continues until the current period ends.',
     currentPeriodEnd: subscription.currentPeriodEnd,
   });
 };
 
 
-// stripe webhook 
-const stripeWebhook = async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
+const revenueCatWebhook = async (req, res) => {
+  const authHeader = req.headers['authorization'] ?? '';
 
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    throw new CustomError.BadRequestError(`Webhook signature error: ${err.message}`);
+  if (!verifyWebhookSecret(authHeader)) {
+    throw new CustomError.UnauthorizedError('Invalid webhook secret.');
   }
 
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = event.data.object;
-      const { userId, plan } = session.metadata;
+  const event = req.body.event;
+  if (!event) {
+    return res.status(StatusCodes.OK).json({ received: true });
+  }
 
-      const stripeSubscription = await stripe.subscriptions.retrieve(session.subscription);
+  const {
+    type,
+    app_user_id: appUserId,
+    product_id:  productId,
+    expiration_at_ms: expirationAtMs,
+    entitlement_ids:  entitlementIds,
+  } = event;
+
+  const subscription = await Subscription.findOne({ revenueCatUserId: appUserId });
+
+  switch (type) {
+    case 'INITIAL_PURCHASE':
+    case 'RENEWAL':
+    case 'PRODUCT_CHANGE': {
+      if (!subscription) break;
+
+      const isPro = entitlementIds?.includes(RC_ENTITLEMENTS.PRO);
+      const plan  = isPro ? 'pro' : 'free';
 
       await Subscription.findOneAndUpdate(
-        { user: userId },
+        { revenueCatUserId: appUserId },
         {
           plan,
-          status: 'active',
-          externalSubscriptionId: session.subscription,
-          currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
+          status:              'active',
+          revenueCatProductId: productId,
+          currentPeriodEnd:    expirationAtMs ? new Date(expirationAtMs) : null,
         }
       );
 
-      // Sync accountType on user for enterprise plan
-      if (plan === 'enterprise') {
-        await User.findByIdAndUpdate(userId, { accountType: 'enterprise' });
-      }
+      await invalidate(keys.profile(subscription.user.toString()));
       break;
     }
 
-    case 'invoice.payment_failed': {
-      const invoice = event.data.object;
+    case 'CANCELLATION': {
+      if (!subscription) break;
       await Subscription.findOneAndUpdate(
-        { externalSubscriptionId: invoice.subscription },
-        { status: 'expired' }
+        { revenueCatUserId: appUserId },
+        { status: 'cancelled' }
       );
+      await invalidate(keys.profile(subscription.user.toString()));
       break;
     }
 
-    case 'customer.subscription.deleted': {
-      const stripeSubscription = event.data.object;
+    case 'EXPIRATION': {
+      if (!subscription) break;
       await Subscription.findOneAndUpdate(
-        { externalSubscriptionId: stripeSubscription.id },
-        { plan: 'free', status: 'active', externalSubscriptionId: null, currentPeriodEnd: null }
+        { revenueCatUserId: appUserId },
+        {
+          plan:                'free',
+          status:              'active',
+          currentPeriodEnd:    null,
+          revenueCatProductId: null,
+          revenueCatEntitlement: null,
+        }
       );
+
+      // Revert enterprise account type
+      await User.findByIdAndUpdate(subscription.user, { accountType: 'personal' });
+      await invalidate(keys.profile(subscription.user.toString()));
       break;
     }
 
     default:
-      // Unhandled event type — safe to ignore
       break;
   }
 
   res.status(StatusCodes.OK).json({ received: true });
 };
 
-// admin: list all subscriptions 
+
 const listSubscriptions = async (req, res) => {
   const filter = {};
-  if (req.query.plan) filter.plan = req.query.plan;
+  if (req.query.plan)   filter.plan   = req.query.plan;
   if (req.query.status) filter.status = req.query.status;
 
-  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
   const limit = Math.min(100, parseInt(req.query.limit) || 20);
-  const skip = (page - 1) * limit;
+  const skip  = (page - 1) * limit;
 
   const [subscriptions, total] = await Promise.all([
     Subscription.find(filter)
@@ -179,10 +215,11 @@ const listSubscriptions = async (req, res) => {
   });
 };
 
+
 module.exports = {
   getMySubscription,
-  createCheckoutSession,
+  verifyPurchase,
   cancelSubscription,
-  stripeWebhook,
+  revenueCatWebhook,
   listSubscriptions,
 };

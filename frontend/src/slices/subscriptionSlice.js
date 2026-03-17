@@ -22,14 +22,14 @@ export const getMySubscription = createAsyncThunk(
     }
 )
 
-export const createCheckoutSession = createAsyncThunk(
-    'subscription/createCheckoutSession',
-    async (payload) => {
-        const { plan } = payload
+
+export const verifyPurchase = createAsyncThunk(
+    'subscription/verifyPurchase',
+    async ({ appUserId, plan }) => {
         try {
             const resp = await axios.post(
-                `${URL}/api/v1/subscription/checkout`,
-                { plan },
+                `${URL}/api/v1/subscription/verify`,
+                { appUserId, plan },
                 { withCredentials: true }
             )
             return { response: resp.data, status: 'success' }
@@ -43,6 +43,8 @@ export const createCheckoutSession = createAsyncThunk(
     }
 )
 
+
+// ── Cancel subscription ───────────────────────────────────────────────────────
 export const cancelSubscription = createAsyncThunk(
     'subscription/cancelSubscription',
     async () => {
@@ -63,7 +65,7 @@ export const cancelSubscription = createAsyncThunk(
     }
 )
 
-// Admin
+
 export const listSubscriptions = createAsyncThunk(
     'subscription/listSubscriptions',
     async (payload = {}) => {
@@ -90,30 +92,30 @@ export const listSubscriptions = createAsyncThunk(
 
 const initialState = {
     // my subscription
-    subscription: null,
-    subscriptionLimits: null,
-    subscriptionLoad: false,
-    subscriptionError: false,
-    subscriptionErrorMsg: '',
+    subscription:        null,
+    subscriptionLimits:  null,
+    subscriptionLoad:    false,
+    subscriptionError:   false,
+    subscriptionErrorMsg:'',
 
-    // checkout
-    checkoutUrl: '',
-    checkoutLoad: false,
-    checkoutError: false,
-    checkoutErrorMsg: '',
+    // verify purchase (replaces checkout)
+    verifyLoad:    false,
+    verifyError:   false,
+    verifyErrorMsg:'',
+    verifySuccess: false,
 
     // cancel
-    cancelLoad: false,
-    cancelError: false,
-    cancelErrorMsg: '',
+    cancelLoad:       false,
+    cancelError:      false,
+    cancelErrorMsg:   '',
     cancelSuccessMsg: '',
 
-    // admin: list subscriptions
-    subscriptions: [],
-    subscriptionsPagination: null,
-    listSubscriptionsLoad: false,
-    listSubscriptionsError: false,
-    listSubscriptionsErrorMsg: '',
+    // admin
+    subscriptions:            [],
+    subscriptionsPagination:  null,
+    listSubscriptionsLoad:    false,
+    listSubscriptionsError:   false,
+    listSubscriptionsErrorMsg:'',
 }
 
 
@@ -122,131 +124,121 @@ const subscriptionSlice = createSlice({
     initialState,
     reducers: {
         clearSubscriptionNotifications: (state) => {
-            state.subscriptionError = false
+            state.subscriptionError    = false
             state.subscriptionErrorMsg = ''
-            state.checkoutError = false
-            state.checkoutErrorMsg = ''
-            state.checkoutUrl = ''
-            state.cancelError = false
-            state.cancelErrorMsg = ''
-            state.cancelSuccessMsg = ''
-            state.listSubscriptionsError = false
+            state.verifyError          = false
+            state.verifyErrorMsg       = ''
+            state.verifySuccess        = false
+            state.cancelError          = false
+            state.cancelErrorMsg       = ''
+            state.cancelSuccessMsg     = ''
+            state.listSubscriptionsError    = false
             state.listSubscriptionsErrorMsg = ''
         },
     },
     extraReducers(builder) {
         builder
+
+            // getMySubscription
             .addCase(getMySubscription.pending, (state) => {
-                state.subscriptionLoad = true
-                state.subscriptionError = false
-                state.subscriptionErrorMsg = ''
+                state.subscriptionLoad    = true
+                state.subscriptionError   = false
+                state.subscriptionErrorMsg= ''
             })
             .addCase(getMySubscription.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.subscriptionLoad = false
-
                 if (code === 500) {
-                    state.subscriptionError = true
-                    state.subscriptionErrorMsg = `Bad connection`
+                    state.subscriptionError    = true
+                    state.subscriptionErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.subscriptionError = false
-                    state.subscription = response.subscription
+                    state.subscription       = response.subscription
                     state.subscriptionLimits = response.limits
                 } else {
-                    state.subscriptionError = true
-                    state.subscriptionErrorMsg = response.msg || response.message || 'Failed to fetch subscription'
+                    state.subscriptionError    = true
+                    state.subscriptionErrorMsg = response.message || 'Failed to fetch subscription'
                 }
             })
             .addCase(getMySubscription.rejected, (state) => {
-                state.subscriptionLoad = false
-                state.subscriptionError = true
-                state.subscriptionErrorMsg = 'Unable to fetch subscription'
+                state.subscriptionLoad    = false
+                state.subscriptionError   = true
+                state.subscriptionErrorMsg= 'Unable to fetch subscription'
             })
 
-            .addCase(createCheckoutSession.pending, (state) => {
-                state.checkoutLoad = true
-                state.checkoutError = false
-                state.checkoutErrorMsg = ''
-                state.checkoutUrl = ''
+            // verifyPurchase
+            .addCase(verifyPurchase.pending, (state) => {
+                state.verifyLoad    = true
+                state.verifyError   = false
+                state.verifyErrorMsg= ''
+                state.verifySuccess = false
             })
-            .addCase(createCheckoutSession.fulfilled, (state, action) => {
+            .addCase(verifyPurchase.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
-                state.checkoutLoad = false
-
+                state.verifyLoad = false
                 if (code === 500) {
-                    state.checkoutError = true
-                    state.checkoutErrorMsg = `Bad connection`
+                    state.verifyError    = true
+                    state.verifyErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.checkoutError = false
-                    state.checkoutUrl = response.url
-                    // redirect to Stripe checkout
-                    window.location.href = response.url
+                    state.verifySuccess      = true
+                    state.subscription       = response.subscription
+                    state.subscriptionLimits = response.limits
                 } else {
-                    state.checkoutError = true
-                    state.checkoutErrorMsg = response.msg || response.message || 'Failed to create checkout session'
+                    state.verifyError    = true
+                    state.verifyErrorMsg = response.message || 'Failed to verify purchase'
                 }
             })
-            .addCase(createCheckoutSession.rejected, (state) => {
-                state.checkoutLoad = false
-                state.checkoutError = true
-                state.checkoutErrorMsg = 'Unable to create checkout session'
+            .addCase(verifyPurchase.rejected, (state) => {
+                state.verifyLoad    = false
+                state.verifyError   = true
+                state.verifyErrorMsg= 'Unable to verify purchase'
             })
 
+            // cancelSubscription
             .addCase(cancelSubscription.pending, (state) => {
-                state.cancelLoad = true
-                state.cancelError = false
-                state.cancelErrorMsg = ''
+                state.cancelLoad       = true
+                state.cancelError      = false
+                state.cancelErrorMsg   = ''
                 state.cancelSuccessMsg = ''
             })
             .addCase(cancelSubscription.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.cancelLoad = false
-
                 if (code === 500) {
-                    state.cancelError = true
-                    state.cancelErrorMsg = `Bad connection`
+                    state.cancelError    = true
+                    state.cancelErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.cancelError = false
-                    state.cancelSuccessMsg = response.message || 'Subscription cancelled successfully'
-                    if (state.subscription) {
-                        state.subscription.status = 'cancelled'
-                    }
+                    state.cancelSuccessMsg = response.message || 'Subscription cancelled'
+                    if (state.subscription) state.subscription.status = 'cancelled'
                 } else {
-                    state.cancelError = true
-                    state.cancelErrorMsg = response.msg || response.message || 'Failed to cancel subscription'
+                    state.cancelError    = true
+                    state.cancelErrorMsg = response.message || 'Failed to cancel subscription'
                 }
             })
             .addCase(cancelSubscription.rejected, (state) => {
-                state.cancelLoad = false
-                state.cancelError = true
-                state.cancelErrorMsg = 'Unable to cancel subscription'
+                state.cancelLoad    = false
+                state.cancelError   = true
+                state.cancelErrorMsg= 'Unable to cancel subscription'
             })
 
+            // listSubscriptions (admin)
             .addCase(listSubscriptions.pending, (state) => {
-                state.listSubscriptionsLoad = true
+                state.listSubscriptionsLoad  = true
                 state.listSubscriptionsError = false
-                state.listSubscriptionsErrorMsg = ''
             })
             .addCase(listSubscriptions.fulfilled, (state, action) => {
-                const { status, code, response } = action.payload
+                const { status, response } = action.payload
                 state.listSubscriptionsLoad = false
-
-                if (code === 500) {
-                    state.listSubscriptionsError = true
-                    state.listSubscriptionsErrorMsg = `Bad connection`
-                } else if (status === 'success') {
-                    state.listSubscriptionsError = false
-                    state.subscriptions = response.subscriptions
+                if (status === 'success') {
+                    state.subscriptions           = response.subscriptions
                     state.subscriptionsPagination = response.pagination
                 } else {
-                    state.listSubscriptionsError = true
-                    state.listSubscriptionsErrorMsg = response.msg || response.message || 'Failed to fetch subscriptions'
+                    state.listSubscriptionsError    = true
+                    state.listSubscriptionsErrorMsg = response.message || 'Failed to fetch subscriptions'
                 }
             })
             .addCase(listSubscriptions.rejected, (state) => {
-                state.listSubscriptionsLoad = false
+                state.listSubscriptionsLoad  = false
                 state.listSubscriptionsError = true
-                state.listSubscriptionsErrorMsg = 'Unable to fetch subscriptions'
             })
     }
 })

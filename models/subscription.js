@@ -2,44 +2,49 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const PLAN_LIMITS = {
-  free:       { boardLimit: 20 },
-  pro:        { boardLimit: 15},
-  enterprise: { boardLimit: -1 },
+  free:       { boardLimit: 10,  messageLimit: 30  },
+  pro:        { boardLimit: -1,  messageLimit: -1  },
+  enterprise: { boardLimit: -1,  messageLimit: -1  },
 };
 
 const SubscriptionSchema = new Schema({
-  
-    user: {
+  user: {
     type: Schema.Types.ObjectId,
-    ref: 'User', 
+    ref: 'User',
     required: true,
     unique: true,
   },
 
   plan: {
     type: String,
-    enum: ['free', 'pro', 'enterprise'],
+    enum:    ['free', 'pro', 'enterprise'],
     default: 'free',
   },
 
   status: {
-    type: String,
-    enum: ['active', 'cancelled', 'expired'],
+    type:    String,
+    enum:    ['active', 'cancelled', 'expired'],
     default: 'active',
   },
 
-  currentPeriodEnd: {
-    type: Date,
-    default: null,
-  },
+  currentPeriodEnd: { type: Date,   default: null },
 
-  externalCustomerId:     { type: String, default: null },
-  externalSubscriptionId: { type: String, default: null },
+  // RevenueCat identifiers
+  revenueCatUserId:      { type: String, default: null },
+  revenueCatProductId:   { type: String, default: null },
+  revenueCatEntitlement: { type: String, default: null },
+
 }, { timestamps: true });
 
 
 SubscriptionSchema.methods.getLimits = function () {
   return PLAN_LIMITS[this.plan] ?? PLAN_LIMITS.free;
+};
+
+SubscriptionSchema.methods.isActive = function () {
+  if (this.status !== 'active') return false;
+  if (this.currentPeriodEnd && new Date() > new Date(this.currentPeriodEnd)) return false;
+  return true;
 };
 
 module.exports = mongoose.model('Subscription', SubscriptionSchema);

@@ -9,7 +9,7 @@ const MAX_AUDIO_BYTES = MAX_AUDIO_MB * 1024 * 1024
 
 
 
-const AudioTab = ({ onSend }) => { 
+const AudioTab = ({ onSend, initialAudioUrl, initialAudioName, hideSendBtn }) => { 
   const { checkReceipentUser, receipentUser} = useSelector(state => state.user) 
   const [recording, setRecording] = useState(false) 
   const [elapsed, setElapsed] = useState(0) 
@@ -36,6 +36,8 @@ const AudioTab = ({ onSend }) => {
     setAudioFile(blob)
     setAudioURL(URL.createObjectURL(blob))
     setUploadedName(name)
+    // In edit mode the send button is hidden, so notify parent immediately
+    if (hideSendBtn && onSend) onSend(blob, name)
   }
 
   const startRecording = async () => {
@@ -166,12 +168,23 @@ const AudioTab = ({ onSend }) => {
     setUploadedName(null)
     setElapsed(0)
     setLocalError('')
+    // Reset parent selection when user removes audio in edit mode
+    if (hideSendBtn && onSend) onSend(null, null)
   }
 
   const handleSend = () => {
     if (!audioFile || !onSend) return
     onSend(audioFile, uploadedName)
   }
+
+  // Seed with existing audio when provided (edit mode) — runs once on mount only
+  useEffect(() => {
+    if (initialAudioUrl) {
+      setAudioURL(initialAudioUrl)
+      setUploadedName(initialAudioName || 'Current audio')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => () => clearInterval(timerRef.current), [])
 
@@ -234,21 +247,23 @@ const AudioTab = ({ onSend }) => {
         </div>
       )}
 
-     <button
-      className={`send_btn ${
-        audioURL && !extracting && (receipentUser.length === 0 || checkReceipentUser)
-          ? 'ready'
-          : ''
-      }`}
-      disabled={
-        !audioURL ||
-        extracting ||
-        !(receipentUser.length === 0 || checkReceipentUser)
-      }
-      onClick={handleSend}
-    >
-      {extracting ? 'Processing…' : 'Preview'}
-    </button>
+     {!hideSendBtn && (
+      <button
+        className={`send_btn ${
+          audioURL && !extracting && (receipentUser.length === 0 || checkReceipentUser)
+            ? 'ready'
+            : ''
+        }`}
+        disabled={
+          !audioURL ||
+          extracting ||
+          !(receipentUser.length === 0 || checkReceipentUser)
+        }
+        onClick={handleSend}
+      >
+        {extracting ? 'Processing…' : 'Preview'}
+      </button>
+    )}
     </AudioWrapper>
   )
 }

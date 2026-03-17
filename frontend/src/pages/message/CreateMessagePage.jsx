@@ -20,10 +20,7 @@ import FrameModal          from '../../modals/FrameModal'
 import DraggableCanvasItem from '../../canvas/DraggableCanvasItem'
 import AudioTab            from '../../tab/AudioTab'
 
-// ─── CreateMessagePage ────────────────────────────────────────────────────────
-// Lets any user add a message to an existing public board.
-// Receives the board slug from the URL: /board/:slug/add-message
-// Flow: build canvas (or record audio) → capture → preview → postMessage
+
 
 const CreateMessagePage = () => {
   const { slug }   = useParams()
@@ -179,10 +176,9 @@ const CreateMessagePage = () => {
     setPendingAudioFile(null); setPendingAudioURL(null); setPendingAudioName(null)
   }
 
-  // ── success screen ────────────────────────────────────────────────────────────
   if (postSuccess) {
     return (
-      <Page>
+      <Wrapper>
         <SuccessCard>
           <BsCheckCircleFill className="success_icon" />
           <h2>Message Posted!</h2>
@@ -191,20 +187,21 @@ const CreateMessagePage = () => {
             View Board
           </button>
         </SuccessCard>
-      </Page>
+      </Wrapper>
     )
   }
 
   return (
-    <Page>
+    <Wrapper>
       {/* Header */}
-      <Header>
-        <button className="back_btn" onClick={() => navigate(-1)}><BsChevronLeft /></button>
-        <h1 className="page_title">Add Message</h1>
-        <div style={{ width: 36 }} /> {/* spacer */}
-      </Header>
+      <div className="page_header">
+        <button className="close_btn" onClick={() => navigate(-1)}><BsChevronLeft /></button>
+        <h2 className="page_title">Add Message</h2>
+        <div style={{ width: 36 }} />
+      </div>
 
-      <Body>
+      <div className="page_body">
+        <div className="setup_outline">
 
         {/* Tab switcher */}
         <div className="tab_switcher">
@@ -374,7 +371,8 @@ const CreateMessagePage = () => {
         {activeModal === 'bg'    && <BgModal    onClose={() => setActiveModal(null)} currentBg={canvasBg}       onConfirm={bg    => { setCanvasBg(bg);       setActiveModal(null) }} />}
         {activeModal === 'frame' && <FrameModal onClose={() => setActiveModal(null)} currentFrame={canvasFrame} onConfirm={frame => { setCanvasFrame(frame); setActiveModal(null) }} />}
 
-      </Body>
+        </div>
+      </div>
 
       {/* ── Preview overlay ── */}
       {showPreview && (
@@ -407,7 +405,7 @@ const CreateMessagePage = () => {
         </PreviewOverlay>
       )}
 
-    </Page>
+    </Wrapper>
   )
 }
 
@@ -453,29 +451,63 @@ const AudioPreview = ({ audioURL, audioName }) => {
 
 // ─── Styled Components ────────────────────────────────────────────────────────
 
-const Page = styled.div`
-  min-height: 100vh; background: #F9FAFB; display: flex; flex-direction: column;
-`
+const Wrapper = styled.div`
+  width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color, #F7F5F0);
 
-const Header = styled.div`
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 1rem 1.25rem; background: #fff; border-bottom: 1px solid #ECEFF3;
-
-  .back_btn {
-    width: 36px; height: 36px; border-radius: 50%;
-    border: 1.5px solid #ECEFF3; background: transparent; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1em; color: var(--text-color, #111);
-    &:hover { border-color: var(--primary-color, #EF5A42); }
+  .page_header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    width: 100%;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    background: var(--bg-color, #F7F5F0);
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    box-sizing: border-box;
   }
-  .page_title { font-size: 1em; font-weight: 700; margin: 0; color: var(--text-color, #111); }
-`
 
-const Body = styled.div`
-  flex: 1; padding: 1.25rem;
-  display: flex; flex-direction: column; gap: 1rem;
-  max-width: 560px; width: 100%; margin: 0 auto; box-sizing: border-box;
+  .close_btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1.5px solid #ECEFF3; background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3em; color: var(--text-color, #111); cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    &:hover { border-color: var(--primary-color, #EF5A42); color: var(--primary-color, #EF5A42); }
+  }
+
+  .page_title {
+    font-size: 1.1em; font-weight: 700; color: var(--text-color, #111);
+    margin: 0;
+    position: absolute; left: 50%; transform: translateX(-50%);
+  }
+
+  .page_body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 4rem;
+    overflow-y: auto;
+  }
+
+  .setup_outline {
+    width: 100%;
+    max-width: 480px;
+    background: #fff;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    gap: 1rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+  }
 
   .tab_switcher {
     display: flex; background: #F3F4F6; border-radius: 99px; padding: 4px; gap: 2px;
@@ -524,6 +556,11 @@ const Body = styled.div`
     background: var(--primary-color, #EF5A42); color: #fff; font-size: 1em; font-weight: 600;
     cursor: not-allowed; opacity: 0.4; transition: opacity 0.2s;
     &.ready { opacity: 1; cursor: pointer; &:hover { opacity: 0.88; } }
+  }
+
+  @media only screen and (min-width: 768px) {
+    .setup_outline { padding: 2rem; }
+    .page_body { justify-content: center; }
   }
 `
 

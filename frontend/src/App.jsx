@@ -3,15 +3,19 @@ import {
   Route,
   Routes,
 } from 'react-router-dom'
+import RequireProfileSetup from './components/RequireProfileSetup'
+import NavigationHelper from './helpers/NavigationHelper'
 import { Toaster } from 'react-hot-toast';
 import {getMyProfile} from './slices/userSlice';
 import { useDispatch, useSelector } from 'react-redux'
-import { updateProfileStatus } from './slices/authSlice';
-import { ErrorPage, LoginPage, SignupPage, ForgotPasswordPage, RecoveryPasswordPage, ResetPasswordPage, AccountSetupPage, 
+import {EmailVerificationBanner} from './components/auth';
+import { updateProfileStatus} from './slices/authSlice';
+import { ErrorPage, LoginPage, SignupPage, ForgotPasswordPage, ResendVerificationLinkPage, ResetPasswordPage, AccountSetupPage, 
   HomePage, PostMessagePage, 
   CreateMessagePage,
     EditBoardPage,
-    EditMessagePage
+    EditMessagePage, ProfilePage,
+    UserProfilePage, SingleBoardPage, VerifyEmailPage
 } from './pages'
 import styled from 'styled-components'
 
@@ -38,6 +42,8 @@ const App = () => {
   return (
       <Wrapper>
         <Toaster position="top-center" reverseOrder={false} />
+      <NavigationHelper>
+      <EmailVerificationBanner/>
       <Routes>
 
       <Route path="/" element={
@@ -46,6 +52,10 @@ const App = () => {
 
       <Route path="/create" element={
         <PostMessagePage />
+      } />
+
+      <Route path="/profile" element={
+        <ProfilePage />
       } />
 
       
@@ -58,20 +68,29 @@ const App = () => {
       <Route path="/forgot-password" element={
         <ForgotPasswordPage />
       } />
-      <Route path="/recovery-password" element={
-        <RecoveryPasswordPage />
+      <Route path="/confirm-account" element={
+        <ResendVerificationLinkPage />
       } />
       <Route path="/reset-password" element={
         <ResetPasswordPage />
       } />
       <Route path="/account-setup" element={
-        <AccountSetupPage />
-      } />
+        <AccountSetupPage /> 
+      } /> 
+       <Route path="/verify-email" element={
+        <VerifyEmailPage /> 
+      } /> 
+
+      <Route path="/board/:slug" element={<SingleBoardPage />} />
+
+      <Route path="/profile/:username" element={
+        <UserProfilePage /> 
+      } /> 
 
       <Route path="/board/:slug/add-message" element={
         <CreateMessagePage />
-      } />
-      <Route path="/board/:slug/edit" element={
+      } /> 
+      <Route path="/board/:slug/edit" element={ 
         <EditBoardPage />
       } />
       <Route path="/message/:id/edit" element={
@@ -79,6 +98,7 @@ const App = () => {
       } />
       <Route path="*" element={<ErrorPage />} />
       </Routes>
+      </NavigationHelper>
     </Wrapper>
   )
 }

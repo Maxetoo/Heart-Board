@@ -2,13 +2,13 @@ const { Worker } = require('bullmq');
 const bullConnection = require('../configs/bullMqConfig');
 
 const {
-  
-
-} = require('../emails');
+  resetPasswordEmail,
+  resendVerificationEmail
+} = require('../email');
 
 const EMAIL_FUNCTIONS = {
-  
-
+  resetPasswordEmail,
+  resendVerificationEmail
 };
 
 const worker = new Worker(

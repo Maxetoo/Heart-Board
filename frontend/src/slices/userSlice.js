@@ -28,10 +28,7 @@ export const getMyProfile = createAsyncThunk(
     'user/getMyProfile',
     async () => {
         try {
-            const resp = await axios.get(
-                `${URL}/api/v1/user/me`,
-                { withCredentials: true }
-            )
+            const resp = await axios.get(`${URL}/api/v1/user/me`, { withCredentials: true })
             return { response: resp.data, status: 'success' }
         } catch (error) {
             return {
@@ -71,10 +68,7 @@ export const getPublicProfile = createAsyncThunk(
         try {
             const resp = await axios.get(
                 `${URL}/api/v1/user/profile/${username}`,
-                {
-                    params: { view },
-                    withCredentials: true,
-                }
+                { params: { view }, withCredentials: true }
             )
             return { response: resp.data, status: 'success' }
         } catch (error) {
@@ -127,7 +121,6 @@ export const deleteAccount = createAsyncThunk(
     }
 )
 
-
 export const listUsers = createAsyncThunk(
     'user/listUsers',
     async (payload = {}) => {
@@ -135,10 +128,7 @@ export const listUsers = createAsyncThunk(
         try {
             const resp = await axios.get(
                 `${URL}/api/v1/user`,
-                {
-                    params: { page, limit, search },
-                    withCredentials: true,
-                }
+                { params: { page, limit, search }, withCredentials: true }
             )
             return { response: resp.data, status: 'success' }
         } catch (error) {
@@ -172,60 +162,110 @@ export const updateUserRole = createAsyncThunk(
     }
 )
 
+export const likeProfile = createAsyncThunk(
+    'user/likeProfile',
+    async (userId) => {
+        try {
+            const resp = await axios.post(
+                `${URL}/api/v1/user/${userId}/like`,
+                {},
+                { withCredentials: true }
+            )
+            return { response: resp.data, status: 'success' }
+        } catch (error) {
+            return {
+                response: error.response?.data || { message: 'Network error occurred' },
+                status: 'error',
+                code: error.response?.status || 500,
+            }
+        }
+    }
+)
+
+export const getLikedProfiles = createAsyncThunk(
+    'user/getLikedProfiles',
+    async () => {
+        try {
+            const resp = await axios.get(
+                `${URL}/api/v1/user/likes/me`,
+                { withCredentials: true }
+            )
+            return { response: resp.data, status: 'success' }
+        } catch (error) {
+            return {
+                response: error.response?.data || { message: 'Network error occurred' },
+                status: 'error',
+                code: error.response?.status || 500,
+            }
+        }
+    }
+)
+
 
 const initialState = {
     // check username
-    usernameAvailable: null,
-    usernameCheckLoad: false,
-    usernameCheckMsg: '',
-    receipentUser: '',
-    checkReceipentUser: null,
+    usernameAvailable:   null,
+    usernameCheckLoad:   false,
+    usernameCheckMsg:    '',
+    receipentUser:       '',
+    checkReceipentUser:  null,
 
     // my profile
-    myProfile: null,
-    myProfileLoad: false,
-    myProfileError: false,
-    myProfileErrorMsg: '',
+    myProfile:           null,
+    myProfileLoad:       false,
+    myProfileError:      false,
+    myProfileErrorMsg:   '',
 
     // update profile
-    updateProfileLoad: false,
-    updateProfileError: false,
-    updateProfileErrorMsg: '',
+    updateProfileLoad:       false,
+    updateProfileError:      false,
+    updateProfileErrorMsg:   '',
     updateProfileSuccessMsg: '',
-    updateProfileSuccess: false,
+    updateProfileSuccess:    false,
 
     // public profile
-    publicProfile: null,
-    publicProfileBoards: [],
-    publicProfileView: 'owned',
-    publicProfileLoad: false,
-    publicProfileError: false,
-    publicProfileErrorMsg: '',
+    publicProfile:          null,
+    publicProfileBoards:    [],
+    publicProfileView:      'owned',
+    publicProfileLoad:      false,
+    publicProfileError:     false,
+    publicProfileErrorMsg:  '',
+    publicProfileNotFound:  false,
+    publicProfileSummary: {
+        mostLikedBoard: null,
+        activeBoard:    null,
+        topCurator:     null,
+    },
 
     // change password
-    changePasswordLoad: false,
-    changePasswordError: false,
-    changePasswordErrorMsg: '',
+    changePasswordLoad:       false,
+    changePasswordError:      false,
+    changePasswordErrorMsg:   '',
     changePasswordSuccessMsg: '',
-    changePasswordSuccess: false,
+    changePasswordSuccess:    false,
 
     // delete account
-    deleteAccountLoad: false,
-    deleteAccountError: false,
+    deleteAccountLoad:     false,
+    deleteAccountError:    false,
     deleteAccountErrorMsg: '',
 
     // admin: list users
-    users: [],
-    usersPagination: null,
-    listUsersLoad: false,
-    listUsersError: false,
-    listUsersErrorMsg: '',
+    users:            [],
+    usersPagination:  null,
+    listUsersLoad:    false,
+    listUsersError:   false,
+    listUsersErrorMsg:'',
 
     // admin: update user role
-    updateRoleLoad: false,
-    updateRoleError: false,
-    updateRoleErrorMsg: '',
+    updateRoleLoad:       false,
+    updateRoleError:      false,
+    updateRoleErrorMsg:   '',
     updateRoleSuccessMsg: '',
+
+    // profile likes
+    likedProfileIds:  [],
+    likeProfileLoad:  false,
+    likeProfileError: false,
 }
 
 
@@ -237,264 +277,315 @@ const userSlice = createSlice({
             state.receipentUser = action.payload
         },
         clearUserNotifications: (state) => {
-            state.updateProfileError = false
-            state.updateProfileErrorMsg = ''
+            state.updateProfileError      = false
+            state.updateProfileErrorMsg   = ''
             state.updateProfileSuccessMsg = ''
-            state.updateProfileSuccess = false
-            state.changePasswordError = false
-            state.changePasswordErrorMsg = ''
-            state.changePasswordSuccessMsg = ''
-            state.changePasswordSuccess = false
-            state.deleteAccountError = false
-            state.deleteAccountErrorMsg = ''
-            state.updateRoleError = false
-            state.updateRoleErrorMsg = ''
-            state.updateRoleSuccessMsg = ''
-            state.publicProfileError = false
-            state.publicProfileErrorMsg = ''
+            state.updateProfileSuccess    = false
+            state.changePasswordError     = false
+            state.changePasswordErrorMsg  = ''
+            state.changePasswordSuccessMsg= ''
+            state.changePasswordSuccess   = false
+            state.deleteAccountError      = false
+            state.deleteAccountErrorMsg   = ''
+            state.updateRoleError         = false
+            state.updateRoleErrorMsg      = ''
+            state.updateRoleSuccessMsg    = ''
+            state.publicProfileError      = false
+            state.publicProfileErrorMsg   = ''
         },
-
         clearPublicProfile: (state) => {
-            state.publicProfile = null
-            state.publicProfileBoards = []
-            state.publicProfileView = 'owned'
-            state.publicProfileError = false
+            state.publicProfile         = null
+            state.publicProfileBoards   = []
+            state.publicProfileView     = 'owned'
+            state.publicProfileError    = false
             state.publicProfileErrorMsg = ''
+            state.publicProfileNotFound = false
+            state.publicProfileSummary  = { mostLikedBoard: null, activeBoard: null, topCurator: null }
         },
-
         resetUsernameCheck: (state) => {
-            state.usernameAvailable = null
-            state.usernameCheckLoad = false
-            state.usernameCheckMsg = ''
+            state.usernameAvailable  = null
+            state.usernameCheckLoad  = false
+            state.usernameCheckMsg   = ''
             state.checkReceipentUser = null
         },
     },
     extraReducers(builder) {
         builder
+
+            // ── checkUsername ────────────────────────────────────────────────
             .addCase(checkUsername.pending, (state) => {
-                state.usernameCheckLoad = true
-                state.usernameAvailable = null
+                state.usernameCheckLoad  = true
+                state.usernameAvailable  = null
                 state.checkReceipentUser = null
-                state.usernameCheckMsg = ''
+                state.usernameCheckMsg   = ''
             })
             .addCase(checkUsername.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.usernameCheckLoad = false
-
                 if (code === 500) {
                     state.usernameAvailable = null
-                    state.usernameCheckMsg = 'Bad connection'
+                    state.usernameCheckMsg  = 'Bad connection'
                 } else if (status === 'success') {
-                    state.usernameAvailable = response.available
+                    state.usernameAvailable  = response.available
                     state.checkReceipentUser = !response.available
-                    state.usernameCheckMsg = response.message
+                    state.usernameCheckMsg   = response.message
                 } else {
                     state.usernameAvailable = null
-                    state.usernameCheckMsg = response.msg || response.message || 'Check failed'
+                    state.usernameCheckMsg  = response.msg || response.message || 'Check failed'
                 }
             })
             .addCase(checkUsername.rejected, (state) => {
-                state.usernameCheckLoad = false
-                state.usernameAvailable = null
+                state.usernameCheckLoad  = false
+                state.usernameAvailable  = null
                 state.checkReceipentUser = null
-                state.usernameCheckMsg = 'Unable to check username'
+                state.usernameCheckMsg   = 'Unable to check username'
             })
 
+            // ── getMyProfile ─────────────────────────────────────────────────
             .addCase(getMyProfile.pending, (state) => {
-                state.myProfileLoad = true
-                state.myProfileError = false
+                state.myProfileLoad     = true
+                state.myProfileError    = false
                 state.myProfileErrorMsg = ''
             })
             .addCase(getMyProfile.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.myProfileLoad = false
-
                 if (code === 500) {
-                    state.myProfileError = true
-                    state.myProfileErrorMsg = `Bad connection`
+                    state.myProfileError    = true
+                    state.myProfileErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
                     state.myProfileError = false
-                    state.myProfile = response.user
+                    state.myProfile      = response.user
                 } else {
-                    state.myProfileError = true
+                    state.myProfileError    = true
                     state.myProfileErrorMsg = response.msg || response.message || 'Failed to fetch profile'
                 }
             })
             .addCase(getMyProfile.rejected, (state) => {
-                state.myProfileLoad = false
-                state.myProfileError = true
+                state.myProfileLoad     = false
+                state.myProfileError    = true
                 state.myProfileErrorMsg = 'Unable to fetch profile'
             })
 
+            // ── updateProfile ────────────────────────────────────────────────
             .addCase(updateProfile.pending, (state) => {
-                state.updateProfileLoad = true
-                state.updateProfileError = false
-                state.updateProfileErrorMsg = ''
+                state.updateProfileLoad       = true
+                state.updateProfileError      = false
+                state.updateProfileErrorMsg   = ''
                 state.updateProfileSuccessMsg = ''
-                state.updateProfileSuccess = false
+                state.updateProfileSuccess    = false
             })
             .addCase(updateProfile.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.updateProfileLoad = false
-
                 if (code === 500) {
-                    state.updateProfileError = true
-                    state.updateProfileErrorMsg = `Bad connection`
+                    state.updateProfileError    = true
+                    state.updateProfileErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.updateProfileError = false
+                    state.updateProfileError      = false
                     state.updateProfileSuccessMsg = response.message || 'Profile updated successfully'
-                    state.updateProfileSuccess = true
-                    state.myProfile = response.user
+                    state.updateProfileSuccess    = true
+                    state.myProfile               = response.user
                 } else {
-                    state.updateProfileError = true
+                    state.updateProfileError    = true
                     state.updateProfileErrorMsg = response.msg || response.message || 'Failed to update profile'
                 }
             })
             .addCase(updateProfile.rejected, (state) => {
-                state.updateProfileLoad = false
-                state.updateProfileError = true
+                state.updateProfileLoad     = false
+                state.updateProfileError    = true
                 state.updateProfileErrorMsg = 'Unable to update profile'
             })
 
+            // ── getPublicProfile ─────────────────────────────────────────────
             .addCase(getPublicProfile.pending, (state) => {
-                state.publicProfileLoad = true
-                state.publicProfileError = false
+                state.publicProfileLoad     = true
+                state.publicProfileError    = false
                 state.publicProfileErrorMsg = ''
+                state.publicProfileNotFound = false
+                state.publicProfileBoards   = []
             })
             .addCase(getPublicProfile.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.publicProfileLoad = false
 
-                if (code === 500) {
-                    state.publicProfileError = true
-                    state.publicProfileErrorMsg = `Bad connection`
+                if (code === 404) {
+                    state.publicProfileNotFound = true
+                    state.publicProfileError    = false
+                    state.publicProfile         = null
+                    state.publicProfileBoards   = []
+                    state.publicProfileSummary  = { mostLikedBoard: null, activeBoard: null, topCurator: null }
+                } else if (code === 500) {
+                    state.publicProfileError    = true
+                    state.publicProfileErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.publicProfileError = false
-                    state.publicProfile = response.user
-                    state.publicProfileBoards = response.boards
-                    state.publicProfileView = response.view
+                    state.publicProfileError    = false
+                    state.publicProfileNotFound = false
+                    state.publicProfile         = response.user
+                    state.publicProfileBoards   = response.boards
+                    state.publicProfileView     = response.view
+                    state.publicProfileSummary  = {
+                        mostLikedBoard: response.summary?.mostLikedBoard ?? null,
+                        activeBoard:    response.summary?.activeBoard    ?? null,
+                        topCurator:     response.summary?.topCurator     ?? null,
+                    }
                 } else {
-                    state.publicProfileError = true
+                    state.publicProfileError    = true
                     state.publicProfileErrorMsg = response.msg || response.message || 'Failed to fetch profile'
                 }
             })
             .addCase(getPublicProfile.rejected, (state) => {
-                state.publicProfileLoad = false
-                state.publicProfileError = true
+                state.publicProfileLoad     = false
+                state.publicProfileError    = true
                 state.publicProfileErrorMsg = 'Unable to fetch profile'
             })
 
+            // ── changePassword ───────────────────────────────────────────────
             .addCase(changePassword.pending, (state) => {
-                state.changePasswordLoad = true
-                state.changePasswordError = false
-                state.changePasswordErrorMsg = ''
+                state.changePasswordLoad       = true
+                state.changePasswordError      = false
+                state.changePasswordErrorMsg   = ''
                 state.changePasswordSuccessMsg = ''
-                state.changePasswordSuccess = false
+                state.changePasswordSuccess    = false
             })
             .addCase(changePassword.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.changePasswordLoad = false
-
                 if (code === 500) {
-                    state.changePasswordError = true
-                    state.changePasswordErrorMsg = `Bad connection`
+                    state.changePasswordError    = true
+                    state.changePasswordErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.changePasswordError = false
+                    state.changePasswordError      = false
                     state.changePasswordSuccessMsg = response.message || 'Password changed successfully'
-                    state.changePasswordSuccess = true
+                    state.changePasswordSuccess    = true
                 } else {
-                    state.changePasswordError = true
+                    state.changePasswordError    = true
                     state.changePasswordErrorMsg = response.msg || response.message || 'Failed to change password'
                 }
             })
             .addCase(changePassword.rejected, (state) => {
-                state.changePasswordLoad = false
-                state.changePasswordError = true
+                state.changePasswordLoad     = false
+                state.changePasswordError    = true
                 state.changePasswordErrorMsg = 'Unable to change password'
             })
 
+            // ── deleteAccount ────────────────────────────────────────────────
             .addCase(deleteAccount.pending, (state) => {
-                state.deleteAccountLoad = true
-                state.deleteAccountError = false
+                state.deleteAccountLoad     = true
+                state.deleteAccountError    = false
                 state.deleteAccountErrorMsg = ''
             })
             .addCase(deleteAccount.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.deleteAccountLoad = false
-
                 if (code === 500) {
-                    state.deleteAccountError = true
-                    state.deleteAccountErrorMsg = `Bad connection`
+                    state.deleteAccountError    = true
+                    state.deleteAccountErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
                     state.deleteAccountError = false
                     window.location.href = '/'
                 } else {
-                    state.deleteAccountError = true
+                    state.deleteAccountError    = true
                     state.deleteAccountErrorMsg = response.msg || response.message || 'Failed to delete account'
                 }
             })
             .addCase(deleteAccount.rejected, (state) => {
-                state.deleteAccountLoad = false
-                state.deleteAccountError = true
+                state.deleteAccountLoad     = false
+                state.deleteAccountError    = true
                 state.deleteAccountErrorMsg = 'Unable to delete account'
             })
 
+            // ── listUsers ────────────────────────────────────────────────────
             .addCase(listUsers.pending, (state) => {
-                state.listUsersLoad = true
-                state.listUsersError = false
+                state.listUsersLoad     = true
+                state.listUsersError    = false
                 state.listUsersErrorMsg = ''
             })
             .addCase(listUsers.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.listUsersLoad = false
-
                 if (code === 500) {
-                    state.listUsersError = true
-                    state.listUsersErrorMsg = `Bad connection`
+                    state.listUsersError    = true
+                    state.listUsersErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.listUsersError = false
-                    state.users = response.users
+                    state.listUsersError  = false
+                    state.users           = response.users
                     state.usersPagination = response.pagination
                 } else {
-                    state.listUsersError = true
+                    state.listUsersError    = true
                     state.listUsersErrorMsg = response.msg || response.message || 'Failed to fetch users'
                 }
             })
             .addCase(listUsers.rejected, (state) => {
-                state.listUsersLoad = false
-                state.listUsersError = true
+                state.listUsersLoad     = false
+                state.listUsersError    = true
                 state.listUsersErrorMsg = 'Unable to fetch users'
             })
 
+            // ── updateUserRole ───────────────────────────────────────────────
             .addCase(updateUserRole.pending, (state) => {
-                state.updateRoleLoad = true
-                state.updateRoleError = false
-                state.updateRoleErrorMsg = ''
+                state.updateRoleLoad       = true
+                state.updateRoleError      = false
+                state.updateRoleErrorMsg   = ''
                 state.updateRoleSuccessMsg = ''
             })
             .addCase(updateUserRole.fulfilled, (state, action) => {
                 const { status, code, response } = action.payload
                 state.updateRoleLoad = false
-
                 if (code === 500) {
-                    state.updateRoleError = true
-                    state.updateRoleErrorMsg = `Bad connection`
+                    state.updateRoleError    = true
+                    state.updateRoleErrorMsg = 'Bad connection'
                 } else if (status === 'success') {
-                    state.updateRoleError = false
+                    state.updateRoleError      = false
                     state.updateRoleSuccessMsg = response.message || 'Role updated successfully'
-                    // patch the updated user in the list in-place
-                    state.users = state.users.map((u) =>
+                    state.users = state.users.map(u =>
                         u._id === response.user._id ? response.user : u
                     )
                 } else {
-                    state.updateRoleError = true
+                    state.updateRoleError    = true
                     state.updateRoleErrorMsg = response.msg || response.message || 'Failed to update role'
                 }
             })
             .addCase(updateUserRole.rejected, (state) => {
-                state.updateRoleLoad = false
-                state.updateRoleError = true
+                state.updateRoleLoad     = false
+                state.updateRoleError    = true
                 state.updateRoleErrorMsg = 'Unable to update role'
+            })
+
+            // ── likeProfile ──────────────────────────────────────────────────
+            .addCase(likeProfile.pending, (state) => {
+                state.likeProfileLoad  = true
+                state.likeProfileError = false
+            })
+            .addCase(likeProfile.fulfilled, (state, action) => {
+                const { status, response } = action.payload
+                state.likeProfileLoad = false
+                if (status === 'success') {
+                    state.likeProfileError = false
+                    if (state.publicProfile && response.likeCount !== undefined) {
+                        state.publicProfile = {
+                            ...state.publicProfile,
+                            stats: {
+                                ...state.publicProfile.stats,
+                                profileLikes: response.likeCount,
+                            },
+                        }
+                    }
+                } else {
+                    state.likeProfileError = true
+                }
+            })
+            .addCase(likeProfile.rejected, (state) => {
+                state.likeProfileLoad  = false
+                state.likeProfileError = true
+            })
+
+            // ── getLikedProfiles ─────────────────────────────────────────────
+            .addCase(getLikedProfiles.fulfilled, (state, action) => {
+                const { status, response } = action.payload
+                if (status === 'success') {
+                    state.likedProfileIds = response.likedProfileIds ?? []
+                }
             })
     }
 })
@@ -504,5 +595,5 @@ export const {
     clearUserNotifications,
     clearPublicProfile,
     resetUsernameCheck,
-    receipentInputChange
+    receipentInputChange,
 } = userSlice.actions
