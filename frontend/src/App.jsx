@@ -4,7 +4,7 @@ import {
   Routes,
 } from 'react-router-dom'
 import RequireProfileSetup from './components/RequireProfileSetup'
-import NavigationHelper from './helpers/NavigationHelper'
+import {NavigationHelper, ScrollToTop} from './helpers'
 import { Toaster } from 'react-hot-toast';
 import {getMyProfile} from './slices/userSlice';
 import { useDispatch, useSelector } from 'react-redux'
@@ -41,6 +41,7 @@ const App = () => {
   
   return (
       <Wrapper>
+      <ScrollToTop/>
         <Toaster position="top-center" reverseOrder={false} />
       <NavigationHelper>
       <EmailVerificationBanner/>

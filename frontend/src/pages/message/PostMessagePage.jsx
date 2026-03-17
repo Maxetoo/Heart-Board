@@ -5837,7 +5837,7 @@ const PostMessagePage = () => {
       <div className="page_header">
         <button className="close_btn" onClick={() => navigate(-1)}><BsX /></button>
         <h2 className="page_title">
-          {mention ? `Appreciate @${mention}` : 'Board your appreciation'}
+          {mention ? `Appreciate @${mention}` : 'Send message'}
         </h2>
         {/* <div className="tier_badge">Free Tier</div> */}
       </div>
