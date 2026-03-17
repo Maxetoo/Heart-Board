@@ -39,13 +39,20 @@ const limiter = rateLimit({
 // Apply rate limiter
 app.use(limiter);
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,  // disable default so we set it once below
+}));
 app.use(helmet.contentSecurityPolicy({
   directives: {
-    defaultSrc: ["'self'"],
-    imgSrc:     ["'self'", "data:", "https://res.cloudinary.com"],
-    mediaSrc:   ["'self'", "blob:", "https://res.cloudinary.com"],
-    connectSrc: ["'self'", "blob:", "https://api.cloudinary.com", "https://res.cloudinary.com"],
+    defaultSrc:  ["'self'"],
+    scriptSrc:   ["'self'", "'unsafe-inline'"],
+    styleSrc:    ["'self'", "'unsafe-inline'"],
+    imgSrc:      ["'self'", "data:", "blob:", "https://res.cloudinary.com"],
+    mediaSrc:    ["'self'", "blob:", "https://res.cloudinary.com"],
+    connectSrc:  ["'self'", "blob:", "https://api.cloudinary.com", "https://res.cloudinary.com"],
+    workerSrc:   ["'self'", "blob:"],
+    objectSrc:   ["'none'"],
+    frameAncestors: ["'none'"],
   },
 }));
 
