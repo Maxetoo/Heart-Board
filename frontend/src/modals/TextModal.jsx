@@ -317,13 +317,13 @@
 
 // export default TextModal
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
 import { BsX, BsCheck2, BsChevronDown, BsChevronUp } from 'react-icons/bs'
-import { ModalBackdrop, ModalBox, AccordionRow, ColorSection, OpacityRow } from '../sharedStyles/index'
+import { ModalBackdrop, ModalBox, AccordionRow, ColorSection, OpacityRow, RemoveBtn } from '../sharedStyles/index'
 import { FONTS, SWATCHES } from '../constants/messageConstant'
 
-const TextModal = ({ onClose, onConfirm, currentText }) => {
+const TextModal = ({ onClose, onConfirm, currentText, onRemove }) => {
   const [content, setContent]             = useState(currentText?.content || '')
   const [selectedFont, setSelectedFont]   = useState(currentText?.font || FONTS[1])
   const [selectedColor, setSelectedColor] = useState(currentText?.color || '#111111')
@@ -418,6 +418,8 @@ const TextModal = ({ onClose, onConfirm, currentText }) => {
         >
           Continue
         </button>
+
+        {onRemove && <RemoveBtn onClick={onRemove}>Remove Text</RemoveBtn>}
       </ModalBox>
     </ModalBackdrop>
   )

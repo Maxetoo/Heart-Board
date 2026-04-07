@@ -233,12 +233,9 @@ const authSlice = createSlice({
                 state.loginSuccessMsg = ''; state.loginErrorMsg = ''
             })
             .addCase(login.fulfilled, (state, action) => {
-                const { status, code, response } = action.payload
+                const { status, response } = action.payload
                 state.loginLoad = false
-                if (code === 500) {
-                    state.loginError = true
-                    state.loginErrorMsg = `Can't login due to network`
-                } else if (status === 'success') {
+                if (status === 'success') {
                     state.loginError = false
                     state.loginSuccessMsg = 'Login successful'
                     state.isAuthenticated = true
@@ -246,7 +243,7 @@ const authSlice = createSlice({
                     window.location.href = '/'
                 } else {
                     state.loginError = true
-                    state.loginErrorMsg = response.msg || response.message || 'Login failed'
+                    state.loginErrorMsg = response?.message || response?.msg || `Can't login. Please try again.`
                 }
             })
             .addCase(login.rejected, (state) => {

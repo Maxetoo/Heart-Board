@@ -12,15 +12,20 @@ import styled, { keyframes } from "styled-components";
 import { useDispatch, useSelector } from "react-redux";
 import axios from "axios";
 import {
-  BsSearch,
   BsSliders,
   BsMicFill,
   BsPlayFill,
   BsX,
   BsCheck2,
   BsHeart,
+  BsChevronLeft,
 } from "react-icons/bs";
-import Logo from "../../assets/logo.svg";
+import { PiShareFat } from "react-icons/pi";
+import { TfiWorld } from "react-icons/tfi";
+import { IoSearch } from "react-icons/io5";
+import Logo from "../../assets/Heart Board Logo.jpeg";
+import DefaultAvatar from "../../assets/Vector.svg";
+import { homeFirstMsgCache } from "../../utils/msgCache";
 import NavComponent from "../../components/global/NavComponent";
 import { discoverBoards } from "../../slices/boardSlice";
 import { URL } from "../../paths/url";
@@ -36,6 +41,11 @@ const BoardViewModal = lazy(() =>
 const shimmer = keyframes`
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
+`;
+
+const audioRipple = keyframes`
+  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
 `;
 
 const Page = styled.div`
@@ -56,16 +66,19 @@ const TopBar = styled.header`
 
 
   .logo {
-    flex-shrink: 0;
+    flex-shrink: 1;
     display: flex;
     align-items: center;
     height: 35px;
     width: 35px;
+    overflow: visible;
   }
 
-  img {
-    height: 100%;
+  .logo img {
     width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(2.5);
   }
 
 
@@ -91,7 +104,7 @@ const SearchBar = styled.div`
   padding: 0.7rem 1rem;
   .si {
     color: #aaa;
-    font-size: 0.9em;
+    font-size: 1.1em;
   }
   input {
     border: none;
@@ -141,66 +154,90 @@ const FilterDot = styled.span`
   border: 2px solid #fff;
 `;
 
-const Dropdown = styled.div`
+const SearchPage = styled.div`
   position: fixed;
-  z-index: 999999;
+  inset: 0;
+  z-index: 99999;
   background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  padding: 0.5rem 0 0.75rem;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  width: ${(p) => p.$width}px;
-  left: ${(p) => p.$left}px;
-  top: ${(p) => p.$top}px;
 `;
 
-const DropLabel = styled.p`
-  font-size: 0.75em;
-  font-weight: 700;
-  color: #9ca3af;
-  padding: 0.5rem 1.2rem 0.2rem;
-  margin: 0;
-  text-transform: uppercase;
-`;
-
-const DropRow = styled.div`
+const SearchPageHeader = styled.div`
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 1.2rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1.5px solid #f0f0f0;
+  flex-shrink: 0;
+`;
+
+const BackBtn = styled.button`
+  background: none;
+  border: none;
+  color: #333;
+  font-size: 1.2em;
   cursor: pointer;
-  transition: background 0.15s;
-  &:hover {
-    background: #f5f6f8;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  flex-shrink: 0;
+`;
+
+const SearchPageInput = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #f5f6f8;
+  border-radius: 99px;
+  padding: 0.65rem 1rem;
+  .si { color: #aaa; font-size: 1.1em; }
+  input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 0.9em;
+    color: #333;
+    width: 100%;
+    &::placeholder { color: #bbb; }
   }
 `;
 
-const DropAvatar = styled.div`
+const SearchPageBody = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0 2rem;
+`;
+
+const SectionLabel = styled.p`
+  font-size: 0.72em;
+  font-weight: 700;
+  color: #9ca3af;
+  padding: 0.75rem 1.25rem 0.3rem;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+`;
+
+const ResultRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.65rem 1.25rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  &:hover { background: #f9fafb; }
+`;
+
+const AvatarCircle = styled.div`
   width: 36px;
   height: 36px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-`;
-
-const AvatarFallback = styled.div`
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle at 50% 38%, #f5b8ad 32%, #fde8e5 32%);
-`;
-
-const DropThumb = styled.div`
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: #f0f0f0;
+  background: #f5f6f8;
   img {
     width: 100%;
     height: 100%;
@@ -209,15 +246,46 @@ const DropThumb = styled.div`
   }
 `;
 
-const DropBoardInfo = styled.div`
+const BoardThumb = styled.div`
+  width: 70px;
+  height: 70px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f0f0f0;
+  position: relative;
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+`;
+
+const AudioThumb = styled.div`
+  width: 70px;
+  height: 70px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: #FDDDD7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  .mic_icon {
+    font-size: 1.4em;
+    color: #C94F38;
+  }
+`;
+
+const ResultInfo = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 `;
 
-const DropName = styled.span`
-  font-size: 0.9em;
+const ResultName = styled.span`
+  font-size: 0.92em;
   font-weight: 600;
   color: #111;
   white-space: nowrap;
@@ -225,10 +293,10 @@ const DropName = styled.span`
   text-overflow: ellipsis;
 `;
 
-const DropMeta = styled.div`
+const ResultMeta = styled.div`
   display: flex;
-  gap: 0.75rem;
-  font-size: 0.75em;
+  gap: 0.85rem;
+  font-size: 0.76em;
   color: #9ca3af;
   align-items: center;
   span {
@@ -236,6 +304,13 @@ const DropMeta = styled.div`
     align-items: center;
     gap: 3px;
   }
+`;
+
+const EmptySearch = styled.p`
+  text-align: center;
+  color: #9ca3af;
+  padding: 3rem 1.5rem;
+  font-size: 0.92em;
 `;
 
 const Feed = styled.main`
@@ -251,10 +326,11 @@ const MasonryGrid = styled.div`
     columns: 3;
   }
   @media (max-width: 720px) {
-    columns: 2;
+    columns: 3;
   }
-  @media (max-width: 420px) {
-    columns: 1;
+  @media (max-width: 480px) {
+    columns: 2;
+    column-gap: 0.5rem;
   }
 `;
 
@@ -265,15 +341,11 @@ const GridItem = styled.div`
 
 const CardWrap = styled.div`
   position: relative;
-  border-radius: 16px;
+  border-radius: 30px;
   border: 2.5px solid transparent;
   overflow: hidden;
   width: 100%;
   cursor: pointer;
-  transition: box-shadow 0.2s;
-  &:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  }
   .card_img {
     width: 100%;
     display: block;
@@ -292,7 +364,6 @@ const CardWrap = styled.div`
       background: #fff;
       border-radius: 10px;
       padding: 1rem 1rem 3.5rem;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
       min-height: 100px;
     }
     .note_title {
@@ -342,29 +413,41 @@ const AudioOuter = styled.div`
   position: relative;
   width: 100%;
   aspect-ratio: 4/3;
-  background: #f0e0dc;
-  border-radius: 16px;
+  background: #FDDDD7;
+  border-radius: 30px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow 0.2s;
-  &:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  }
-  .mic_ring {
-    width: 56px;
-    height: 56px;
+
+  .ripple {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     border-radius: 50%;
-    background: rgba(220, 150, 135, 0.55);
+    background: rgba(201, 79, 56, 0.12);
+    transform: translate(-50%, -50%) scale(0);
+    animation: ${audioRipple} 3s ease-out infinite both;
+  }
+  .ripple:nth-child(1) { width: 160%; padding-top: 160%; animation-delay: 0s; }
+  .ripple:nth-child(2) { width: 110%; padding-top: 110%; animation-delay: 1s; }
+  .ripple:nth-child(3) { width: 60%; padding-top: 60%; animation-delay: 2s; }
+
+  .mic_center {
+    position: relative;
+    z-index: 2;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .mic_icon {
-    font-size: 1.25em;
-    color: #c94f38;
+    font-size: 1.1em;
+    color: #C94F38;
   }
 `;
 
@@ -480,7 +563,7 @@ const PlayIcon = () => (
 
 const EmblemCard = ({ msg, isMulti, onClick }) => (
   <CardWrap onClick={onClick}>
-    <CanvasRenderer canvasData={msg.canvasData} style={{ borderRadius: 0 }} />
+    <CanvasRenderer canvasData={msg.canvasData} />
     {isMulti && <PlayIcon />}
   </CardWrap>
 );
@@ -501,7 +584,10 @@ const StackCard = ({ msg, isMulti, onClick }) => {
 
 const AudioCard = ({ isMulti, onClick }) => (
   <AudioOuter onClick={onClick}>
-    <div className="mic_ring">
+    <span className="ripple" />
+    <span className="ripple" />
+    <span className="ripple" />
+    <div className="mic_center">
       <BsMicFill className="mic_icon" />
     </div>
     {isMulti && <PlayIcon />}
@@ -536,54 +622,95 @@ const BoardCard = ({ board, msg, onOpen }) => {
   const type = msg?.type;
   const open = () => onOpen(board);
   if (type === "emblem" && msg?.canvasData)
-    return <EmblemCard msg={msg} isMulti={isMulti} onClick={open} />;
+    return <EmblemCard msg={msg} isMulti={isMulti}  onClick={open} />;
   if (type === "audio") return <AudioCard isMulti={isMulti} onClick={open} />;
   if (msg?.content?.imageUrls?.[0])
     return <StackCard msg={msg} isMulti={isMulti} onClick={open} />;
   return <NoteCard board={board} onClick={open} />;
 };
 
+// CanvasRenderer uses fixed px sizes internally — render at natural width then scale down
+const CANVAS_NATURAL_W = 210;
+const CANVAS_DISPLAY_W = 70;
+
+const getCanvasScale = (aspectRatio) => {
+  // For landscape (4:3), natural height < display height — scale by height to cover
+  if (aspectRatio === "landscape") {
+    const naturalH = CANVAS_NATURAL_W * (3 / 4);
+    return CANVAS_DISPLAY_W / naturalH;
+  }
+  // Square and portrait: width-based scale fills/covers height
+  return CANVAS_DISPLAY_W / CANVAS_NATURAL_W;
+};
+
 const BoardDropThumb = ({ msg, coverImage }) => {
   if (msg?.type === "emblem" && msg?.canvasData) {
+    const scale = getCanvasScale(msg.canvasData.aspectRatio);
     return (
-      <DropThumb>
-        <CanvasRenderer
-          canvasData={msg.canvasData}
-          style={{ width: "100%", height: "100%", borderRadius: 0 }}
-        />
-      </DropThumb>
+      <BoardThumb>
+        <div style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: CANVAS_NATURAL_W,
+          transformOrigin: "center center",
+          transform: `translate(-50%, -50%) scale(${scale})`,
+          pointerEvents: "none",
+        }}>
+          <CanvasRenderer canvasData={msg.canvasData} />
+        </div>
+      </BoardThumb>
+    );
+  }
+  if (msg?.type === "audio") {
+    return (
+      <AudioThumb>
+        <BsMicFill className="mic_icon" />
+      </AudioThumb>
     );
   }
   const src = msg?.content?.imageUrls?.[0] || coverImage || null;
-  return <DropThumb>{src ? <img src={src} alt="" /> : null}</DropThumb>;
+  return <BoardThumb>{src ? <img src={src} alt="" /> : null}</BoardThumb>;
 };
+
 
 const HomePage = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { discoverBoards: boards = [], discoverLoad } = useSelector(
+  const { discoverBoards: boards = [], discoverLoad, boardCacheVersion } = useSelector(
     (s) => s.board,
   );
 
   const [query, setQuery] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
-  const [firstMessages, setFirstMessages] = useState({});
+  const [firstMessages, setFirstMessages] = useState(() => ({ ...homeFirstMsgCache }));
   const [activeBoard, setActiveBoard] = useState(null);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+  const [showSearch, setShowSearch] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [pendingEvents, setPendingEvents] = useState([]);
   const [activeEvents, setActiveEvents] = useState([]);
 
-  const fetchedSlugs = useRef(new Set());
-  const searchRef = useRef(null);
-  const dropdownRef = useRef(null);
+  const searchPageInputRef = useRef(null);
 
   // debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(query), 280);
     return () => clearTimeout(t);
   }, [query]);
+
+  // re-fetch boards when caches are invalidated (after edit/delete)
+  // resync from module cache — invalidateMsgCache already removed the edited board from it
+  useEffect(() => {
+    if (!boardCacheVersion) return;
+    setFirstMessages({ ...homeFirstMsgCache });
+    dispatch(
+      discoverBoards({
+        page: 1,
+        limit: 20,
+        event: activeEvents.length === 1 ? activeEvents[0] : undefined,
+      }),
+    );
+  }, [boardCacheVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // single effect — handles initial load AND filter changes
   useEffect(() => {
@@ -596,16 +723,11 @@ const HomePage = () => {
     );
   }, [dispatch, activeEvents]);
 
-  // fetch first message for each board card
+  // fetch first message for each board card — uses module-level cache
   useEffect(() => {
-    if (!boards.length) {
-      fetchedSlugs.current = new Set();
-      setFirstMessages({});
-      return;
-    }
-    const toFetch = boards.filter((b) => !fetchedSlugs.current.has(b.slug));
+    if (!boards.length) return;
+    const toFetch = boards.filter((b) => !(b._id in homeFirstMsgCache));
     if (!toFetch.length) return;
-    toFetch.forEach((b) => fetchedSlugs.current.add(b.slug));
     Promise.allSettled(
       toFetch.map((b) =>
         axios
@@ -622,40 +744,24 @@ const HomePage = () => {
     ).then((results) => {
       const updates = {};
       results.forEach((r) => {
-        if (r.status === "fulfilled")
+        if (r.status === "fulfilled") {
+          homeFirstMsgCache[r.value.boardId] = r.value.message;
           updates[r.value.boardId] = r.value.message;
+        }
       });
       setFirstMessages((prev) => ({ ...prev, ...updates }));
     });
   }, [boards]);
 
-  // dropdown position
+  // focus search input when search page opens
   useEffect(() => {
-    if (!debouncedQ.trim()) {
-      setShowDropdown(false);
-      return;
+    if (showSearch) {
+      setTimeout(() => searchPageInputRef.current?.focus(), 50);
+    } else {
+      setQuery("");
+      setDebouncedQ("");
     }
-    if (searchRef.current) {
-      const rect = searchRef.current.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.bottom + 6,
-        left: rect.left,
-        width: rect.width,
-      });
-    }
-    setShowDropdown(true);
-  }, [debouncedQ]);
-
-  // close dropdown on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      const inSearch = searchRef.current?.contains(e.target);
-      const inDropdown = dropdownRef.current?.contains(e.target);
-      if (!inSearch && !inDropdown) setShowDropdown(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [showSearch]);
 
   const handleToggleEvent = useCallback((id) => {
     if (id === null) {
@@ -721,27 +827,12 @@ const HomePage = () => {
           <img src={Logo} alt="logo" />
         </div>
 
-        <SearchWrap ref={searchRef}>
-          <SearchBar>
-            <BsSearch className="si" />
-            <input
-              value={query}
-              placeholder="Search name, location event..."
-              onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => {
-                if (debouncedQ.trim()) setShowDropdown(true);
-              }}
-            />
-            {query && (
-              <ClearBtn
-                onClick={() => {
-                  setQuery("");
-                  setShowDropdown(false);
-                }}
-              >
-                <BsX />
-              </ClearBtn>
-            )}
+        <SearchWrap>
+          <SearchBar onClick={() => setShowSearch(true)} style={{ cursor: "pointer" }}>
+            <IoSearch className="si" />
+            <span style={{ fontSize: "0.88em", color: "#bbb", userSelect: "none" }}>
+              Search name, event…
+            </span>
           </SearchBar>
         </SearchWrap>
 
@@ -797,82 +888,96 @@ const HomePage = () => {
 
       <NavComponent />
 
-      {activeBoard && (
-        <Suspense fallback={null}>
-          <BoardViewModal
-            board={activeBoard}
-            onClose={() => setActiveBoard(null)}
-          />
-        </Suspense>
-      )}
+      {activeBoard && (() => {
+        const idx = filtered.findIndex(b => b._id === activeBoard._id)
+        return (
+          <Suspense fallback={null}>
+            <BoardViewModal
+              board={activeBoard}
+              onClose={() => setActiveBoard(null)}
+              onPrev={idx > 0 ? () => setActiveBoard(filtered[idx - 1]) : undefined}
+              onNext={idx < filtered.length - 1 ? () => setActiveBoard(filtered[idx + 1]) : undefined}
+            />
+          </Suspense>
+        )
+      })()}
 
-      {/* Search dropdown */}
-      {showDropdown &&
-        (ownerResults.length > 0 || boardResults.length > 0) &&
+      {/* Full-page search */}
+      {showSearch &&
         createPortal(
-          <Dropdown
-            ref={dropdownRef}
-            $top={dropdownPos.top}
-            $left={dropdownPos.left}
-            $width={dropdownPos.width}
-          >
-            {ownerResults.length > 0 && (
-              <>
-                <DropLabel>Account</DropLabel>
-                {ownerResults.map((owner, i) => (
-                  <DropRow
-                    key={i}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setShowDropdown(false);
-                      setQuery("");
-                      navigate(`/profile/${owner.username}`);
-                    }}
-                  >
-                    <DropAvatar>
-                      {owner?.profileImage ? (
-                        <img src={owner.profileImage} alt="" />
-                      ) : (
-                        <AvatarFallback />
-                      )}
-                    </DropAvatar>
-                    <DropName>@{owner?.username}</DropName>
-                  </DropRow>
-                ))}
-              </>
-            )}
-            {boardResults.length > 0 && (
-              <>
-                <DropLabel>Board</DropLabel>
-                {boardResults.map((b) => (
-                  <DropRow
-                    key={b._id}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setShowDropdown(false);
-                      setQuery("");
-                      setActiveBoard(b);
-                    }}
-                  >
-                    <BoardDropThumb
-                      msg={firstMessages[b._id]}
-                      coverImage={b.coverImage}
-                    />
-                    <DropBoardInfo>
-                      <DropName>{b.title}</DropName>
-                      <DropMeta>
-                        <span>
-                          <BsHeart /> {b.stats?.likes ?? 0}
-                        </span>
-                        <span>⇄ {b.stats?.shares ?? 0}</span>
-                        <span>◎ {b.stats?.visits ?? 0}</span>
-                      </DropMeta>
-                    </DropBoardInfo>
-                  </DropRow>
-                ))}
-              </>
-            )}
-          </Dropdown>,
+          <SearchPage>
+            <SearchPageHeader>
+              <BackBtn onClick={() => setShowSearch(false)}>
+                <BsChevronLeft />
+              </BackBtn>
+              <SearchPageInput>
+                <IoSearch className="si" />
+                <input
+                  ref={searchPageInputRef}
+                  value={query}
+                  placeholder="Search boards, people…"
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                {query && (
+                  <ClearBtn onClick={() => { setQuery(""); setDebouncedQ(""); }}>
+                    <BsX />
+                  </ClearBtn>
+                )}
+              </SearchPageInput>
+            </SearchPageHeader>
+
+            <SearchPageBody>
+              {!debouncedQ.trim() ? null : ownerResults.length === 0 && boardResults.length === 0 ? (
+                <EmptySearch>No results for "{debouncedQ}"</EmptySearch>
+              ) : (
+                <>
+                  {ownerResults.length > 0 && (
+                    <>
+                      <SectionLabel>People</SectionLabel>
+                      {ownerResults.map((owner, i) => (
+                        <ResultRow
+                          key={i}
+                          onClick={() => {
+                            setShowSearch(false);
+                            navigate(`/profile/${owner.username}`);
+                          }}
+                        >
+                          <AvatarCircle>
+                            <img src={owner?.profileImage || DefaultAvatar} alt="" />
+                          </AvatarCircle>
+                          <ResultName>@{owner?.username}</ResultName>
+                        </ResultRow>
+                      ))}
+                    </>
+                  )}
+                  {boardResults.length > 0 && (
+                    <>
+                      <SectionLabel>Boards</SectionLabel>
+                      {boardResults.map((b) => (
+                        <ResultRow
+                          key={b._id}
+                          onClick={() => {
+                            setShowSearch(false);
+                            setActiveBoard(b);
+                          }}
+                        >
+                          <BoardDropThumb msg={firstMessages[b._id]} coverImage={b.coverImage} />
+                          <ResultInfo>
+                            <ResultName>{b.title}</ResultName>
+                            <ResultMeta>
+                              <span><BsHeart /> {b.stats?.likes ?? 0}</span>
+                              <span><PiShareFat /> {b.stats?.shares ?? 0}</span>
+                              <span><TfiWorld /> {b.stats?.visits ?? 0}</span>
+                            </ResultMeta>
+                          </ResultInfo>
+                        </ResultRow>
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+            </SearchPageBody>
+          </SearchPage>,
           document.body,
         )}
 

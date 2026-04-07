@@ -113,9 +113,10 @@ export const ColorSection = styled.div`
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: transform 0.15s, box-shadow 0.15s;
+    transition: transform 0.15s;
     &.active {
-      box-shadow: 0 0 0 2.5px #fff, 0 0 0 4.5px var(--primary-color, #EF5A42);
+      outline: 2.5px solid var(--primary-color, #EF5A42);
+      outline-offset: 2px;
     }
     &:hover:not(.active) { transform: scale(1.12); }
   }
@@ -149,7 +150,7 @@ export const SearchInput = styled.div`
   border: 1.5px solid transparent;
   transition: border-color 0.2s;
   &:focus-within { border-color: var(--primary-color, #EF5A42); background: #fff; }
-  .search_icon { color: #9CA3AF; font-size: 0.95em; flex-shrink: 0; }
+  .search_icon { color: #9CA3AF; font-size: 1.15em; flex-shrink: 0; }
   input {
     flex: 1;
     border: none;
@@ -201,7 +202,6 @@ export const OpacityRow = styled.div`
       border-radius: 50%;
       background: #F59E0B;
       cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
   }
 `
@@ -209,6 +209,7 @@ export const OpacityRow = styled.div`
 export const RemoveBtn = styled.button`
   width: 100%;
   height: 44px;
+  flex-shrink: 0;
   background: transparent;
   border: 1.5px solid #ECEFF3;
   border-radius: 22px;

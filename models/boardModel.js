@@ -296,6 +296,13 @@ const BoardSchema = new Schema({
     default: null,
   },
 
+  receipentHashtag: {
+    type:    String,
+    default: null,
+    trim:    true,
+    lowercase: true,
+  },
+
   receipentFlagged: {
     type:    Boolean,
     default: false,
@@ -363,6 +370,11 @@ const BoardSchema = new Schema({
   isActive: {
     type:    Boolean,
     default: true,
+  },
+
+  onlyMe: {
+    type:    Boolean,
+    default: false,
   },
 
 }, { timestamps: true });

@@ -22,6 +22,8 @@ const resolveBoard = async (slug, senderId) => {
   if (!board) throw new CustomError.NotFoundError('Board not found.');
   if (board.visibility === 'private' && board.owner.toString() !== senderId.toString())
     throw new CustomError.ForbiddenError('This board is private.');
+  if (board.onlyMe && board.owner.toString() !== senderId.toString())
+    throw new CustomError.ForbiddenError('Only the board creator can add messages to this board.');
   if (!board.canAcceptMessage())
     throw new CustomError.BadRequestError(
       `This board has reached its message limit (${board.getMessageLimit()}). The owner needs to upgrade this board.`
@@ -290,7 +292,7 @@ const getMessage = async (req, res) => {
 
 const deleteMessage = async (req, res) => {
   const userId  = req.user.userId;
-  const message = await Message.findById(req.params.id).populate('board', 'owner slug');
+  const message = await Message.findById(req.params.id).populate('board', 'owner slug receipent');
   if (!message) throw new CustomError.NotFoundError('Message not found.');
 
   const isSender = message.sender.toString() === userId.toString();
@@ -309,24 +311,41 @@ const deleteMessage = async (req, res) => {
   const isBoardOwner = message.board.owner.toString() === userId.toString();
   if (!isSender && !isBoardOwner) throw new CustomError.ForbiddenError('You cannot delete this message.');
 
+  const boardId    = message.board._id;
   const boardSlug  = message.board.slug;
   const boardOwner = message.board.owner.toString();
+  const receipentId = message.board.receipent?.toString() ?? null;
 
   await message.deleteOne();
-  await Board.findByIdAndUpdate(message.board._id, { $inc: { 'stats.messages': -1 } });
+
+  const remaining = await Message.countDocuments({ board: boardId, status: { $ne: 'rejected' } });
+
+  let boardDeleted = false;
+  if (remaining === 0) {
+    await Board.findByIdAndUpdate(boardId, { isActive: false, 'stats.messages': 0 });
+    boardDeleted = true;
+  } else {
+    await Board.findByIdAndUpdate(boardId, { $inc: { 'stats.messages': -1 } });
+  }
 
   const owner = await User.findById(boardOwner).select('username').lean();
 
-  await Promise.all([
+  const invalidations = [
     invalidate(keys.message(req.params.id)),
     invalidatePattern(`boardMsgs:${boardSlug}:*`),
     invalidate(keys.board(boardSlug)),
     invalidatePattern(`myMsgs:${userId}:*`),
     invalidate(keys.profile(boardOwner)),
     owner?.username ? invalidate(keys.publicProfile(owner.username.toLowerCase())) : Promise.resolve(),
-  ]);
+  ];
+  if (boardDeleted) {
+    invalidations.push(invalidatePattern(`myBoards:${boardOwner}:*`));
+    invalidations.push(invalidatePattern('discover:*'));
+    if (receipentId) invalidations.push(invalidatePattern(`myBoards:${receipentId}:*`));
+  }
+  await Promise.all(invalidations);
 
-  res.status(StatusCodes.OK).json({ message: 'Message deleted.' });
+  res.status(StatusCodes.OK).json({ message: 'Message deleted.', boardDeleted });
 };
 
 

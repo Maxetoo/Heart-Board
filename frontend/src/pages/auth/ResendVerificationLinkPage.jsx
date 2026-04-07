@@ -90,7 +90,6 @@ const Wrapper = styled.div`
     background: #fff; border-radius: 16px;
     display: flex; flex-direction: column; align-items: center;
     padding: 1.5rem; margin-top: 1.5rem;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
   }
 
   form {

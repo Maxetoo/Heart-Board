@@ -12,7 +12,8 @@ const {
   discoverBoards,
   flagBoard,
   unflagBoard,
-  getBoardLikes
+  getBoardLikes,
+  getBoardsByHashtag,
 } = require('../controllers/boardController');
 
 const { authentication, checkUser} = require('../middlewares/authMiddleware');
@@ -43,6 +44,9 @@ BoardRoute.get(
 );
 
 BoardRoute.route('/likes/me').get(authentication, getBoardLikes);
+
+// Hashtag profile — all boards tagged with #tag
+BoardRoute.get('/hashtag/:tag', checkUser, getBoardsByHashtag);
 
 
 BoardRoute.patch( '/:id',       authentication, updateBoard);

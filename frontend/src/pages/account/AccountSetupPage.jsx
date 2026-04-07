@@ -513,7 +513,6 @@ const Wrapper = styled.div`
     flex-direction: column;
     padding: 1.5rem;
     gap: 1rem;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
   }
 
   .progress_bar {

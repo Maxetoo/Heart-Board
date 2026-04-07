@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import styled from 'styled-components'
-import { BsX, BsSearch } from 'react-icons/bs'
+import { BsX } from 'react-icons/bs'
+import { IoSearch } from 'react-icons/io5'
 import { ModalBackdrop, ModalBox, SearchInput } from '../sharedStyles/index'
 import { BG_OPTIONS } from '../constants/messageConstant'
 
@@ -25,7 +26,7 @@ const BgModal = ({ onClose, onConfirm, currentBg }) => {
         </div>
 
         <SearchInput>
-          <BsSearch className="search_icon" />
+          <IoSearch className="search_icon" />
           <input
             placeholder="Search"
             value={search}

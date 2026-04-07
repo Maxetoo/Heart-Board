@@ -1743,6 +1743,13 @@ const initialState = {
   discoverLoad:       false,
   discoverError:      false,
   discoverPagination: null,
+  discoverLastEvent:  undefined, // tracks event param used in last successful fetch
+
+  // my boards last fetch params (for cache-busting on tab/filter change)
+  myBoardsLastParams: null,
+
+  // increments whenever board/message caches are invalidated — listeners re-fetch
+  boardCacheVersion: 0,
  
   // liked board ids (for persistent like state)
   likedBoardIds:      [],
@@ -1771,6 +1778,25 @@ export const createBoard = createAsyncThunk(
     }
   }
 )
+
+export const getHashtagBoards = createAsyncThunk(
+  'board/getHashtagBoards',
+  async ({ tag, page = 1, limit = 20 }) => {
+    try {
+      const resp = await axios.get(`${URL}/api/v1/board/hashtag/${encodeURIComponent(tag)}`, {
+        params: { page, limit },
+        withCredentials: true,
+      })
+      return { response: resp.data, status: 'success' }
+    } catch (error) {
+      return {
+        response: error.response?.data || { message: 'Network error occurred' },
+        status: 'error',
+        code: error.response?.status || 500,
+      }
+    }
+  }
+)
  
 export const getMyBoards = createAsyncThunk(
   'board/getMyBoards',
@@ -1789,6 +1815,16 @@ export const getMyBoards = createAsyncThunk(
         code: error.response?.status || 500,
       }
     }
+  },
+  {
+    condition: (params = {}, { getState }) => {
+      const { boards, myBoardsLastParams } = getState().board
+      if (!boards.length) return true
+      const view  = params?.view  ?? 'owned'
+      const event = params?.event ?? null
+      if (myBoardsLastParams?.view === view && myBoardsLastParams?.event === event) return false
+      return true
+    },
   }
 )
  
@@ -1902,6 +1938,15 @@ export const discoverBoards = createAsyncThunk(
         code: error.response?.status || 500,
       }
     }
+  },
+  {
+    condition: (params = {}, { getState }) => {
+      const { discoverBoards: dBoards, discoverLastEvent } = getState().board
+      if (!dBoards.length) return true
+      const event = params?.event ?? null
+      if (discoverLastEvent === event) return false
+      return true
+    },
   }
 )
  
@@ -1942,6 +1987,12 @@ const boardSlice = createSlice({
     },
     clearCreatedBoard: (state) => {
       state.createdBoard = null
+    },
+    // Invalidate board fetch caches so next visit to home/profile re-fetches
+    invalidateBoardCaches: (state) => {
+      state.myBoardsLastParams = null
+      state.discoverLastEvent  = undefined
+      state.boardCacheVersion  = (state.boardCacheVersion ?? 0) + 1
     },
     // Optimistic like toggle — called before server responds, reverted on failure
     optimisticToggleLike: (state, action) => {
@@ -1996,6 +2047,10 @@ const boardSlice = createSlice({
           state.boardsError      = false
           state.boards           = response.boards
           state.boardsPagination = response.pagination
+          state.myBoardsLastParams = {
+            view:  action.meta.arg?.view  ?? 'owned',
+            event: action.meta.arg?.event ?? null,
+          }
         } else {
           state.boardsError    = true
           state.boardsErrorMsg = response.msg || response.message || 'Failed to fetch boards'
@@ -2120,6 +2175,7 @@ const boardSlice = createSlice({
         if (status === 'success') {
           state.discoverBoards     = response.boards
           state.discoverPagination = response.pagination
+          state.discoverLastEvent  = action.meta.arg?.event ?? null
         } else {
           state.discoverError = true
         }
@@ -2147,4 +2203,4 @@ const boardSlice = createSlice({
 })
  
 export default boardSlice.reducer
-export const { clearBoardNotifications, clearCreatedBoard, optimisticToggleLike } = boardSlice.actions
+export const { clearBoardNotifications, clearCreatedBoard, optimisticToggleLike, invalidateBoardCaches } = boardSlice.actions

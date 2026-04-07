@@ -5,9 +5,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
-  BsSearch,
   BsSliders,
-  BsShare,
   BsGear,
   BsPencil,
   BsEye,
@@ -19,12 +17,16 @@ import {
   BsCheck2,
   BsHeart,
 } from "react-icons/bs";
+import { IoSearch } from "react-icons/io5";
+import { PiShareFat } from "react-icons/pi";
 import { getMyBoards } from "../../slices/boardSlice";
 import { updateProfile } from "../../slices/userSlice";
 import { URL } from "../../paths/url";
 import NavComponent from "../../components/global/NavComponent";
 import CanvasRenderer from "../../canvas/CanvasRenderer";
 import BoardViewModal from "../../components/message/BoardViewModel";
+import DefaultAvatar from "../../assets/Vector.svg";
+import { profileFirstMsgCache } from "../../utils/msgCache";
 // Board events — must match boardModel enum values exactly
 const BOARD_EVENTS = [
   { id: "birthday", label: "Birthday", emoji: "🎂" },
@@ -41,7 +43,7 @@ const BOARD_EVENTS = [
 
 const EmblemCard = ({ msg, isMulti, isPrivate, onClick }) => (
   <CardWrap onClick={onClick}>
-    <CanvasRenderer canvasData={msg.canvasData} style={{ borderRadius: 0 }} />
+    <CanvasRenderer canvasData={msg.canvasData} />
     {isMulti && (
       <MultiIndicator>
         <BsPlayFill />
@@ -80,7 +82,10 @@ const StackCard = ({ msg, isMulti, isPrivate, onClick }) => {
 
 const AudioCard = ({ isMulti, isPrivate, onClick }) => (
   <AudioOuter onClick={onClick}>
-    <div className="mic_ring">
+    <span className="ripple" />
+    <span className="ripple" />
+    <span className="ripple" />
+    <div className="mic_center">
       <BsMicFill className="mic_icon" />
     </div>
     {isMulti && (
@@ -178,6 +183,7 @@ const BoardCard = ({ board, msg, onOpen }) => {
   );
 };
 
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const ProfilePage = () => {
@@ -191,16 +197,15 @@ const ProfilePage = () => {
     updateProfileError,
     updateProfileErrorMsg,
   } = useSelector((s) => s.user);
-  const { boards, boardsLoad } = useSelector((s) => s.board);
+  const { boards, boardCacheVersion } = useSelector((s) => s.board);
 
   const [activeTab, setActiveTab] = useState("boards");
-  const [tabLoading, setTabLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
-  const [firstMessages, setFirstMessages] = useState({});
+  const [firstMessages, setFirstMessages] = useState(() => ({ ...profileFirstMsgCache }));
   const [activeBoard, setActiveBoard] = useState(null);
 
-  // dropdown
+  // dropdown 
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
 
@@ -218,7 +223,6 @@ const ProfilePage = () => {
   // share
   const [shareCopied, setShareCopied] = useState(false);
 
-  const fetchedSlugs = useRef(new Set());
   const searchRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -228,9 +232,10 @@ const ProfilePage = () => {
     return () => clearTimeout(t);
   }, [query]);
 
-  // fetch boards on tab change or event filter change
+  // re-fetch when caches are invalidated (after edit/delete)
   useEffect(() => {
-    setTabLoading(true);
+    if (!boardCacheVersion) return;
+    setFirstMessages({ ...profileFirstMsgCache });
     dispatch(
       getMyBoards({
         page: 1,
@@ -239,21 +244,27 @@ const ProfilePage = () => {
         event: activeEvents.length === 1 ? activeEvents[0] : undefined,
       }),
     );
-    fetchedSlugs.current = new Set();
-    setFirstMessages({});
-  }, [dispatch, activeTab, activeEvents]);
+  }, [boardCacheVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // clear tabLoading once the fetch completes
+  // fetch boards on tab change or event filter change
+  // resync from cache so cached boards show immediately, no full skeleton flash
   useEffect(() => {
-    if (!boardsLoad) setTabLoading(false);
-  }, [boardsLoad]);
+    setFirstMessages({ ...profileFirstMsgCache });
+    dispatch(
+      getMyBoards({
+        page: 1,
+        limit: 50,
+        view: activeTab === "tagged" ? "tagged" : "owned",
+        event: activeEvents.length === 1 ? activeEvents[0] : undefined,
+      }),
+    );
+  }, [dispatch, activeTab, activeEvents]);
 
   // fetch first messages for cards
   useEffect(() => {
     if (!boards.length) return;
-    const toFetch = boards.filter((b) => !fetchedSlugs.current.has(b.slug));
+    const toFetch = boards.filter((b) => !(b._id in profileFirstMsgCache));
     if (!toFetch.length) return;
-    toFetch.forEach((b) => fetchedSlugs.current.add(b.slug));
     Promise.allSettled(
       toFetch.map((b) =>
         axios
@@ -270,8 +281,10 @@ const ProfilePage = () => {
     ).then((results) => {
       const updates = {};
       results.forEach((r) => {
-        if (r.status === "fulfilled")
+        if (r.status === "fulfilled") {
+          profileFirstMsgCache[r.value.boardId] = r.value.message;
           updates[r.value.boardId] = r.value.message;
+        }
       });
       setFirstMessages((prev) => ({ ...prev, ...updates }));
     });
@@ -364,14 +377,18 @@ const ProfilePage = () => {
         .slice(0, 4)
     : [];
 
-  // filtered grid — text search only, event is handled by backend
+  const msgsSettled =
+    boards.length === 0 || boards.every((b) => b._id in firstMessages);
+
+  // filtered grid — only boards with settled first-messages
   const filtered = boards.filter((b) => {
+    const hasMsg = b._id in firstMessages;
     const matchText =
       !q ||
       b.title?.toLowerCase().includes(q) ||
       b.description?.toLowerCase().includes(q) ||
       b.event?.toLowerCase().includes(q);
-    return matchText;
+    return hasMsg && matchText;
   });
 
   const fmtCount = (n) => {
@@ -388,32 +405,30 @@ const ProfilePage = () => {
         <button className="back_btn" onClick={() => navigate(-1)}>
           <BsChevronLeft />
         </button>
-        <div className="header_profile">
-          <span className="header_username">Profile</span>
-        </div>
-        <button className="settings_btn" onClick={() => setShowSettings(true)}>
-          <BsGear />
-        </button>
-      </Header>
+        <span className="header_username">My Heartboard</span>
+        <div style={{ width: 36 }} />
+      </Header> 
 
       {/* ── Hero ── */}
       <Hero>
         <AvatarWrap>
-          {myProfile?.profileImage ? (
-            <img src={myProfile.profileImage} alt="avatar" />
-          ) : (
-            <AvatarPlaceholder />
-          )}
+          {myProfile?.profileImage
+            ? <img src={myProfile.profileImage} alt="avatar" />
+            : <img src={DefaultAvatar} alt="avatar" style={{ width: "68px", height: "68px", objectFit: "contain" }} />
+          }
         </AvatarWrap>
         <HeroInfo>
           <HeroUsername>@{myProfile?.username ?? "…"}</HeroUsername>
           <HeroEmail>{myProfile?.email ?? ""}</HeroEmail>
           <HeroBtns>
             <HeroBtn onClick={handleShareProfile}>
-              <BsShare />
+              <PiShareFat />
               {shareCopied ? "Copied!" : "Share"}
             </HeroBtn>
-            <FreePlanBadge>Free Plan</FreePlanBadge>
+            <FreePlanBadge onClick={() => setShowSettings(true)}>
+              <BsGear />
+              Settings
+            </FreePlanBadge>
           </HeroBtns>
         </HeroInfo>
       </Hero>
@@ -437,7 +452,7 @@ const ProfilePage = () => {
       {/* ── Search + filter ── */}
       <SearchRow>
         <SearchBar ref={searchRef}>
-          <BsSearch className="icon" />
+          <IoSearch className="icon" />
           <input
             type="text"
             placeholder="Search boards…"
@@ -475,7 +490,7 @@ const ProfilePage = () => {
 
       {/* ── Grid ── */}
       <Feed>
-        {tabLoading ? (
+        {!msgsSettled ? (
           <MasonryGrid>
             {[...Array(12)].map((_, i) => (
               <GridItem key={i}>
@@ -493,17 +508,13 @@ const ProfilePage = () => {
           </EmptyMsg>
         ) : (
           <MasonryGrid>
-            {filtered.map((board, i) => (
+            {filtered.map((board) => (
               <GridItem key={board._id}>
-                {!(board._id in firstMessages) ? (
-                  <SkeletonWrap $tall={isTall(i)} />
-                ) : (
-                  <BoardCard
-                    board={board}
-                    msg={firstMessages[board._id]}
-                    onOpen={setActiveBoard}
-                  />
-                )}
+                <BoardCard
+                  board={board}
+                  msg={firstMessages[board._id]}
+                  onOpen={setActiveBoard}
+                />
               </GridItem>
             ))}
           </MasonryGrid>
@@ -513,12 +524,17 @@ const ProfilePage = () => {
       <NavComponent />
 
       {/* ── Board modal ── */}
-      {activeBoard && (
-        <BoardViewModal
-          board={activeBoard}
-          onClose={() => setActiveBoard(null)}
-        />
-      )}
+      {activeBoard && (() => {
+        const idx = filtered.findIndex(b => b._id === activeBoard._id)
+        return (
+          <BoardViewModal
+            board={activeBoard}
+            onClose={() => setActiveBoard(null)}
+            onPrev={idx > 0 ? () => setActiveBoard(filtered[idx - 1]) : undefined}
+            onNext={idx < filtered.length - 1 ? () => setActiveBoard(filtered[idx + 1]) : undefined}
+          />
+        )
+      })()}
 
       {/* ── Search dropdown ── */}
       {showDropdown &&
@@ -699,6 +715,10 @@ const shimmer = keyframes`0%{background-position:-200% 0}100%{background-positio
 const slideIn = keyframes`from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}`;
 const fadeIn = keyframes`from{opacity:0}to{opacity:1}`;
 const modalPop = keyframes`from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}`;
+const audioRipple = keyframes`
+  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+`;
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const Page = styled.div`
@@ -714,13 +734,11 @@ const Header = styled.div`
   z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.85rem 1.25rem;
   background: #fff;
-  border-bottom: 1px solid #eceff3;
 
-  .back_btn,
-  .settings_btn {
+  .back_btn {
     width: 36px;
     height: 36px;
     border-radius: 50%;
@@ -740,31 +758,10 @@ const Header = styled.div`
     }
   }
 
-  .header_profile {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex: 1;
-    justify-content: center;
-  }
-
-  .header_names {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
   .header_username {
-    font-size: 1.1em;
+    font-size: 1.3em;
     font-weight: 700;
     color: #111;
-    line-height: 1.2;
-  }
-
-  .header_label {
-    font-size: 0.72em;
-    color: #9ca3af;
-    line-height: 1.2;
   }
 `;
 
@@ -781,11 +778,6 @@ const AvatarSmall = styled.div`
   }
 `;
 
-const AvatarPlaceholderSm = styled.div`
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle at 50% 38%, #f5b8ad 32%, #fde8e5 32%);
-`;
 
 const Hero = styled.section`
   display: flex;
@@ -799,16 +791,24 @@ const Hero = styled.section`
 `;
 
 const AvatarWrap = styled.div`
+  position: relative;
   width: 90px;
   height: 90px;
   border-radius: 50%;
   flex-shrink: 0;
   background: #fde8e5;
   overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  
   img {
+    position: absolute;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    bottom: -5px;
+
   }
   @media (max-width: 480px) {
     width: 68px;
@@ -816,11 +816,6 @@ const AvatarWrap = styled.div`
   }
 `;
 
-const AvatarPlaceholder = styled.div`
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle at 50% 38%, #f5b8ad 32%, #fde8e5 32%);
-`;
 
 const HeroInfo = styled.div`
   display: flex;
@@ -851,10 +846,8 @@ const HeroBtn = styled.button`
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--primary-color, #e05a42);
-  color: #fff;
-  /* background: #f5f6f8;
-  color: #333; */
+  background: #f5f6f8;
+  color: #333;
   border: none;
   border-radius: 99px;
   padding: 8px 16px;
@@ -865,43 +858,50 @@ const HeroBtn = styled.button`
   svg {
     font-size: 0.9em;
   }
-  /* &:hover {
+  &:hover {
     background: #eceef2;
-  } */
+  }
 `;
 
-const FreePlanBadge = styled.span`
+const FreePlanBadge = styled.button`
   display: flex;
   align-items: center;
+  gap: 6px;
   background: #f5f6f8;
   color: #333;
   border: none;
   border-radius: 99px;
-  padding: 7px 14px;
+  padding: 8px 16px;
   font-size: 0.82em;
-  font-weight: 600;
-  cursor: default;
-  user-select: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  svg {
+    font-size: 0.9em;
+  }
+  &:hover {
+    background: #eceef2;
+  }
 `;
 
 const TabRow = styled.div`
   display: flex;
   gap: 8px;
   padding: 0 1.5rem 0.8rem;
-  border-bottom: 1px solid #f0f0f0;
 `;
 
 const Tab = styled.button`
   padding: 7px 18px;
   border-radius: 99px;
-  border: 1.5px solid ${({ $active }) => ($active ? "#111" : "#E5E7EB")};
-  background: ${({ $active }) => ($active ? "#111" : "transparent")};
-  color: ${({ $active }) => ($active ? "#fff" : "#555")};
+  border: none;
+  background: ${({ $active }) => ($active ? "#fff" : "#F6F8FA")};
+  color: ${({ $active }) => ($active ? "#111" : "#555")};
   font-size: 0.85em;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
 `;
+
 
 // ── Search ────────────────────────────────────────────────────────────────────
 const SearchRow = styled.div`
@@ -924,7 +924,7 @@ const SearchBar = styled.div`
   padding: 0.75rem 1rem;
   .icon {
     color: #aaa;
-    font-size: 0.9em;
+    font-size: 1.1em;
     flex-shrink: 0;
   }
   input {
@@ -991,7 +991,6 @@ const Dropdown = styled.div`
   z-index: 999999;
   background: #fff;
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   padding: 0.5rem 0 0.75rem;
   overflow: hidden;
   width: ${(p) => p.$width}px;
@@ -1189,15 +1188,11 @@ const GridItem = styled.div`
 
 const CardWrap = styled.div`
   position: relative;
-  border-radius: 16px;
+  border-radius: 30px;
   border: 2.5px solid transparent;
   overflow: hidden;
   width: 100%;
   cursor: pointer;
-  transition: box-shadow 0.2s;
-  &:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  }
   .card_img {
     width: 100%;
     display: block;
@@ -1217,7 +1212,6 @@ const CardWrap = styled.div`
       background: #fff;
       border-radius: 10px;
       padding: 0.85rem 0.85rem 2.5rem;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
       min-height: 90px;
     }
     .note_title {
@@ -1275,29 +1269,41 @@ const AudioOuter = styled.div`
   position: relative;
   width: 100%;
   aspect-ratio: 4/3;
-  background: #f0e0dc;
-  border-radius: 16px;
+  background: #FDDDD7;
+  border-radius: 30px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow 0.2s;
-  &:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  }
-  .mic_ring {
-    width: 56px;
-    height: 56px;
+
+  .ripple {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     border-radius: 50%;
-    background: rgba(220, 150, 135, 0.55);
+    background: rgba(201, 79, 56, 0.12);
+    transform: translate(-50%, -50%) scale(0);
+    animation: ${audioRipple} 3s ease-out infinite both;
+  }
+  .ripple:nth-child(1) { width: 160%; padding-top: 160%; animation-delay: 0s; }
+  .ripple:nth-child(2) { width: 110%; padding-top: 110%; animation-delay: 1s; }
+  .ripple:nth-child(3) { width: 60%; padding-top: 60%; animation-delay: 2s; }
+
+  .mic_center {
+    position: relative;
+    z-index: 2;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .mic_icon {
-    font-size: 1.25em;
-    color: #c94f38;
+    font-size: 1.1em;
+    color: #C94F38;
   }
 `;
 
@@ -1336,7 +1342,6 @@ const SettingsPanel = styled.aside`
   overflow-y: auto;
   padding: 0 0 3rem;
   animation: ${slideIn} 0.25s ease forwards;
-  box-shadow: -4px 0 32px rgba(0, 0, 0, 0.12);
 `;
 
 const SettingsHeader = styled.div`

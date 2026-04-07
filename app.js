@@ -49,7 +49,7 @@ app.use(cors({
 }));
 
 // Additional middlewares
-app.use(fileUploader({ useTempFiles: true }));
+app.use(fileUploader({ useTempFiles: true, tempFileDir: '/tmp/' }));
 app.use(compression());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: false, limit: '15mb' }));

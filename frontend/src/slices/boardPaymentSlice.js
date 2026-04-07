@@ -457,9 +457,10 @@ export const listAllBoardPayments = createAsyncThunk(
 // ── Tier / capacity options ────────────────────────────────────────────────────
 // These are shown in the board creation / upgrade UI.
 export const CAPACITY_OPTIONS = [
-  { id: 'basic',    label: '20 curations',       messages: 20, price: null, tier: 'basic',    badge: 'Free'                        },
-  { id: 'standard', label: '50 curations',       messages: 50, price: null, tier: 'standard', badge: null,   disabled: true },
-  { id: 'premium',  label: 'Unlimited curations', messages: -1, price: null, tier: 'premium',  badge: null,   disabled: true },
+  { id: 'only_me',  label: 'Only me',             messages: 1,  price: null, tier: 'basic'                                          },
+  { id: 'basic',    label: '20 curations',         messages: 20, price: null, tier: 'basic',    badge: 'Free'                        },
+  { id: 'standard', label: '50 curations',         messages: 50, price: null, tier: 'standard', badge: null,   disabled: true },
+  { id: 'premium',  label: 'Unlimited curations',  messages: -1, price: null, tier: 'premium',  badge: null,   disabled: true },
 ]
 
 export const PRIVACY_OPTIONS = [

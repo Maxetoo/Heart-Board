@@ -115,18 +115,13 @@ const uploadToCloudinary = async (tempFilePath, type) => {
     uploadOptions.eager_async = true;
   }
 
-  if (type === 'audio') {
-    uploadOptions.eager = [{ format: 'mp3', audio_codec: 'mp3' }];
-    uploadOptions.eager_async = false;
-  }
-
   // Direct upload with the temp file path — no streams, no callbacks
   const result = await cloudinary.uploader.upload(tempFilePath, uploadOptions);
 
   return {
-    url:      result.eager?.[0]?.secure_url || result.secure_url,
+    url:      result.secure_url,
     publicId: result.public_id,
-    format:   result.eager?.[0]?.format || result.format,
+    format:   result.format,
     bytes:    result.bytes,
     duration: result.duration ?? null,
     width:    result.width    ?? null,

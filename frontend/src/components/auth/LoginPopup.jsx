@@ -4,11 +4,11 @@ import { useDispatch, useSelector } from 'react-redux'
 import { Link } from 'react-router-dom'
 import { FcGoogle } from 'react-icons/fc'
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai'
-import { BsX } from 'react-icons/bs'
+import { BsX } from 'react-icons/bs' 
 import { login, fillLoginInputs } from '../../slices/authSlice'
-import { URL } from '../../paths/url'
-
-
+import { URL } from '../../paths/url' 
+ 
+  
 
 const LoginPopup = ({ onClose, message }) => {
   const dispatch = useDispatch()
@@ -98,7 +98,6 @@ const Card = styled.div`
   padding: 36px 32px 28px;
   width: min(420px, 94vw);
   animation: ${fadeIn} 0.18s ease;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 `
 
 const CloseBtn = styled.button`

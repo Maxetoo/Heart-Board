@@ -13,9 +13,7 @@ const NavComponent = () => {
       </Link>
 
       <Link to="/create" className="nav_item">
-        <div className="plus_btn">
           <BsPlusLg />
-        </div>
       </Link>
 
       <Link to="/profile" className={`nav_item ${location.pathname === '/profile' ? 'active' : ''}`}>
@@ -40,7 +38,7 @@ const BottomNav = styled.nav`
   z-index: 100;
 
   .nav_item {
-    color: #aaa;
+    color: #333;
     font-size: 1.4em;
     display: flex;
     align-items: center;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import styled from 'styled-components'
-import { BsSearch } from "react-icons/bs"
+import { IoSearch } from "react-icons/io5"
 
 const COUNTRIES = [
   'Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia',
@@ -31,7 +31,7 @@ const SelectCountry = ({ selected, setSelected }) => {
   return (
     <Wrapper>
       <div className="search_wrapper">
-        <BsSearch className="search_icon" />
+        <IoSearch className="search_icon" />
         <input
           type="text"
           placeholder="Search"
@@ -78,6 +78,7 @@ const Wrapper = styled.div`
 
     .search_icon {
       color: var(--light-text-color);
+      font-size: 1.15em;
       flex-shrink: 0;
     }
 

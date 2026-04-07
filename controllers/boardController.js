@@ -17,7 +17,7 @@ const requireBoardOwner = async (res, boardId, userId) => {
 
 const createBoard = async (req, res) => {
   const userId = req.user.userId;
-  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId } = req.body;
+  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe } = req.body;
   let createdBoard = null;
 
   try {
@@ -33,22 +33,32 @@ const createBoard = async (req, res) => {
       }
     }
 
-    let receipentId = null;
+    let receipentId      = null;
+    let receipentHashtag = null;
+
     if (receipent?.length > 0 && receipent.trim()) {
-      const receipentUser = await User.findOne({ username: receipent.trim().toLowerCase() });
-      if (!receipentUser) throw new CustomError.BadRequestError('Receipent user not found.');
-      receipentId = receipentUser._id;
+      const raw = receipent.trim();
+      if (raw.startsWith('#')) {
+        // Hashtag receipent — store as string, no user lookup
+        receipentHashtag = raw.slice(1).toLowerCase();
+      } else {
+        const receipentUser = await User.findOne({ username: raw.toLowerCase() });
+        if (!receipentUser) throw new CustomError.BadRequestError('Receipent user not found.');
+        receipentId = receipentUser._id;
+      }
     }
 
     const board = await Board.create({
-      owner:      userId,
+      owner:            userId,
       title,
       description,
       event,
-      visibility: visibility || 'public',
-      receipent:  receipentId,
-      coverImage: coverImage || null,
-      tags:       Array.isArray(tags) ? tags : [],
+      visibility:       visibility || 'public',
+      receipent:        receipentId,
+      receipentHashtag: receipentHashtag,
+      coverImage:       coverImage || null,
+      tags:             Array.isArray(tags) ? tags : [],
+      onlyMe:           onlyMe === true || onlyMe === 'true',
     });
     createdBoard = board;
 
@@ -72,6 +82,9 @@ const createBoard = async (req, res) => {
     ];
     if (receipentId) {
       invalidations.push(invalidatePattern(`myBoards:${receipentId.toString()}:*`));
+    }
+    if (receipentHashtag) {
+      invalidations.push(invalidatePattern(`hashtag:${receipentHashtag}:*`));
     }
     await Promise.all(invalidations);
 
@@ -348,6 +361,28 @@ const getBoardLikes = async (req, res) => {
 };
 
 
+const getBoardsByHashtag = async (req, res) => {
+  const tag   = req.params.tag?.toLowerCase();
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit = Math.min(50, parseInt(req.query.limit) || 20);
+  const skip  = (page - 1) * limit;
+
+  if (!tag) throw new CustomError.BadRequestError('Hashtag is required.');
+
+  const [boards, total] = await Promise.all([
+    Board.find({ receipentHashtag: tag, isActive: true, visibility: { $in: ['public', 'link-only'] } })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('owner', 'username avatar')
+      .lean(),
+    Board.countDocuments({ receipentHashtag: tag, isActive: true, visibility: { $in: ['public', 'link-only'] } }),
+  ]);
+
+  res.status(StatusCodes.OK).json({ boards, total, page, pages: Math.ceil(total / limit) });
+};
+
+
 module.exports = {
   createBoard,
   getMyBoards,
@@ -360,4 +395,5 @@ module.exports = {
   flagBoard,
   unflagBoard,
   getBoardLikes,
+  getBoardsByHashtag,
 };

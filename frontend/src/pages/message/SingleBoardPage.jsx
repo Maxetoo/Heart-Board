@@ -5,7 +5,7 @@
 // import { useNavigate, useParams, Link } from 'react-router-dom'
 // import axios from 'axios'
 // import {
-//   BsHeart, BsHeartFill, BsShare, BsFlag, BsPencil, BsTrash,
+//   BsHeart, BsHeartFill, PiShareFat, BsFlag, BsPencil, BsTrash,
 //   BsChevronLeft, BsChevronRight, BsArrowsFullscreen,
 //   BsPlusCircle, BsStarFill, BsThreeDotsVertical, BsLink45Deg,
 //   BsMicFill, BsPlayFill, BsPauseFill, BsInfoCircle, BsArrowLeft,
@@ -333,7 +333,7 @@
 //     if (msg.type === 'emblem' && msg.canvasData) {
 //       return (
 //         <>
-//           <CanvasRenderer canvasData={msg.canvasData} style={{ width: '100%', height: '100%', borderRadius: 0 }} />
+//           <CanvasRenderer canvasData={msg.canvasData} style={{ width: '100%', height: '100%' }} />
 //           {!hideName && sender && (
 //             <SenderBadge $clickable onClick={() => navigate(`/profile/${sender}`)}>
 //               @{sender}
@@ -486,7 +486,7 @@
 //           </ActionBtn>
 
 //           <ActionBtn onClick={handleShare}>
-//             <BsShare />
+//             <PiShareFat />
 //             <span>{fullBoard?.stats?.shares ?? 0}</span>
 //           </ActionBtn>
 
@@ -632,7 +632,7 @@
 //           {isEmblem
 //             ? (
 //               <FullCanvasWrap onClick={e => e.stopPropagation()}>
-//                 <CanvasRenderer canvasData={currentMsg.canvasData} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+//                 <CanvasRenderer canvasData={currentMsg.canvasData} style={{ width: '100%', height: '100%' }} />
 //               </FullCanvasWrap>
 //             )
 //             : isAudio
@@ -1058,12 +1058,13 @@ import { useDispatch, useSelector } from 'react-redux'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import axios from 'axios'
 import {
-  BsHeart, BsHeartFill, BsShare, BsFlag, BsPencil, BsTrash,
+  BsHeart, BsHeartFill, BsFlag, BsPencil, BsTrash,
   BsChevronLeft, BsChevronRight, BsArrowsFullscreen,
   BsPlusCircle, BsStarFill, BsThreeDotsVertical, BsLink45Deg,
   BsMicFill, BsPlayFill, BsPauseFill, BsInfoCircle, BsArrowLeft,
   BsCheckCircleFill, BsHouseFill,
 } from 'react-icons/bs'
+import { PiShareFat } from 'react-icons/pi'
 import { likeBoard, shareBoard, deleteBoard, getBoardLikes, optimisticToggleLike } from '../../slices/boardSlice'
 import { deleteMessage } from '../../slices/messageSlice'
 import { URL } from '../../paths/url'
@@ -1386,7 +1387,7 @@ const SingleBoardPage = () => {
     if (msg.type === 'emblem' && msg.canvasData) {
       return (
         <>
-          <CanvasRenderer canvasData={msg.canvasData} style={{ width: '100%', height: '100%', borderRadius: 0 }} />
+          <CanvasRenderer canvasData={msg.canvasData} style={{ width: '100%', height: '100%' }} />
           {!hideName && sender && (
             <SenderBadge $clickable onClick={() => navigate(`/profile/${sender}`)}>
               @{sender}
@@ -1536,7 +1537,7 @@ const SingleBoardPage = () => {
           </ActionBtn>
 
           <ActionBtn onClick={handleShare}>
-            <BsShare />
+            <PiShareFat />
             <span>{fullBoard?.stats?.shares ?? 0}</span>
           </ActionBtn>
 
@@ -1680,7 +1681,7 @@ const SingleBoardPage = () => {
           {isEmblem
             ? (
               <FullCanvasWrap onClick={e => e.stopPropagation()}>
-                <CanvasRenderer canvasData={currentMsg.canvasData} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+                <CanvasRenderer canvasData={currentMsg.canvasData} style={{ width: '100%', height: '100%' }} />
               </FullCanvasWrap>
             )
             : isAudio
@@ -1743,8 +1744,8 @@ const spin      = keyframes`to { transform: rotate(360deg) }`
 const fadeIn    = keyframes`from { opacity: 0 } to { opacity: 1 }`
 const modalFade = keyframes`from { opacity: 0; transform: scale(0.96) } to { opacity: 1; transform: scale(1) }`
 const pulse     = keyframes`
-  0%, 100% { box-shadow: 0 0 0 0    rgba(220,150,135,0.7) }
-  50%       { box-shadow: 0 0 0 16px rgba(220,150,135,0)   }
+  0%, 100% { transform: scale(1) }
+  50%       { transform: scale(1.06) }
 `
 
 const Page = styled.div`
@@ -1887,7 +1888,7 @@ const ActionsMenuWrap     = styled.div`position: relative;`
 const ActionsMenuBackdrop = styled.div`position: fixed; inset: 0; z-index: 500;`
 const ActionsMenuPortal   = styled.div`
   position: fixed; z-index: 501; background: #fff; border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.22); overflow: hidden; min-width: ${MENU_WIDTH}px;
+  overflow: hidden; min-width: ${MENU_WIDTH}px;
   transform: translateY(-100%);
   animation: ${modalFade} 0.15s ease forwards;
 `
@@ -1993,12 +1994,11 @@ const PlayIconWrap = styled.span`
   border-radius: 50%; background: #E05A42; color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: ${({ $large }) => $large ? '1.15em' : '0.78em'};
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 `
 const AudioBottom = styled.div`width: ${({ $large }) => $large ? '78%' : '72%'}; display: flex; flex-direction: column; gap: 5px;`
 const AudioTrack  = styled.div`position: relative; height: 5px; background: rgba(201,79,56,0.2); border-radius: 99px; cursor: pointer; overflow: visible;`
 const AudioFill   = styled.div`height: 100%; background: #E05A42; border-radius: 99px; transition: width 0.1s linear; pointer-events: none;`
-const AudioThumb  = styled.div`position: absolute; top: 50%; transform: translate(-50%, -50%); width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,0.45); pointer-events: none;`
+const AudioThumb  = styled.div`position: absolute; top: 50%; transform: translate(-50%, -50%); width: 13px; height: 13px; border-radius: 50%; background: #fff; pointer-events: none;`
 const AudioTimes  = styled.div`display: flex; justify-content: space-between; font-size: 0.67em; color: rgba(180,80,60,0.7);`
 const AudioSender = styled.span`
   position: absolute;
