@@ -1,22 +1,23 @@
-import React from 'react'
 import styled from 'styled-components'
-import { BsCheckLg, BsBuildings, BsPerson } from "react-icons/bs"
+import { BsCheckLg } from "react-icons/bs"
+import manIcon from '../../assets/man 1.svg'
+import buildingIcon from '../../assets/office-building 1.svg'
 
 const SelectAccountType = ({ selected, setSelected }) => {
   const options = [
     {
       id: 'personal',
       label: 'Personal',
-      icon: <BsPerson />,
+      icon: <img src={manIcon} alt="Personal" />,
       features: [
         'Great for individual use',
-        'Simple and easy to use',
+        'Add your message to anyone\'s wall',
       ],
     },
     {
       id: 'enterprise',
       label: 'Enterprise',
-      icon: <BsBuildings />,
+      icon: <img src={buildingIcon} alt="Enterprise" />,
       disabled: true,
       features: [
         'Manage multiple team members',
@@ -41,8 +42,8 @@ const SelectAccountType = ({ selected, setSelected }) => {
             {opt.disabled
               ? <ComingSoon>Coming soon</ComingSoon>
               : (
-                <div className={`radio ${selected === opt.id ? 'active' : ''}`}>
-                  {selected === opt.id && <div className="radio_dot" />}
+                <div className={`check_circle ${selected === opt.id ? 'active' : ''}`}>
+                  {selected === opt.id && <BsCheckLg className="check_icon" />}
                 </div>
               )
             }
@@ -86,13 +87,8 @@ const Wrapper = styled.div`
     border: solid 0.5px transparent;
     transition: border-color 0.2s;
 
-    &.active {
-      border-color: var(--primary-color);
-      background: rgba(var(--primary-rgb, 248, 113, 113), 0.04);
-    }
-
     &:hover:not(.disabled) {
-      border-color: var(--primary-color);
+      border-color: #E5E7EB;
     }
 
     &.disabled {
@@ -123,13 +119,19 @@ const Wrapper = styled.div`
     flex-shrink: 0;
 
     &.active {
-      background: var(--primary-color);
-      color: #fff;
+      background: #F3F4F6;
+      color: var(--light-text-color);
     }
 
     &.disabled {
       background: #F3F4F6;
       color: #D1D5DB;
+    }
+
+    img {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
     }
   }
 
@@ -140,26 +142,26 @@ const Wrapper = styled.div`
     color: var(--text-color);
   }
 
-  .radio {
-    width: 20px;
-    height: 20px;
+  .check_circle {
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     border: 2px solid #D1D5DB;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, background 0.2s;
 
     &.active {
-      border-color: var(--primary-color);
+      border-color: #22c55e;
+      background: #22c55e;
     }
 
-    .radio_dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--primary-color);
+    .check_icon {
+      color: #fff;
+      font-size: 0.55em;
+      font-weight: 700;
     }
   }
 

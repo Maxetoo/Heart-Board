@@ -5,7 +5,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
-  BsSliders,
   BsGear,
   BsPencil,
   BsEye,
@@ -19,6 +18,7 @@ import {
 } from "react-icons/bs";
 import { IoSearch } from "react-icons/io5";
 import { PiShareFat } from "react-icons/pi";
+import { LuSlidersHorizontal } from "react-icons/lu";
 import { getMyBoards } from "../../slices/boardSlice";
 import { updateProfile } from "../../slices/userSlice";
 import { URL } from "../../paths/url";
@@ -483,7 +483,7 @@ const ProfilePage = () => {
             setShowFilter(true);
           }}
         >
-          <BsSliders />
+          <LuSlidersHorizontal />
           {activeEvents.length > 0 && <FilterDot />}
         </FilterBtn>
       </SearchRow>

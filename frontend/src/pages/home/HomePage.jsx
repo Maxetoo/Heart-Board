@@ -12,7 +12,6 @@ import styled, { keyframes } from "styled-components";
 import { useDispatch, useSelector } from "react-redux";
 import axios from "axios";
 import {
-  BsSliders,
   BsMicFill,
   BsPlayFill,
   BsX,
@@ -23,6 +22,7 @@ import {
 import { PiShareFat } from "react-icons/pi";
 import { TfiWorld } from "react-icons/tfi";
 import { IoSearch } from "react-icons/io5";
+import { LuSlidersHorizontal } from "react-icons/lu";
 import Logo from "../../assets/Heart Board Logo.jpeg";
 import DefaultAvatar from "../../assets/Vector.svg";
 import { homeFirstMsgCache } from "../../utils/msgCache";
@@ -63,6 +63,7 @@ const TopBar = styled.header`
   display: flex;
   align-items: center;
   gap: 1rem;
+  overflow: hidden;
 
 
   .logo {
@@ -326,7 +327,7 @@ const MasonryGrid = styled.div`
     columns: 3;
   }
   @media (max-width: 720px) {
-    columns: 3;
+    columns: 2;
   }
   @media (max-width: 480px) {
     columns: 2;
@@ -844,7 +845,7 @@ const HomePage = () => {
               setShowFilter(true);
             }}
           >
-            <BsSliders />
+            <LuSlidersHorizontal />
             {activeEvents.length > 0 && <FilterDot />}
           </FilterBtn>
         </div>

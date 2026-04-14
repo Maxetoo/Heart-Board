@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
 import { IoSearch } from "react-icons/io5"
+import { BsCheckLg } from "react-icons/bs"
 
 const COUNTRIES = [
   'Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia',
@@ -51,8 +52,8 @@ const SelectCountry = ({ selected, setSelected }) => {
             onClick={() => setSelected(country)}
           >
             <span>{country}</span>
-            <div className="radio">
-              {selected === country && <div className="radio_dot" />}
+            <div className={`check_circle ${selected === country ? 'active' : ''}`}>
+              {selected === country && <BsCheckLg className="check_icon" />}
             </div>
           </li>
         ))}
@@ -124,37 +125,27 @@ const Wrapper = styled.div`
       background: #F3F4F6;
     }
 
-    &.active {
-      background: rgba(var(--primary-rgb, 248, 113, 113), 0.08);
-      color: var(--primary-color);
-      font-weight: 600;
-
-      &:hover {
-        background: rgba(var(--primary-rgb, 248, 113, 113), 0.08);
-      }
-    }
-
-    .radio {
-      width: 18px;
-      height: 18px;
+    .check_circle {
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       border: 2px solid #D1D5DB;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: border-color 0.2s;
-    }
+      transition: border-color 0.2s, background 0.2s;
 
-    &.active .radio {
-      border-color: var(--primary-color);
-    }
+      &.active {
+        border-color: #22c55e;
+        background: #22c55e;
+      }
 
-    .radio_dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--primary-color);
+      .check_icon {
+        color: #fff;
+        font-size: 0.55em;
+        font-weight: 700;
+      }
     }
   }
 

@@ -37,7 +37,10 @@ const CanvasRenderer = ({ canvasData, style, className }) => {
     if (!outerRef.current) return
     const obs = new ResizeObserver(entries => {
       const w = entries[0].contentRect.width
-      if (w > 0) setScale(w / REFERENCE_WIDTH)
+      if (w <= 0) return
+      // Boost scale on small containers so text/icons remain legible
+      const boost = w < 200 ? 1.75 : w < 260 ? 1.3 : 1
+      setScale((w / REFERENCE_WIDTH) * boost)
     })
     obs.observe(outerRef.current)
     return () => obs.disconnect()
@@ -90,7 +93,7 @@ const CanvasRenderer = ({ canvasData, style, className }) => {
         style={{
           width:  REFERENCE_WIDTH,
           height: stageHeight,
-          transform: `scale(${scale})`,
+          transform: `translate(-50%, -50%) scale(${scale})`,
         }}
       >
         {canvasImages.map(img => (
@@ -162,9 +165,9 @@ const Canvas = styled.div`
 
 const InnerStage = styled.div`
   position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: top left;
+  top: 50%;
+  left: 50%;
+  transform-origin: center center;
 `
 
 const Layer = styled.div`

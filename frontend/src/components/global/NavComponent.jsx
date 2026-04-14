@@ -1,6 +1,8 @@
 import React from 'react'
 import styled from 'styled-components'
-import { BsHouseFill, BsPlusLg, BsPersonFill } from 'react-icons/bs'
+import { BsPlusLg } from 'react-icons/bs'
+import { GoHome } from 'react-icons/go'
+import { RiUserHeartLine } from 'react-icons/ri'
 import { Link, useLocation } from 'react-router-dom'
 
 const NavComponent = () => {
@@ -9,7 +11,7 @@ const NavComponent = () => {
   return (
     <BottomNav>
       <Link to="/" className={`nav_item ${location.pathname === '/' ? 'active' : ''}`}>
-        <BsHouseFill />
+        <GoHome />
       </Link>
 
       <Link to="/create" className="nav_item">
@@ -17,7 +19,7 @@ const NavComponent = () => {
       </Link>
 
       <Link to="/profile" className={`nav_item ${location.pathname === '/profile' ? 'active' : ''}`}>
-        <BsPersonFill />
+        <RiUserHeartLine />
       </Link>
     </BottomNav>
   )

@@ -288,21 +288,18 @@ import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import {
   CreateUsername,
-  SelectAccountTier,
   SelectAccountType,
   SelectCountry,
 } from '../../components/account'
 import { updateProfileStatus } from '../../slices/authSlice'
 import { updateProfile, clearUserNotifications } from '../../slices/userSlice'
-import { verifyPurchase, clearSubscriptionNotifications } from '../../slices/subscriptionSlice'
+import { clearSubscriptionNotifications } from '../../slices/subscriptionSlice'
 import { ErrorNotificationPopup } from '../../helpers'
-import { purchaseProPlan, RC_ENTITLEMENTS } from '../../configs/revenueCatConfig'
 
 const STEPS = [
   { title: 'Select Account Type' },
   { title: 'Create Username' },
   { title: 'Select Country' },
-  { title: 'Select Account Tier' },
 ]
 
 const AccountSetupPage = () => {
@@ -315,70 +312,19 @@ const AccountSetupPage = () => {
     updateProfileErrorMsg,
   } = useSelector(s => s.user)
 
-  const {
-    verifyLoad,
-    verifyError,
-    verifyErrorMsg,
-  } = useSelector(s => s.subscription)
-
   const [step,        setStep]        = useState(0)
   const [accountType, setAccountType] = useState('')
   const [username,    setUsername]    = useState('')
   const [country,     setCountry]     = useState('')
-  const [tier,        setTier]        = useState('')
-  const [rcError,     setRcError]     = useState('')
-  const [rcLoading,   setRcLoading]   = useState(false)
-
-  const handleRevenueCatPurchase = async (userId) => {
-    setRcLoading(true)
-    setRcError('')
-
-    try {
-      // purchaseProPlan handles configure-once internally and opens the RC payment sheet
-      const customerInfo = await purchaseProPlan(userId)
-
-      // null = user cancelled — stay on page, no error shown
-      if (customerInfo === null) {
-        setRcLoading(false)
-        return
-      }
-
-      // Confirm the entitlement is active
-      const active = customerInfo?.entitlements?.active ?? {}
-      if (!active[RC_ENTITLEMENTS.PRO]) {
-        setRcError('Purchase completed but pro entitlement not found. Please contact support.')
-        setRcLoading(false)
-        return
-      }
-
-      // Verify with backend
-      const result = await dispatch(verifyPurchase({ appUserId: userId, plan: 'pro' })).unwrap()
-
-      if (result.status === 'success') {
-        dispatch(updateProfileStatus())
-        dispatch(clearSubscriptionNotifications())
-        navigate('/')
-      } else {
-        setRcError(result.response?.message || 'Failed to verify purchase with server.')
-      }
-
-    } catch (err) {
-      console.error('[RC purchase error]', err)
-      setRcError(err?.message || 'Purchase failed. Please try again.')
-    } finally {
-      setRcLoading(false)
-    }
-  }
 
   const isStepValid = () => {
     if (step === 0) return !!accountType
     if (step === 1) return username.length >= 3
     if (step === 2) return !!country
-    if (step === 3) return !!tier
     return false
   }
 
-  const isLoading = updateProfileLoad || verifyLoad || rcLoading
+  const isLoading = updateProfileLoad
 
   const handleContinue = async () => {
     if (!isStepValid() || isLoading) return
@@ -388,32 +334,26 @@ const AccountSetupPage = () => {
       return
     }
 
-    // Final step: save profile first, then handle tier
+    const attempt = () => dispatch(updateProfile({ username, accountType, country })).unwrap()
+
     try {
-      const result = await dispatch(
-        updateProfile({ username, accountType, country })
-      ).unwrap()
+      let result = await attempt()
+
+      // auto-retry once on connection error (e.g. backend cold start)
+      if (result.status !== 'success' && result.code === 500) {
+        dispatch(clearUserNotifications())
+        await new Promise(r => setTimeout(r, 1500))
+        result = await attempt()
+      }
 
       if (result.status !== 'success') return
 
-      const userId = result.response?.user?._id?.toString()
-      if (!userId) {
-        setRcError('Could not get user ID. Please refresh and try again.')
-        return
-      }
-
       dispatch(clearUserNotifications())
-
-      if (tier === 'free') {
-        dispatch(updateProfileStatus())
-        navigate('/')
-      } else {
-        await handleRevenueCatPurchase(userId)
-      }
+      dispatch(updateProfileStatus())
+      navigate('/')
 
     } catch (err) {
       console.log(err)
-      // updateProfile rejected — Redux error state already shows it
     }
   }
 
@@ -421,19 +361,15 @@ const AccountSetupPage = () => {
     if (step > 0) {
       dispatch(clearUserNotifications())
       dispatch(clearSubscriptionNotifications())
-      setRcError('')
       setStep(step - 1)
     }
   }
 
-  const errorVisible = updateProfileError || verifyError || !!rcError
-  const errorMsg     = rcError || updateProfileErrorMsg || verifyErrorMsg || 'An error occurred'
+  const errorVisible = updateProfileError
+  const errorMsg     = updateProfileErrorMsg || 'An error occurred'
 
   const buttonLabel = () => {
     if (updateProfileLoad) return 'Saving...'
-    if (rcLoading)         return 'Opening payment...'
-    if (verifyLoad)        return 'Verifying...'
-    if (step === STEPS.length - 1 && tier === 'pro') return 'Continue to Payment'
     if (step === STEPS.length - 1) return 'Finish Setup'
     return 'Continue'
   }
@@ -446,17 +382,10 @@ const AccountSetupPage = () => {
       <h1>{STEPS[step].title}</h1>
 
       <div className="setup_outline">
-        <div className="progress_bar">
-          {STEPS.map((_, i) => (
-            <div key={i} className={`progress_dot ${i <= step ? 'done' : ''}`} />
-          ))}
-        </div>
-
         <div className="step_content">
           {step === 0 && <SelectAccountType selected={accountType} setSelected={setAccountType} />}
           {step === 1 && <CreateUsername    username={username}    setUsername={setUsername}    />}
           {step === 2 && <SelectCountry     selected={country}     setSelected={setCountry}     />}
-          {step === 3 && <SelectAccountTier selected={tier}        setSelected={setTier}        />}
         </div>
 
         <div className="actions">
