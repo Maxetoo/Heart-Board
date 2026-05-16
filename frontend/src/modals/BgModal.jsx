@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
-import { BsX } from 'react-icons/bs'
+import { BsCheckLg } from 'react-icons/bs'
+import { RxCross2 } from 'react-icons/rx'
 import { IoSearch } from 'react-icons/io5'
 import { ModalBackdrop, ModalBox, SearchInput } from '../sharedStyles/index'
 import { BG_OPTIONS } from '../constants/messageConstant'
@@ -13,16 +14,12 @@ const BgModal = ({ onClose, onConfirm, currentBg }) => {
     b.label.toLowerCase().includes(search.toLowerCase())
   )
 
-  const handleCellClick = (bg) => {
-    setSelected(prev => prev?.id === bg.id ? null : bg)
-  }
-
   return (
     <ModalBackdrop onClick={onClose}>
-      <ModalBox onClick={(e) => e.stopPropagation()}>
+      <ModalBox onClick={e => e.stopPropagation()}>
         <div className="modal_header">
           <h3>Background</h3>
-          <button className="modal_close" onClick={onClose}><BsX /></button>
+          <button className="modal_close" onClick={onClose}><RxCross2 /></button>
         </div>
 
         <SearchInput>
@@ -30,23 +27,28 @@ const BgModal = ({ onClose, onConfirm, currentBg }) => {
           <input
             placeholder="Search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
           />
         </SearchInput>
 
         <BgGrid>
-          {filtered.map((bg) => (
-            <div
-              key={bg.id}
-              className={`bg_cell ${selected?.id === bg.id ? 'active' : ''}`}
-              style={{ background: bg.value }}
-              onClick={() => handleCellClick(bg)}
-            >
-              {selected?.id === bg.id && (
-                <div className="bg_check"><BsX /></div>
-              )}
-            </div>
-          ))}
+          {filtered.map(bg => {
+            const isActive = selected?.id === bg.id
+            return (
+              <div
+                key={bg.id}
+                className={`bg_cell ${isActive ? 'active' : ''}`}
+                style={{ background: bg.value }}
+                onClick={() => setSelected(prev => prev?.id === bg.id ? null : bg)}
+              >
+                {isActive && (
+                  <span className="bg_check">
+                    <BsCheckLg />
+                  </span>
+                )}
+              </div>
+            )
+          })}
         </BgGrid>
 
         <button className="modal_continue" onClick={() => onConfirm(selected)}>
@@ -69,23 +71,19 @@ const BgGrid = styled.div`
     border: 2px solid transparent;
     position: relative;
     overflow: hidden;
-    transition: transform 0.15s, border-color 0.2s;
-    &:hover { transform: scale(1.04); }
-    &.active { border-color: var(--primary-color, #EF5A42); }
 
     .bg_check {
       position: absolute;
-      bottom: 4px;
+      top: 4px;
       right: 4px;
-      width: 18px;
-      height: 18px;
+      width: 15px;
+      height: 15px;
       border-radius: 50%;
-      background: var(--primary-color, #EF5A42);
-      color: #fff;
+      background: #22c55e;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.8em;
+      svg { font-size: 0.45em; color: #fff; }
     }
   }
 `

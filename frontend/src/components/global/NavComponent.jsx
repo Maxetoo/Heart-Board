@@ -1,8 +1,7 @@
 import React from 'react'
 import styled from 'styled-components'
-import { BsPlusLg } from 'react-icons/bs'
-import { GoHome } from 'react-icons/go'
-import { RiUserHeartLine } from 'react-icons/ri'
+import { RiHome4Line, RiUserHeartLine } from 'react-icons/ri'
+import { PiPlusBold } from 'react-icons/pi'
 import { Link, useLocation } from 'react-router-dom'
 
 const NavComponent = () => {
@@ -11,11 +10,11 @@ const NavComponent = () => {
   return (
     <BottomNav>
       <Link to="/" className={`nav_item ${location.pathname === '/' ? 'active' : ''}`}>
-        <GoHome />
+        <RiHome4Line />
       </Link>
 
       <Link to="/create" className="nav_item">
-          <BsPlusLg />
+          <PiPlusBold />
       </Link>
 
       <Link to="/profile" className={`nav_item ${location.pathname === '/profile' ? 'active' : ''}`}>
@@ -42,15 +41,16 @@ const BottomNav = styled.nav`
   .nav_item {
     color: #333;
     font-size: 1.4em;
+    font-weight: bold;
     display: flex;
     align-items: center;
     justify-content: center;
     text-decoration: none;
     transition: color 0.2s;
 
-    &.active {
+    &.active { 
       color: #333;
-    }
+    } 
 
     &:hover {
       color: #555;

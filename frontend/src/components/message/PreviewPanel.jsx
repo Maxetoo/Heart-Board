@@ -1,11 +1,15 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
+import html2canvas from 'html2canvas'
 import styled, { keyframes } from 'styled-components'
-import { BsX, BsCameraFill, BsChevronRight, BsCheckCircleFill, BsPlayFill, BsPauseFill } from 'react-icons/bs'
-import { FaMicrophone } from 'react-icons/fa'
+import { BsCameraFill, BsChevronRight, BsCheckCircleFill, BsPlayFill, BsPauseFill, BsMicFill } from 'react-icons/bs'
+import { RxCross2 } from 'react-icons/rx'
 import { CAPACITY_OPTIONS, PRIVACY_OPTIONS } from '../../slices/boardPaymentSlice'
+import confetti from '../../assets/confetti.svg'
+import shareFrame from '../../assets/share profile/share profile frame.svg'
+import heartboardLogo from '../../assets/Heartboard logo 2.svg'
+import shareRect1 from '../../assets/share profile/share profile rectangle 1.svg'
+import shareRect2 from '../../assets/share profile/share profile rectangle 2.svg'
 import CanvasRenderer from '../../canvas/CanvasRenderer'
-import confetti1 from '../../assets/confetti 1.svg'
-import confetti2 from '../../assets/confetti 2.svg'
  
 const PreviewPanel = ({
   canvasData,
@@ -54,7 +58,7 @@ const PreviewPanel = ({
           {/* Header */}
           <div className="preview_header">
             <span className="preview_title">Preview</span>
-            <button className="preview_close" onClick={onClose}><BsX /></button>
+            <button className="preview_close" onClick={onClose}><RxCross2 /></button>
           </div>
 
           {/* Thumbnail — audio player OR live canvas render */}
@@ -89,7 +93,7 @@ const PreviewPanel = ({
             <PreviewThumb $ratio={canvasData?.aspectRatio || 'portrait'}>
               {canvasData
                 ? <CanvasRenderer canvasData={canvasData} />
-                : <span className="thumb_placeholder"><BsCameraFill /></span>
+                : <div className="thumb_placeholder"><BsCameraFill /></div>
               }
             </PreviewThumb>
           )}
@@ -185,7 +189,7 @@ const PreviewPanel = ({
             onClick={onPost}
             disabled={isPosting}
           >
-            {isPosting ? 'Posting…' : 'Continue'}
+            {isPosting ? 'Posting…' : 'Post'}
           </button>
         </div>
       </PreviewCard>
@@ -195,41 +199,123 @@ const PreviewPanel = ({
  
 // ─── Success Screen ───────────────────────────────────────────────────────────
 
-export const SuccessScreen = ({ canvasData, isAudio, onViewPost, onDone }) => (
-  <SuccessOverlay>
-    <div className="success_inner">
-      <div className="preview_stage">
-        <img src={confetti1} className="confetti confetti_1" alt="" aria-hidden="true" />
-        <img src={confetti2} className="confetti confetti_2" alt="" aria-hidden="true" />
-        <div className={`success_preview${isAudio ? ' success_audio' : ''}`}>
-          {isAudio
-            ? (
-              <div className="audio_frame">
-                <span className="mic_ripple">
-                  <span className="ripple r1" />
-                  <span className="ripple r2" />
-                  <span className="ripple r3" />
-                  <span className="mic_icon"><FaMicrophone /></span>
-                </span>
-              </div>
-            )
-            : canvasData
-              ? <CanvasRenderer canvasData={canvasData} />
-              : <div className="preview_placeholder"><BsCameraFill /></div>
-          }
+export const SuccessScreen = ({ canvasData, isAudio, onViewPost, onDone, boardTitle, messageCount, boardSlug }) => {
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [linkCopied,     setLinkCopied]     = useState(false)
+  const shareFrameRef = useRef(null)
+
+  const handleDownloadCopyLink = useCallback(async () => {
+    try {
+      const link = boardSlug ? `${window.location.origin}/board/${boardSlug}` : window.location.href
+      if (shareFrameRef.current) {
+        const canvas = await html2canvas(shareFrameRef.current, {
+          useCORS: true, allowTaint: true, backgroundColor: null, scale: 2,
+        })
+        const dataUrl = canvas.toDataURL('image/png')
+        const a = document.createElement('a')
+        a.href = dataUrl
+        a.download = `${boardSlug || 'board'}-share.png`
+        a.click()
+        await navigator.clipboard.writeText(link)
+      } else {
+        await navigator.clipboard.writeText(link)
+      }
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2500)
+    } catch (err) { console.error(err) }
+  }, [boardSlug])
+
+  return (
+    <>
+      <SuccessOverlay $isPortrait={canvasData?.aspectRatio === 'portrait'}>
+        <div className="success_inner">
+          <div className="preview_stage">
+            <img src={confetti} className="confetti confetti_1" alt="" aria-hidden="true" />
+            <img src={confetti} className="confetti confetti_2" alt="" aria-hidden="true" />
+            <div className={`success_preview${isAudio ? ' success_audio' : ''}`}>
+              {isAudio
+                ? (
+                  <div className="audio_frame">
+                    <span className="audio_ripple" />
+                    <span className="audio_ripple" />
+                    <span className="audio_ripple" />
+                    <div className="audio_mic_center">
+                      <BsMicFill className="audio_mic_icon" />
+                    </div>
+                  </div>
+                )
+                : canvasData
+                  ? <CanvasRenderer canvasData={canvasData} />
+                  : <div className="preview_placeholder"><BsCameraFill /></div>
+              }
+            </div>
+          </div>
+
+          <p className="success_message">
+            Your message has been sent. Share the message and let others contribute.
+          </p>
+
+          <div className="success_btns">
+            <button className="view_msg_btn" onClick={onViewPost || onDone}>
+              View Message
+            </button>
+            <button className="share_msg_btn" onClick={() => setShowShareModal(true)}>
+              Share Message
+            </button>
+          </div>
         </div>
-      </div>
+      </SuccessOverlay>
 
-      <p className="success_message">
-        Your appreciation board has been created and your message has been posted.
-      </p>
+      {showShareModal && (
+        <ShareModalOverlay onClick={() => setShowShareModal(false)}>
+          <ShareModalCard onClick={e => e.stopPropagation()}>
+            {/* Frame part */}
+            <div className="share_frame_part">
+              <div className="share_canvas_frame" ref={shareFrameRef}>
+                <img src={shareRect1} alt="" className="share_rect share_rect_left" />
+                <img src={shareRect2} alt="" className="share_rect share_rect_right" />
+                <img src={heartboardLogo} alt="Heartboard" className="share_logo" />
+                <img src={shareFrame} alt="" className="share_frame_img" />
+                <div className="share_canvas_and_text">
+                  {isAudio ? (
+                    <div className="share_canvas_inner share_audio_inner">
+                      <span className="audio_ripple" />
+                      <span className="audio_ripple" />
+                      <span className="audio_ripple" />
+                      <div className="audio_mic_center">
+                        <BsMicFill className="audio_mic_icon" />
+                      </div>
+                    </div>
+                  ) : canvasData ? (
+                    <div className="share_canvas_inner">
+                      <CanvasRenderer canvasData={canvasData} />
+                    </div>
+                  ) : null}
+                  <div className="share_text_container">
+                    <h3 className="share_board_title">{boardTitle || 'My Appreciation Board'}</h3>
+                    <p className="share_board_caption">
+                      Go drop yours with other{messageCount >= 100 ? ` ${messageCount}` : ''} contributors.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-      <button className="view_post_btn" onClick={onViewPost || onDone}>
-        View Post
-      </button>
-    </div>
-  </SuccessOverlay>
-)
+            {/* Button part */}
+            <div className="share_btn_part">
+              <button className="share_primary_btn" onClick={handleDownloadCopyLink}>
+                {linkCopied ? 'Link Copied!' : 'Download & Copy Link'}
+              </button>
+              <button className="share_secondary_btn" onClick={() => setShowShareModal(false)}>
+                Close
+              </button>
+            </div>
+          </ShareModalCard>
+        </ShareModalOverlay>
+      )}
+    </>
+  )
+}
  
 // ─── Styled Components ────────────────────────────────────────────────────────
  
@@ -284,49 +370,45 @@ const PreviewCard = styled.div`
 
     .preview_close {
       width: 28px; height: 28px;
-      border-radius: 50%;
-      border: 1.5px solid #ECEFF3;
+      border: none;
       background: transparent;
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.1em; cursor: pointer;
-      color: var(--text-color, #111);
-      &:hover { border-color: var(--primary-color, #EF5A42); color: var(--primary-color, #EF5A42); }
+      font-size: 1.3em; font-weight: 700; cursor: pointer;
+      color: #111;
     }
   }
 
   .caption_input {
     width: 100%;
-    height: 44px;
+    height: 48px;
     flex-shrink: 0;
+    margin-top: 1.5rem;
     padding: 0 1rem;
-    background: #F9FAFB;
-    border: 1.5px solid #ECEFF3;
+    background: var(--secondary-color);
+    border: none;
     border-radius: 10px;
-    font-size: 0.93em;
+    font-size: 1em;
     color: var(--text-color, #111);
     outline: none;
     box-sizing: border-box;
-    transition: border-color 0.2s;
     &::placeholder { color: #9CA3AF; }
-    &:focus { border-color: var(--primary-color, #EF5A42); background: #fff; }
   }
 
   .preview_row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid #F3F4F6;
+    height: 48px;
+    padding: 0 1rem;
+    background: var(--secondary-color);
+    border-radius: 10px;
     cursor: pointer;
     user-select: none;
-    &:last-of-type { border-bottom: none; }
-    &:hover .row_value { color: var(--primary-color, #EF5A42); }
 
     .row_label { font-size: 0.93em; font-weight: 500; color: var(--text-color, #111); }
     .row_value {
       display: flex; align-items: center; gap: 4px;
       font-size: 0.87em; color: #9CA3AF;
-      transition: color 0.15s;
       svg { font-size: 0.8em; }
     }
   }
@@ -355,21 +437,22 @@ const PreviewCard = styled.div`
 `
 
 const PreviewThumb = styled.div`
-  width: ${({ $ratio }) => $ratio === 'landscape' ? '75%' : '70%'};
-  align-self: center;
-  aspect-ratio: ${({ $ratio }) => {
-    if ($ratio === 'landscape') return '4 / 3'
-    if ($ratio === 'portrait')  return '3 / 4'
-    return '1 / 1'
-  }};
-  border-radius: 12px;
-  overflow: hidden;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #F3F4F6;
-  .thumb_placeholder { color: #D1D5DB; font-size: 2em; }
+  width: 100%;
+  .thumb_placeholder {
+    width: 100%;
+    aspect-ratio: ${({ $ratio }) => {
+      if ($ratio === 'landscape') return '4 / 3'
+      if ($ratio === 'portrait')  return '3 / 4'
+      return '1 / 1'
+    }};
+    background: #F3F4F6;
+    border-radius: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #D1D5DB;
+    font-size: 2em;
+  }
 `
  
 const RowWrap = styled.div`
@@ -517,7 +600,7 @@ const AudioThumb = styled.div`
   }
 `
  
-const SuccessOverlay = styled.div`
+const SuccessOverlay = styled.div.attrs(p => ({ $isPortrait: p.$isPortrait }))`
   position: fixed;
   inset: 0;
   z-index: 300;
@@ -537,31 +620,34 @@ const SuccessOverlay = styled.div`
     max-width: 400px;
   }
 
-  /* Outer stage — wide enough for confetti to spill out */
   .preview_stage {
     position: relative;
-    width: 85%;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2rem 0;
+    padding: ${({ $isPortrait }) => $isPortrait ? '3.5rem 0' : '2rem 0'};
   }
 
   .confetti {
     position: absolute;
-    width: 90%;
+    width: ${({ $isPortrait }) => $isPortrait ? '117%' : '115%'};
     pointer-events: none;
     user-select: none;
     z-index: 0;
-    opacity: 0.55;
+    animation: ${keyframes`
+      0%   { transform: scale(0.4) rotate(0deg); opacity: 0; }
+      60%  { transform: scale(1.1) rotate(4deg); opacity: 1; }
+      100% { transform: scale(1)   rotate(0deg); opacity: 1; }
+    `} 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
-  .confetti_1 { top: 0; left: -5%; }
-  .confetti_2 { bottom: 0; right: -5%; transform: rotate(180deg); }
+  .confetti_1 { top: 0; left: -5%; animation-delay: 0s; }
+  .confetti_2 { bottom: 0; right: -5%; transform: rotate(180deg); animation-delay: 0.12s; }
 
   .success_preview {
     position: relative;
     z-index: 1;
-    width: 68%;
+    width: 85%;
     border-radius: 18px;
     overflow: hidden;
     &.success_audio {
@@ -574,46 +660,46 @@ const SuccessOverlay = styled.div`
   .audio_frame {
     width: 100%;
     aspect-ratio: 1 / 1;
-    background: #F0E0DC;
+    background: #FDDDD7;
     border-radius: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 25px solid #111;
-  }
-
-  .mic_ripple {
+    overflow: hidden;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 64px;
-    height: 64px;
   }
 
-  .ripple {
+  .audio_ripple {
     position: absolute;
+    top: 50%;
+    left: 50%;
     border-radius: 50%;
-    border: 2px solid rgba(201, 79, 56, 0.5);
+    background: rgba(201, 79, 56, 0.12);
+    transform: translate(-50%, -50%) scale(0);
     animation: ${keyframes`
-      0%   { transform: scale(1);   opacity: 0.7; }
-      100% { transform: scale(2.8); opacity: 0; }
-    `} 4s ease-out infinite;
-    width: 100%;
-    height: 100%;
+      0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    `} 3s ease-out infinite both;
+    &:nth-child(1) { width: 160%; padding-top: 160%; animation-delay: 0s; }
+    &:nth-child(2) { width: 110%; padding-top: 110%; animation-delay: 1s; }
+    &:nth-child(3) { width: 60%;  padding-top: 60%;  animation-delay: 2s; }
   }
-  .r1 { animation-delay: 0s; }
-  .r2 { animation-delay: 1.3s; }
-  .r3 { animation-delay: 2.6s; }
 
-  .mic_icon {
+  .audio_mic_center {
     position: relative;
-    z-index: 1;
-    color: #C94F38;
-    font-size: 2em;
+    z-index: 2;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .audio_mic_icon {
+    font-size: 1.1em;
+    color: #C94F38;
   }
 
   .preview_placeholder {
@@ -628,28 +714,242 @@ const SuccessOverlay = styled.div`
   }
 
   .success_message {
-    margin: 0;
-    font-size: 0.95em;
-    font-weight: 500;
-    color: #6B7280;
+    margin: ${({ $isPortrait }) => $isPortrait ? '-1.5rem 0 0' : '1.5rem 0 0'};
+    position: relative;
+    z-index: 2;
+    font-size: 1em;
+    font-weight: 800;
+    color: #808897;
     text-align: center;
     line-height: 1.6;
-    max-width: 260px;
+    max-width: 350px;
   }
 
-  .view_post_btn {
+  .success_btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
     width: 100%;
     max-width: 280px;
-    height: 52px;
+    @media (min-width: 480px) {
+      flex-direction: row;
+      max-width: 380px;
+    }
+  }
+
+  .view_msg_btn {
+    flex: 1;
+    padding: 0.7em 1.25em;
+    border: 1px solid #ECEFF3;
+    border-radius: 99px;
+    background: transparent;
+    color: #1A1B25;
+    font-size: 0.85em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    &:hover { opacity: 0.75; }
+  }
+
+  .share_msg_btn {
+    flex: 1;
+    padding: 1em 1.25em;
     border: none;
-    border-radius: 26px;
+    border-radius: 99px;
     background: var(--primary-color, #EF5A42);
     color: #fff;
-    font-size: 1em;
+    font-size: 0.85em;
     font-weight: 700;
     cursor: pointer;
     transition: opacity 0.2s;
     &:hover { opacity: 0.88; }
+  }
+`
+
+const ShareModalOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+`
+
+const ShareModalCard = styled.div`
+  background: #fff;
+  border-radius: 30px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+
+  .share_frame_part {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .share_canvas_frame {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 30px;
+  }
+
+  .share_logo {
+    position: absolute;
+    top: -10%;
+    right: -30%;
+    width: 280px;
+    height: auto;
+    z-index: 15;
+    pointer-events: none;
+  }
+
+  .share_rect {
+    position: absolute;
+    top: 15%;
+    width: 45%;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .share_rect_left {
+    left: 10%;
+  }
+
+  .share_rect_right {
+    right: 10%;
+  }
+
+  .share_frame_img {
+    width: 100%;
+    height: auto;
+    display: block;
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .share_canvas_and_text {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 62%;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .share_canvas_inner {
+    width: 100%;
+  }
+
+  .share_audio_inner {
+    aspect-ratio: 1 / 1;
+    background: #FDDDD7;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .audio_ripple {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      border-radius: 50%;
+      background: rgba(201, 79, 56, 0.12);
+      transform: translate(-50%, -50%) scale(0);
+      animation: ${keyframes`
+        0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
+        100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+      `} 3s ease-out infinite both;
+      &:nth-child(1) { width: 160%; padding-top: 160%; animation-delay: 0s; }
+      &:nth-child(2) { width: 110%; padding-top: 110%; animation-delay: 1s; }
+      &:nth-child(3) { width: 60%;  padding-top: 60%;  animation-delay: 2s; }
+    }
+
+    .audio_mic_center {
+      position: relative;
+      z-index: 2;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .audio_mic_icon {
+      font-size: 1.1em;
+      color: #C94F38;
+    }
+  }
+
+  .share_text_container {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: center;
+  }
+
+  .share_board_title {
+    margin: 0;
+    font-size: 1.05em;
+    font-weight: 700;
+    color: var(--text-color, #111);
+    line-height: 1.3;
+  }
+
+  .share_board_caption {
+    margin: 0;
+    font-size: 0.9em;
+    color: #272835;
+    opacity: 0.5;
+    line-height: 1.5;
+  }
+
+  .share_btn_part {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .share_primary_btn {
+    width: 100%;
+    height: 50px;
+    border: none;
+    border-radius: 25px;
+    background: var(--primary-color, #EF5A42);
+    color: #fff;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    &:hover { opacity: 0.88; }
+  }
+
+  .share_secondary_btn {
+    width: 100%;
+    height: 50px;
+    border: 1px solid #111;
+    border-radius: 25px;
+    background: transparent;
+    color: #111;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    &:hover { opacity: 0.7; }
   }
 `
 

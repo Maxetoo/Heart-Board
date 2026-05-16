@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import BoardIcon from '../../assets/board icon.svg'
 import styled from 'styled-components'
 import { useDispatch, useSelector } from 'react-redux'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  BsX, BsImage, BsTypeBold, BsBezier2, BsPalette2, BsBorderOuter,
-  BsCheck2, BsCheckCircleFill, BsChevronRight,
+  BsX, BsChevronLeft, BsChevronRight, BsCheckLg, BsCameraVideo,
   BsHeart, BsHandThumbsUp, BsEmojiSmile, BsStar,
   BsSun, BsFire, BsMusicNote, BsMusicNoteBeamed,
   BsHeadphones, BsTrophy, BsBalloon, BsGift,
   BsDiamond, BsAward, BsClock, BsBriefcase,
 } from 'react-icons/bs'
 import { AiOutlineAudio } from 'react-icons/ai'
-import { PiPencilSimpleLineLight, PiPerspective } from 'react-icons/pi'
+import { PiPencilSimpleLineLight, PiPerspective, PiTextAUnderlineBold, PiRectangleDashed, PiImageBold } from 'react-icons/pi'
+import { IoColorPaletteOutline } from 'react-icons/io5'
+import { RiSketching } from 'react-icons/ri'
 
 import { getBoardBySlug, updateBoard, invalidateBoardCaches } from '../../slices/boardSlice'
 import { getBoardMessages, editMessage } from '../../slices/messageSlice'
@@ -28,10 +30,10 @@ import FrameModal          from '../../modals/FrameModal'
 import EventModal          from '../../modals/EventModal'
 import DraggableCanvasItem from '../../canvas/DraggableCanvasItem'
 import AudioTab            from '../../tab/AudioTab'
-import VideoTab            from '../../tab/VideoTab'
 import TagInput            from '../../components/message/TagInput'
 import useFonts            from '../../hooks/UseFonts'
 import { invalidateMsgCache } from '../../utils/msgCache'
+import { SuccessScreen } from '../../components/message/PreviewPanel'
 
 const VECTOR_ICON_MAP = {
   heart:      BsHeart,      thumbsup:   BsHandThumbsUp,
@@ -50,34 +52,33 @@ const EditBoardPage = () => {
   const { slug }  = useParams()
   const navigate  = useNavigate()
   const dispatch  = useDispatch()
-  const canvasRef = useRef(null)
 
   const { board, boardLoad, boardError, updateBoardLoad } = useSelector(s => s.board)
   const { boardMessages, boardMessagesLoad, editMessageLoad } = useSelector(s => s.message)
-  const { audioUploadLoad, imageUploadLoad } = useSelector(s => s.upload)
+  const { audioUploadLoad } = useSelector(s => s.upload)
   const { checkReceipentUser, receipentUser } = useSelector(s => s.user)
 
   const [activeTab, setActiveTab]         = useState('text')
   const [aspectRatio, setAspectRatio]     = useState('portrait')
   const [activeModal, setActiveModal]     = useState(null)
   const [selectedItem, setSelectedItem]   = useState(null)
+  const [editingItemId, setEditingItemId] = useState(null)
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [canvasExpanded, setCanvasExpanded] = useState(false)
 
   const [canvasBg, setCanvasBg]           = useState(null)
-  const [canvasImage, setCanvasImage]     = useState(null)
-  const [imageSize, setImageSize]         = useState(80)
-  const [imagePosition, setImagePosition] = useState({ x: 50, y: 50 })
-  const [canvasText, setCanvasText]       = useState(null)
-  const [canvasVector, setCanvasVector]   = useState(null)
+  const [canvasImages, setCanvasImages]   = useState([])
+  const [canvasTexts, setCanvasTexts]     = useState([])
+  const [canvasVectors, setCanvasVectors] = useState([])
   const [canvasFrame, setCanvasFrame]     = useState(null)
+  const DEFAULT_FRAME = { style: 'solid', thickness: 16, radius: 16, color: '#111111', border: '16px solid #111111', borderRadius: '16px' }
 
-  const [caption, setCaption]               = useState('')
-  const [, setMentionedUser]                = useState(null)
-  const [boardTags, setBoardTags]           = useState([])
+  const [caption, setCaption]             = useState('')
+  const [, setMentionedUser]              = useState(null)
+  const [boardTags, setBoardTags]         = useState([])
   const [selectedPrivacy, setSelectedPrivacy] = useState(PRIVACY_OPTIONS[0])
 
   const [pendingAudioFile, setPendingAudioFile] = useState(null)
-
   const [saveError, setSaveError] = useState('')
   const [saved, setSaved]         = useState(false)
 
@@ -113,24 +114,27 @@ const EditBoardPage = () => {
     if (cd.canvasBg)    setCanvasBg(cd.canvasBg)
     if (cd.canvasFrame) setCanvasFrame(cd.canvasFrame)
 
-    const text = cd.canvasTexts?.[0] ?? cd.canvasText ?? null
-    if (text) setCanvasText(text)
-
-    const img = cd.canvasImages?.[0] ?? null
-    if (img) {
-      setCanvasImage(img.src)
-      setImageSize(img.size ?? 80)
-      setImagePosition(img.position ?? { x: 50, y: 50 })
-    } else if (cd.canvasImage) {
-      setCanvasImage(cd.canvasImage)
-      if (cd.imageSize)     setImageSize(cd.imageSize)
-      if (cd.imagePosition) setImagePosition(cd.imagePosition)
+    if (cd.canvasTexts?.length) {
+      setCanvasTexts(cd.canvasTexts)
+    } else if (cd.canvasText) {
+      setCanvasTexts([{ ...cd.canvasText, id: Date.now() }])
     }
 
-    const vec = cd.canvasVectors?.[0] ?? cd.canvasVector ?? null
-    if (vec) {
+    if (cd.canvasImages?.length) {
+      setCanvasImages(cd.canvasImages)
+    } else if (cd.canvasImage) {
+      setCanvasImages([{ id: 'img_0', src: cd.canvasImage, size: cd.imageSize ?? 80, position: cd.imagePosition ?? { x: 50, y: 50 } }])
+    }
+
+    if (cd.canvasVectors?.length) {
+      setCanvasVectors(cd.canvasVectors.map(vec => {
+        const iconId = vec.icon || vec.vectorId || vec.id
+        return { ...vec, vectorId: iconId, icon: VECTOR_ICON_MAP[iconId] }
+      }))
+    } else if (cd.canvasVector) {
+      const vec = cd.canvasVector
       const iconId = vec.icon || vec.vectorId || vec.id
-      setCanvasVector({ ...vec, vectorId: iconId, icon: VECTOR_ICON_MAP[iconId] })
+      setCanvasVectors([{ ...vec, id: 'vec_0', vectorId: iconId, icon: VECTOR_ICON_MAP[iconId] }])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?._id, boardMessagesLoad])
@@ -140,24 +144,24 @@ const EditBoardPage = () => {
   const tabs = [
     { id: 'audio', label: 'Audio', icon: <AiOutlineAudio /> },
     { id: 'text',  label: 'Text',  icon: <PiPencilSimpleLineLight /> },
+    { id: 'video', label: 'Video', icon: <BsCameraVideo /> },
   ]
 
   const tools = [
-    { id: 'image',  label: 'Image',  icon: <BsImage /> },
-    { id: 'text',   label: 'Text',   icon: <BsTypeBold /> },
-    { id: 'vector', label: 'Vector', icon: <BsBezier2 /> },
-    { id: 'bg',     label: 'BG',     icon: <BsPalette2 /> },
-    { id: 'frame',  label: 'Frame',  icon: <BsBorderOuter /> },
+    { id: 'image',  label: 'Image',  icon: <PiImageBold /> },
+    { id: 'text',   label: 'Text',   icon: <PiTextAUnderlineBold /> },
+    { id: 'vector', label: 'Vector', icon: <RiSketching /> },
+    { id: 'bg',     label: 'BG',     icon: <IoColorPaletteOutline /> },
+    { id: 'frame',  label: 'Frame',  icon: <PiRectangleDashed /> },
   ]
 
-  const hasContent  = canvasBg || canvasImage || canvasText || canvasVector || canvasFrame
-  const VectorIcon  = canvasVector?.icon
-  const canvasStyle = { background: canvasBg ? canvasBg.value : '#F9FAFB' }
-  const isWorking   = updateBoardLoad || editMessageLoad || audioUploadLoad || imageUploadLoad
+  const hasContent  = canvasBg || canvasImages.length > 0 || canvasTexts.length > 0 || canvasVectors.length > 0 || canvasFrame
+  const activeFrame = canvasFrame || (hasContent ? DEFAULT_FRAME : null)
+  const canvasStyle = { background: canvasBg ? canvasBg.value : '#FFFFFF' }
+  const isWorking   = updateBoardLoad || editMessageLoad || audioUploadLoad
   const recipentOk  = !receipentUser || receipentUser.length === 0 || checkReceipentUser
 
-  const handleToolClick = toolId =>
-    setActiveModal(toolId === 'vector' && canvasVector ? 'editVector' : toolId)
+  const handleToolClick = toolId => setActiveModal(toolId)
 
   const handleSave = useCallback(async () => {
     if (!board) return
@@ -179,50 +183,36 @@ const EditBoardPage = () => {
           const up = await dispatch(uploadFile({ file: pendingAudioFile, type: 'audio' })).unwrap()
           if (up.status !== 'success') { setSaveError(up.response?.message || 'Audio upload failed'); return }
           await dispatch(editMessage({
-            id: firstMessage._id,
-            content: { audioUrl: up.response.url || up.response.secure_url, duration: null, text: null, imageUrls: [] },
+            id:                 firstMessage._id,
+            content:            { audioUrl: up.response.url || up.response.secure_url, duration: null, text: null, imageUrls: [] },
             cloudinaryPublicId: up.response.public_id,
-            fileType: 'audio',
+            fileType:           'audio',
           })).unwrap()
         } else if (activeTab === 'text' && hasContent) {
           await dispatch(editMessage({
             id: firstMessage._id,
             content: {
-              text:       canvasText?.content      || null,
-              font:       canvasText?.font?.family || null,
-              color:      canvasText?.color        || null,
-              background: canvasBg?.value          || null,
-              frame:      canvasFrame ? `${canvasFrame.thickness}px ${canvasFrame.style} ${canvasFrame.color}` : null,
+              text:       canvasTexts[0]?.content      || null,
+              font:       canvasTexts[0]?.font?.family || null,
+              color:      canvasTexts[0]?.color        || null,
+              background: canvasBg?.value              || null,
+              frame:      activeFrame ? `${activeFrame.thickness}px ${activeFrame.style} ${activeFrame.color}` : null,
               imageUrls:  [],
-              vectorKey:  canvasVector?.id || null,
+              vectorKey:  canvasVectors[0]?.vectorId   || null,
               audioUrl: null, duration: null,
             },
             canvasData: {
               canvasBg,
-              canvasFrame,
+              canvasFrame: activeFrame,
               aspectRatio,
-              canvasTexts:   canvasText   ? [canvasText]   : [],
-              canvasVectors: canvasVector ? [{
-                id:       canvasVector.id ?? 'vec_0',
-                vectorId: canvasVector.vectorId,
-                icon:     canvasVector.vectorId,
-                color:    canvasVector.color,
-                opacity:  canvasVector.opacity,
-                size:     canvasVector.size,
-                position: canvasVector.position,
-              }] : [],
-              canvasImages: canvasImage ? [{
-                id:       'img_0',
-                src:      canvasImage,
-                size:     imageSize,
-                position: imagePosition,
-              }] : [],
+              canvasTexts,
+              canvasVectors: canvasVectors.map(v => ({ ...v, icon: v.vectorId })),
+              canvasImages,
             },
           })).unwrap()
         }
       }
 
-      // Invalidate caches so home/profile re-fetch fresh data
       if (board._id) invalidateMsgCache(board._id)
       dispatch(invalidateBoardCaches())
       setSaved(true)
@@ -232,8 +222,8 @@ const EditBoardPage = () => {
   }, [
     dispatch, board, caption, selectedPrivacy, boardTags, selectedEvent,
     firstMessage, activeTab, pendingAudioFile, hasContent,
-    canvasText, canvasBg, canvasFrame, canvasVector,
-    canvasImage, imageSize, imagePosition, aspectRatio,
+    canvasTexts, canvasBg, canvasFrame, canvasVectors,
+    canvasImages, aspectRatio, activeFrame,
   ])
 
   if (boardLoad) return <Wrapper><LoadMsg>Loading…</LoadMsg></Wrapper>
@@ -241,20 +231,27 @@ const EditBoardPage = () => {
 
   if (saved) {
     return (
-      <Wrapper>
-        <SuccessCard>
-          <BsCheckCircleFill className="success_icon" />
-          <h2>Board Updated!</h2>
-          <p>Your changes have been saved.</p>
-          <button className="done_btn" onClick={() => navigate(`/board/${slug}`)}>View Board</button>
-        </SuccessCard>
-      </Wrapper>
+      <SuccessScreen
+        canvasData={pendingAudioFile ? null : {
+          canvasTexts,
+          canvasBg,
+          canvasFrame: activeFrame,
+          canvasVectors: canvasVectors.map(v => ({ ...v, icon: v.vectorId })),
+          canvasImages,
+          aspectRatio,
+        }}
+        isAudio={!!pendingAudioFile}
+        boardSlug={slug}
+        boardTitle={caption}
+        messageCount={board?.stats?.messages ?? 0}
+        onViewPost={() => navigate(`/board/${slug}`)}
+        onDone={() => navigate(`/board/${slug}`)}
+      />
     )
   }
 
   return (
     <Wrapper>
-      {/* ── Header ── */}
       <div className="page_header">
         <button className="close_btn" onClick={() => navigate(-1)}><BsX /></button>
         <h2 className="page_title">Edit Board</h2>
@@ -271,126 +268,165 @@ const EditBoardPage = () => {
         </div>
       </div>
 
-      {/* ── Body ── */}
       <div className="page_body">
         <ContentWrap>
 
-          {/* Event selector */}
-          <div className="select_row" onClick={() => setActiveModal('event')}>
-            {selectedEvent ? (
-              <>
-                <span className="select_event_emoji">{selectedEvent.emoji}</span>
-                <span className="select_value">{selectedEvent.label}</span>
-              </>
-            ) : (
-              <span className="select_placeholder">Select Event</span>
-            )}
-            <BsChevronRight className="select_arrow" />
-          </div>
+          {activeTab !== 'video' && (
+            <div className="select_row" onClick={() => setActiveModal('event')}>
+              {selectedEvent ? (
+                <>
+                  <span className="select_event_emoji">{selectedEvent.emoji}</span>
+                  <span className="select_value">{selectedEvent.label}</span>
+                </>
+              ) : (
+                <span className="select_placeholder">Select Event</span>
+              )}
+              <BsChevronRight className="select_arrow" />
+            </div>
+          )}
 
-          {/* Recipient + tags */}
-          <TagInput onMentionChange={setMentionedUser} onTagsChange={setBoardTags} />
+          {activeTab !== 'video' && (
+            <TagInput onMentionChange={setMentionedUser} onTagsChange={setBoardTags} />
+          )}
 
-          {/* Board title */}
-          <input
-            className="caption_input"
-            placeholder="Board title…"
-            value={caption}
-            onChange={e => setCaption(e.target.value)}
-            maxLength={80}
-          />
+          {activeTab !== 'video' && (
+            <input
+              className="caption_input"
+              placeholder="Board title…"
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              maxLength={80}
+            />
+          )}
 
-          {/* ── Text / canvas tab ── */}
           {activeTab === 'text' && (
             <>
-              <div className="canvas_unit">
-                <div className="aspect_header">
-                  <span className="aspect_label"><PiPerspective /> Aspect Ratio</span>
-                  <div className="ratio_toggles">
-                    <button
-                      className={`ratio_btn portrait_btn ${aspectRatio === 'portrait' ? 'active' : ''}`}
-                      onClick={() => setAspectRatio('portrait')} title="Portrait"
-                    >
-                      {aspectRatio === 'portrait' && <BsCheck2 />}
-                    </button>
-                    <button
-                      className={`ratio_btn landscape_btn ${aspectRatio === 'landscape' ? 'active' : ''}`}
-                      onClick={() => setAspectRatio('landscape')} title="Landscape"
-                    >
-                      {aspectRatio === 'landscape' && <BsCheck2 />}
-                    </button>
-                  </div>
+              {canvasExpanded && (
+                <div className="expanded_header">
+                  <button className="back_btn" onClick={() => setCanvasExpanded(false)}>
+                    <BsChevronLeft />
+                  </button>
+                  <button className="save_btn" onClick={() => setCanvasExpanded(false)}>
+                    Save
+                  </button>
                 </div>
+              )}
 
-                <div className="aspect_container">
-                  <div className="canvas_wrap">
-                    <CanvasArea
-                      ref={canvasRef}
-                      $ratio={aspectRatio}
-                      style={{
-                        ...canvasStyle,
-                        ...(canvasFrame ? { border: canvasFrame.border, borderRadius: canvasFrame.borderRadius } : {}),
-                      }}
-                      data-canvas="true"
-                      onClick={() => setSelectedItem(null)}
-                    >
-                      {canvasImage && (
-                        <DraggableCanvasItem
-                          position={imagePosition} onPositionChange={setImagePosition}
-                          selected={selectedItem === 'image'} onSelect={() => setSelectedItem('image')}
-                          onTap={() => setActiveModal('image')}
-                        >
-                          <div style={{ position: 'relative' }}>
-                            <img src={canvasImage} alt="canvas" className="canvas_image" style={{ width: `${imageSize * 2}px`, height: `${imageSize * 2}px` }} />
-                            <button className="remove_image_btn" onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setCanvasImage(null); setImageSize(80); setImagePosition({ x: 50, y: 50 }) }}><BsX /></button>
-                            {selectedItem === 'image' && (
-                              <div className="image_resize_bar" onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
-                                <input type="range" min="30" max="180" step="2" value={imageSize} onChange={e => setImageSize(Number(e.target.value))} />
+              <div className="canvas_unit">
+                {!canvasExpanded && (
+                  <div className="aspect_header">
+                    <span className="aspect_label"><PiPerspective /> Aspect Ratio</span>
+                    <div className="ratio_toggles">
+                      <button
+                        className={`ratio_btn portrait_btn ${aspectRatio === 'portrait' ? 'active' : ''}`}
+                        onClick={() => setAspectRatio('portrait')} title="Portrait"
+                      >
+                        {aspectRatio === 'portrait' && <span className="check_circle"><BsCheckLg /></span>}
+                      </button>
+                      <button
+                        className={`ratio_btn landscape_btn ${aspectRatio === 'landscape' ? 'active' : ''}`}
+                        onClick={() => setAspectRatio('landscape')} title="Landscape"
+                      >
+                        {aspectRatio === 'landscape' && <span className="check_circle"><BsCheckLg /></span>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className={`aspect_container${canvasExpanded ? ' expanded' : ''}`}>
+                  <div className={`canvas_wrap${canvasExpanded ? ' expanded' : ''}`}>
+                    {(() => {
+                      const canvasContent = (
+                        <>
+                          {!hasContent && !canvasExpanded && (
+                            <CanvasPlaceholder>
+                              <img src={BoardIcon} alt="" className="placeholder_icon" />
+                              <p className="placeholder_text">Tap to create a message</p>
+                            </CanvasPlaceholder>
+                          )}
+                          {canvasImages.map(img => (
+                            <DraggableCanvasItem
+                              key={img.id}
+                              position={img.position}
+                              onPositionChange={pos => setCanvasImages(prev => prev.map(i => i.id === img.id ? { ...i, position: pos } : i))}
+                              selected={selectedItem?.id === img.id}
+                              onSelect={() => setSelectedItem({ type: 'image', id: img.id })}
+                              onTap={() => { setEditingItemId(img.id); setActiveModal('editImage') }}
+                            >
+                              <div style={{ position: 'relative' }}>
+                                <img src={img.src} alt="canvas" className="canvas_image" style={{ width: `${img.size * 2}px`, height: `${img.size * 2}px` }} />
+                                <button className="remove_image_btn" onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setCanvasImages(prev => prev.filter(i => i.id !== img.id)) }}><BsX /></button>
+                                {selectedItem?.id === img.id && (
+                                  <div className="image_resize_bar" onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+                                    <input type="range" min="30" max="180" step="2" value={img.size} onChange={e => setCanvasImages(prev => prev.map(i => i.id === img.id ? { ...i, size: Number(e.target.value) } : i))} />
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        </DraggableCanvasItem>
-                      )}
+                            </DraggableCanvasItem>
+                          ))}
+                          {canvasVectors.map(vec => {
+                            const VIcon = vec.icon
+                            return VIcon ? (
+                              <DraggableCanvasItem
+                                key={vec.id}
+                                position={vec.position}
+                                onPositionChange={pos => setCanvasVectors(prev => prev.map(v => v.id === vec.id ? { ...v, position: pos } : v))}
+                                selected={selectedItem?.id === vec.id}
+                                onSelect={() => setSelectedItem({ type: 'vector', id: vec.id })}
+                                onTap={() => { setEditingItemId(vec.id); setActiveModal('editVector') }}
+                              >
+                                <VIcon style={{ color: vec.color, opacity: vec.opacity, fontSize: vec.size ?? 48, display: 'block' }} />
+                              </DraggableCanvasItem>
+                            ) : null
+                          })}
+                          {canvasTexts.map(txt => (
+                            <DraggableCanvasItem
+                              key={txt.id}
+                              position={txt.position}
+                              onPositionChange={pos => setCanvasTexts(prev => prev.map(t => t.id === txt.id ? { ...t, position: pos } : t))}
+                              selected={selectedItem?.id === txt.id}
+                              onSelect={() => setSelectedItem({ type: 'text', id: txt.id })}
+                              onTap={() => { setEditingItemId(txt.id); setActiveModal('editText') }}
+                            >
+                              <p style={{ margin: 0, fontFamily: txt.font?.family, color: txt.color, fontSize: txt.fontSize ?? 16, maxWidth: 200, textAlign: txt.textAlign || 'center', lineHeight: 1.35, wordBreak: 'break-word', ...txt.font?.style }}>
+                                {txt.content}
+                              </p>
+                            </DraggableCanvasItem>
+                          ))}
+                        </>
+                      )
 
-                      {canvasVector && VectorIcon && (
-                        <DraggableCanvasItem
-                          position={canvasVector.position} onPositionChange={pos => setCanvasVector(prev => ({ ...prev, position: pos }))}
-                          selected={selectedItem === 'vector'} onSelect={() => setSelectedItem('vector')}
-                          onTap={() => setActiveModal('editVector')}
+                      return activeFrame ? (
+                        <CanvasFrameWrap
+                          $ratio={aspectRatio}
+                          $expanded={canvasExpanded}
+                          style={{ background: activeFrame.color, padding: '20px', borderRadius: '32px' }}
+                          data-canvas="true"
                         >
-                          <VectorIcon style={{ color: canvasVector.color, opacity: canvasVector.opacity, fontSize: canvasVector.size ?? 48, display: 'block' }} />
-                        </DraggableCanvasItem>
-                      )}
-
-                      {canvasText && (
-                        <DraggableCanvasItem
-                          position={canvasText.position} onPositionChange={pos => setCanvasText(prev => ({ ...prev, position: pos }))}
-                          selected={selectedItem === 'text'} onSelect={() => setSelectedItem('text')}
-                          onTap={() => setActiveModal('text')}
-                        >
-                          <p style={{ margin: 0, fontFamily: canvasText.font?.family, color: canvasText.color, fontSize: canvasText.fontSize ?? 16, maxWidth: 200, textAlign: 'center', lineHeight: 1.35, wordBreak: 'break-word', ...canvasText.font?.style }}>
-                            {canvasText.content}
-                          </p>
-                        </DraggableCanvasItem>
-                      )}
-                    </CanvasArea>
+                          <CanvasArea $ratio={aspectRatio} $expanded={canvasExpanded} $inFrame style={canvasStyle} onClick={() => { setCanvasExpanded(true); setSelectedItem(null) }}>
+                            {canvasContent}
+                          </CanvasArea>
+                        </CanvasFrameWrap>
+                      ) : (
+                        <CanvasArea $ratio={aspectRatio} $expanded={canvasExpanded} style={canvasStyle} data-canvas="true" onClick={() => { setCanvasExpanded(true); setSelectedItem(null) }}>
+                          {canvasContent}
+                        </CanvasArea>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>
 
               <div className="toolbar">
-                {tools.map(tool => {
-                  return (
-                    <button key={tool.id} className="tool_btn" onClick={() => handleToolClick(tool.id)}>
-                      {tool.icon}<span>{tool.label}</span>
-                    </button>
-                  )
-                })}
+                {tools.map(tool => (
+                  <button key={tool.id} className="tool_btn" onClick={() => handleToolClick(tool.id)}>
+                    {tool.icon}<span>{tool.label}</span>
+                  </button>
+                ))}
               </div>
             </>
           )}
 
-          {/* ── Audio tab ── */}
           {activeTab === 'audio' && (
             <AudioTab
               initialAudioUrl={firstMessage?.type === 'audio' ? firstMessage.content?.audioUrl : undefined}
@@ -400,29 +436,33 @@ const EditBoardPage = () => {
             />
           )}
 
-          {/* ── Video tab ── */}
-          {activeTab === 'video' && <VideoTab />}
+          {activeTab === 'video' && (
+            <div style={{ padding: '2rem 0', textAlign: 'center', color: '#9CA3AF', fontSize: '0.9em' }}>
+              Video messages coming soon
+            </div>
+          )}
 
           {saveError && <ErrorMsg>{saveError}</ErrorMsg>}
 
-          <button
-            className={`preview_btn ${!isWorking && !saved && recipentOk ? 'ready' : ''}`}
-            disabled={isWorking || saved || !recipentOk}
-            onClick={handleSave}
-          >
-            {isWorking ? 'Saving…' : 'Save Changes'}
-          </button>
-
-          {/* Modals */}
-          {activeModal === 'event'      && <EventModal     onClose={() => setActiveModal(null)} currentEvent={selectedEvent} onConfirm={ev => { setSelectedEvent(ev); setActiveModal(null) }} />}
-          {activeModal === 'image'      && <ImageModal     onClose={() => setActiveModal(null)} currentImage={canvasImage}   onConfirm={src => { setCanvasImage(src); setImagePosition({ x: 50, y: 50 }); setImageSize(80); setActiveModal(null) }} />}
-          {activeModal === 'text'       && <TextModal      onClose={() => setActiveModal(null)} currentText={canvasText}     onConfirm={t   => { setCanvasText(prev => ({ ...t, position: prev?.position ?? { x: 50, y: 75 } })); setActiveModal(null) }} />}
-          {activeModal === 'vector'     && <VectorModal    onClose={() => setActiveModal(null)}                              onConfirm={v   => { setCanvasVector({ ...v, size: 48, position: { x: 75, y: 20 } }); setActiveModal(null) }} />}
-          {activeModal === 'editVector' && canvasVector && (
-            <EditVectorModal onClose={() => setActiveModal(null)} vector={canvasVector} onUpdate={updates => setCanvasVector(prev => ({ ...prev, ...updates }))} onRemove={() => { setCanvasVector(null); setActiveModal(null); setSelectedItem(null) }} />
+          {activeTab !== 'video' && !canvasExpanded && (
+            <button
+              className={`preview_btn ${!isWorking && !saved && recipentOk ? 'ready' : ''}`}
+              disabled={isWorking || saved || !recipentOk}
+              onClick={handleSave}
+            >
+              {isWorking ? 'Saving…' : 'Save Changes'}
+            </button>
           )}
-          {activeModal === 'bg'    && <BgModal    onClose={() => setActiveModal(null)} currentBg={canvasBg}       onConfirm={bg    => { setCanvasBg(bg);       setActiveModal(null) }} />}
-          {activeModal === 'frame' && <FrameModal onClose={() => setActiveModal(null)} currentFrame={canvasFrame} onConfirm={frame => { setCanvasFrame(frame); setActiveModal(null) }} />}
+
+          {activeModal === 'event'      && <EventModal  onClose={() => setActiveModal(null)} currentEvent={selectedEvent} onConfirm={ev => { setSelectedEvent(ev); setActiveModal(null) }} />}
+          {activeModal === 'image'      && <ImageModal  onClose={() => setActiveModal(null)} currentImage={null} onConfirm={src => { setCanvasImages(prev => [...prev, { id: Date.now(), src, size: 80, position: { x: 50, y: 50 } }]); setActiveModal(null) }} />}
+          {activeModal === 'editImage'  && (() => { const img = canvasImages.find(i => i.id === editingItemId); return img ? <ImageModal onClose={() => setActiveModal(null)} currentImage={img.src} onConfirm={src => { setCanvasImages(prev => prev.map(i => i.id === editingItemId ? { ...i, src } : i)); setActiveModal(null) }} /> : null })()}
+          {activeModal === 'text'       && <TextModal   onClose={() => setActiveModal(null)} currentText={null} onConfirm={t => { setCanvasTexts(prev => [...prev, { ...t, id: Date.now(), position: { x: 50, y: 50 } }]); setActiveModal(null) }} />}
+          {activeModal === 'editText'   && (() => { const txt = canvasTexts.find(t => t.id === editingItemId); return txt ? <TextModal onClose={() => setActiveModal(null)} currentText={txt} onConfirm={t => { setCanvasTexts(prev => prev.map(item => item.id === editingItemId ? { ...item, ...t } : item)); setActiveModal(null) }} onRemove={() => { setCanvasTexts(prev => prev.filter(t => t.id !== editingItemId)); setSelectedItem(null); setActiveModal(null) }} /> : null })()}
+          {activeModal === 'vector'     && <VectorModal onClose={() => setActiveModal(null)} onConfirm={v => { setCanvasVectors(prev => [...prev, { ...v, vectorId: v.id, id: Date.now(), size: 48, position: { x: 50, y: 30 } }]); setActiveModal(null) }} />}
+          {activeModal === 'editVector' && (() => { const vec = canvasVectors.find(v => v.id === editingItemId); return vec ? <EditVectorModal onClose={() => setActiveModal(null)} vector={vec} onUpdate={updates => setCanvasVectors(prev => prev.map(v => v.id === editingItemId ? { ...v, ...updates } : v))} onRemove={() => { setCanvasVectors(prev => prev.filter(v => v.id !== editingItemId)); setActiveModal(null); setSelectedItem(null) }} /> : null })()}
+          {activeModal === 'bg'         && <BgModal    onClose={() => setActiveModal(null)} currentBg={canvasBg}       onConfirm={bg    => { setCanvasBg(bg);       setActiveModal(null) }} />}
+          {activeModal === 'frame'      && <FrameModal onClose={() => setActiveModal(null)} currentFrame={canvasFrame} onConfirm={frame => { setCanvasFrame(frame); setActiveModal(null) }} />}
 
         </ContentWrap>
       </div>
@@ -455,6 +495,7 @@ const Wrapper = styled.div`
     border: none; background: transparent;
     display: flex; align-items: center; justify-content: center;
     font-size: 2em; color: var(--text-color, #111); cursor: pointer;
+    transition: color 0.2s;
     &:hover { color: var(--primary-color, #EF5A42); }
   }
 
@@ -492,6 +533,25 @@ const ContentWrap = styled.div`
   display: flex; flex-direction: column; gap: 1rem;
   width: 100%; max-width: 480px; padding: 0 0.5rem;
 
+  .expanded_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .back_btn {
+    width: 38px; height: 38px;
+    border-radius: 50%; background: transparent; border: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2em; color: #111; cursor: pointer;
+  }
+
+  .save_btn {
+    height: 38px; padding: 0 1.25rem;
+    border-radius: 25px; background: #fff; border: none;
+    color: #111; font-size: 0.95em; font-weight: 600; cursor: pointer;
+  }
+
   .select_row {
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 1rem; height: 50px;
@@ -524,22 +584,30 @@ const ContentWrap = styled.div`
     .ratio_btn {
       display: flex; align-items: center; justify-content: center;
       border: 1.5px solid #ECEFF3; background: #fff;
-      cursor: pointer; color: #10B981; font-size: 1em; border-radius: 5px;
-      transition: border-color 0.2s, background 0.2s;
+      cursor: pointer; border-radius: 5px; position: relative;
+      transition: border-color 0.2s;
       &.portrait_btn  { width: 24px; height: 36px; }
       &.landscape_btn { width: 40px; height: 26px; }
-      &.active { border-color: #10B981; background: #fff; }
+      &.active { border-color: #ECEFF3; }
       &:hover:not(.active) { border-color: #D1D5DB; }
+      .check_circle {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: #22c55e;
+        display: flex; align-items: center; justify-content: center;
+        svg { color: #fff; font-size: 0.45em; }
+      }
     }
   }
 
   .aspect_container {
     background: #F7F0ED; border-radius: 0 0 12px 12px; overflow: hidden;
+    &.expanded { border-radius: 12px; }
   }
 
   .canvas_wrap {
     display: flex; justify-content: center;
     padding: 0.75rem 3rem 1rem;
+    &.expanded { padding: 8px; }
   }
 
   .toolbar {
@@ -565,36 +633,54 @@ const ContentWrap = styled.div`
   }
 `
 
+const CanvasPlaceholder = styled.div`
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.65rem; pointer-events: none;
+  .placeholder_icon { width: 48px; height: 48px; }
+  .placeholder_text { margin: 0; font-size: 0.9em; font-weight: 700; color: #111; opacity: 0.25; text-align: center; }
+`
+
+const CanvasFrameWrap = styled.div`
+  width: ${({ $expanded, $ratio }) => $expanded ? '100%' : ($ratio === 'landscape' ? '100%' : '82%')};
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
+  flex-shrink: 0;
+  transition: width 0.3s ease;
+`
+
 const CanvasArea = styled.div`
-  aspect-ratio: ${({ $ratio }) => $ratio === 'landscape' ? '4 / 3' : '3 / 4'};
-  width: ${({ $ratio }) => $ratio === 'landscape' ? '100%' : '82%'};
-  border-radius: 30px; border: none;
-  overflow: hidden; position: relative; transition: aspect-ratio 0.3s ease, width 0.3s ease;
+  aspect-ratio: ${({ $expanded, $ratio }) =>
+    $expanded
+      ? ($ratio === 'landscape' ? '1 / 1' : '3 / 4')
+      : ($ratio === 'landscape' ? '4 / 3' : '3 / 4')};
+  width: ${({ $inFrame, $expanded, $ratio }) => ($inFrame || $expanded)
+    ? '100%'
+    : ($ratio === 'landscape' ? '100%' : '82%')};
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
+  border: none; overflow: hidden; position: relative;
+  transition: aspect-ratio 0.3s ease, width 0.3s ease;
 
   .canvas_image { display: block; object-fit: cover; border-radius: 6px; transition: width 0.08s, height 0.08s; pointer-events: none; }
+
   .remove_image_btn {
     position: absolute; top: -10px; right: -10px; z-index: 5;
     width: 22px; height: 22px; border-radius: 50%;
     background: rgba(0,0,0,0.6); border: none; color: #fff;
-    display: flex; align-items: center; justify-content: center; font-size: 0.9em; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9em; cursor: pointer;
     &:hover { background: rgba(0,0,0,0.85); }
   }
+
   .image_resize_bar {
     position: absolute; bottom: -28px; left: 50%; transform: translateX(-50%);
-    z-index: 5; background: rgba(0,0,0,0.5); border-radius: 99px; padding: 3px 10px;
-    display: flex; align-items: center;
+    z-index: 5; background: rgba(0,0,0,0.5); border-radius: 99px;
+    padding: 3px 10px; display: flex; align-items: center;
     input[type='range'] { width: 80px; height: 3px; accent-color: #fff; cursor: pointer; }
   }
 `
 
-const SuccessCard = styled.div`
-  flex: 1; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 1rem; padding: 3rem 1.5rem; text-align: center;
-  .success_icon { font-size: 3.5rem; color: #10B981; }
-  h2 { margin: 0; font-size: 1.2em; font-weight: 700; color: var(--text-color, #111); }
-  p  { margin: 0; color: #6B7280; font-size: 0.9em; line-height: 1.5; }
-  .done_btn { height: 50px; padding: 0 2rem; border: none; border-radius: 25px; background: var(--primary-color, #EF5A42); color: #fff; font-size: 1em; font-weight: 600; cursor: pointer; transition: opacity 0.2s; &:hover { opacity: 0.88; } }
-`
 
 const ErrorMsg = styled.p`
   font-size: 0.85em; color: #EF5A42; margin: 0; text-align: center;

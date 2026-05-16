@@ -1,26 +1,24 @@
-import React, { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
+import BoardIcon from "../../assets/board icon.svg";
 import styled from "styled-components";
 import { useDispatch, useSelector } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   BsX,
-  BsPencil,
-  BsMic,
+  BsChevronLeft,
   BsCameraVideo,
-  BsImage,
-  BsTypeBold,
-  BsBezier2,
-  BsPalette2,
-  BsBorderOuter,
-  BsCheck2,
-  BsCheckCircleFill,
+  BsCheckLg,
   BsPlayFill,
   BsPauseFill,
 } from "react-icons/bs";
 
-import { PiPerspective } from "react-icons/pi";
+import { PiPerspective, PiPencilSimpleLineLight, PiTextAUnderlineBold, PiRectangleDashed, PiImageBold } from "react-icons/pi";
+import { AiOutlineAudio } from "react-icons/ai";
+import { IoColorPaletteOutline } from "react-icons/io5";
+import { RiSketching } from "react-icons/ri";
 import { postMessage } from "../../slices/messageSlice";
 import { uploadFile } from "../../slices/uploadSlice";
+import { SuccessScreen } from "../../components/message/PreviewPanel";
 
 import ImageModal from "../../modals/ImageModal";
 import TextModal from "../../modals/TextModal";
@@ -30,6 +28,76 @@ import BgModal from "../../modals/BgModal";
 import FrameModal from "../../modals/FrameModal";
 import DraggableCanvasItem from "../../canvas/DraggableCanvasItem";
 import AudioTab from "../../tab/AudioTab";
+
+const CanvasContent = ({
+  canvasImage, imageSize, imagePosition, setImagePosition, setImageSize, setCanvasImage,
+  canvasVector, VectorIcon, setCanvasVector,
+  canvasText, setCanvasText,
+  selectedItem, setSelectedItem, setActiveModal, hasContent,
+}) => (
+  <>
+    {!hasContent && (
+      <CanvasPlaceholder>
+        <img src={BoardIcon} alt="" className="placeholder_icon" />
+        <p className="placeholder_text">Tap to create a message</p>
+      </CanvasPlaceholder>
+    )}
+    {canvasImage && (
+      <DraggableCanvasItem
+        position={imagePosition}
+        onPositionChange={setImagePosition}
+        selected={selectedItem === "image"}
+        onSelect={() => setSelectedItem("image")}
+        onTap={() => setActiveModal("image")}
+      >
+        <div style={{ position: "relative" }}>
+          <img
+            src={canvasImage}
+            alt="canvas"
+            className="canvas_image"
+            style={{ width: `${imageSize * 2}px`, height: `${imageSize * 2}px` }}
+          />
+          <button
+            className="remove_image_btn"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setCanvasImage(null); setImageSize(80); setImagePosition({ x: 50, y: 50 }); }}
+          >
+            <BsX />
+          </button>
+          {selectedItem === "image" && (
+            <div className="image_resize_bar" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+              <input type="range" min="30" max="180" step="2" value={imageSize} onChange={(e) => setImageSize(Number(e.target.value))} />
+            </div>
+          )}
+        </div>
+      </DraggableCanvasItem>
+    )}
+    {canvasVector && VectorIcon && (
+      <DraggableCanvasItem
+        position={canvasVector.position}
+        onPositionChange={(pos) => setCanvasVector((prev) => ({ ...prev, position: pos }))}
+        selected={selectedItem === "vector"}
+        onSelect={() => setSelectedItem("vector")}
+        onTap={() => setActiveModal("editVector")}
+      >
+        <VectorIcon style={{ color: canvasVector.color, opacity: canvasVector.opacity, fontSize: canvasVector.size ?? 48, display: "block" }} />
+      </DraggableCanvasItem>
+    )}
+    {canvasText && (
+      <DraggableCanvasItem
+        position={canvasText.position}
+        onPositionChange={(pos) => setCanvasText((prev) => ({ ...prev, position: pos }))}
+        selected={selectedItem === "text"}
+        onSelect={() => setSelectedItem("text")}
+        onTap={() => setActiveModal("text")}
+      >
+        <p style={{ margin: 0, fontFamily: canvasText.font?.family, color: canvasText.color, fontSize: canvasText.fontSize ?? 16, maxWidth: 200, textAlign: "center", lineHeight: 1.35, wordBreak: "break-word", ...canvasText.font?.style }}>
+          {canvasText.content}
+        </p>
+      </DraggableCanvasItem>
+    )}
+  </>
+)
 
 const CreateMessagePage = () => {
   const { slug } = useParams();
@@ -54,17 +122,11 @@ const CreateMessagePage = () => {
   const [imagePosition, setImagePosition] = useState({ x: 50, y: 50 });
   const [canvasText, setCanvasText] = useState(null);
   const [canvasVector, setCanvasVector] = useState(null);
-  const DEFAULT_FRAME = {
-    style: "solid",
-    thickness: 25,
-    radius: 30,
-    color: "#111111",
-    border: "25px solid #111111",
-    borderRadius: "30px",
-  };
-  const [canvasFrame, setCanvasFrame] = useState(DEFAULT_FRAME);
+  const [canvasFrame, setCanvasFrame] = useState(null);
+  const DEFAULT_FRAME = { style: 'solid', thickness: 16, radius: 16, color: '#111111', border: '16px solid #111111', borderRadius: '16px' };
+  const [canvasExpanded, setCanvasExpanded] = useState(false);
 
-  // ── preview / post state 
+  // ── preview / post state
   const [showPreview, setShowPreview] = useState(false);
   const [canvasSnapshot, setCanvasSnapshot] = useState(null);
   const [pendingCanvasFile, setPendingCanvasFile] = useState(null);
@@ -76,20 +138,21 @@ const CreateMessagePage = () => {
 
   // ── derived
   const tabs = [
-    { id: "text", label: "Text", icon: <BsPencil /> },
-    { id: "audio", label: "Audio", icon: <BsMic /> },
+    { id: "audio", label: "Audio", icon: <AiOutlineAudio /> },
+    { id: "text", label: "Text", icon: <PiPencilSimpleLineLight /> },
     { id: "video", label: "Video", icon: <BsCameraVideo /> },
   ];
   const tools = [
-    { id: "image", label: "Image", icon: <BsImage /> },
-    { id: "text", label: "Text", icon: <BsTypeBold /> },
-    { id: "vector", label: "Vector", icon: <BsBezier2 /> },
-    { id: "bg", label: "BG", icon: <BsPalette2 /> },
-    { id: "frame", label: "Frame", icon: <BsBorderOuter /> },
+    { id: "image", label: "Image", icon: <PiImageBold /> },
+    { id: "text", label: "Text", icon: <PiTextAUnderlineBold /> },
+    { id: "vector", label: "Vector", icon: <RiSketching /> },
+    { id: "bg", label: "BG", icon: <IoColorPaletteOutline /> },
+    { id: "frame", label: "Frame", icon: <PiRectangleDashed /> },
   ];
 
   const hasContent =
     canvasBg || canvasImage || canvasText || canvasVector || canvasFrame;
+  const activeFrame = canvasFrame || (hasContent ? DEFAULT_FRAME : null);
   const VectorIcon = canvasVector?.icon;
   const canvasStyle = { background: canvasBg ? canvasBg.value : "#F9FAFB" };
   const isPosting = postMessageLoad || imageUploadLoad || audioUploadLoad;
@@ -123,7 +186,7 @@ const CreateMessagePage = () => {
     }
     return new Promise((resolve, reject) => {
       canvasEl.toBlob(
-        (blob) =>
+        (blob) => 
           blob
             ? resolve(
                 new File([blob], `canvas_${Date.now()}.png`, {
@@ -192,6 +255,9 @@ const CreateMessagePage = () => {
         uploadResult.response.url || uploadResult.response.secure_url;
       const publicId = uploadResult.response.public_id;
 
+      const DEFAULT_FRAME = { style: 'solid', thickness: 16, radius: 16, color: '#111111', border: '16px solid #111111', borderRadius: '16px' };
+      const activeFrame = canvasFrame || (hasContent ? DEFAULT_FRAME : null);
+
       const msgResult = await dispatch(
         postMessage({
           slug,
@@ -201,13 +267,34 @@ const CreateMessagePage = () => {
             font: canvasText?.font?.family || null,
             color: canvasText?.color || null,
             background: canvasBg?.value || null,
-            frame: canvasFrame
-              ? `${canvasFrame.thickness}px ${canvasFrame.style} ${canvasFrame.color}`
+            frame: activeFrame
+              ? `${activeFrame.thickness}px ${activeFrame.style} ${activeFrame.color}`
               : null,
             imageUrls: renderedImageUrl ? [renderedImageUrl] : [],
             vectorKey: canvasVector?.id || null,
             audioUrl: null,
             duration: null,
+          },
+          canvasData: {
+            canvasBg,
+            canvasFrame: activeFrame,
+            aspectRatio,
+            canvasTexts: canvasText ? [{ ...canvasText, id: 'txt_0' }] : [],
+            canvasVectors: canvasVector ? [{
+              id: 'vec_0',
+              vectorId: canvasVector.id,
+              icon: canvasVector.id,
+              color: canvasVector.color,
+              opacity: canvasVector.opacity ?? 1,
+              size: canvasVector.size ?? 48,
+              position: canvasVector.position,
+            }] : [],
+            canvasImages: canvasImage ? [{
+              id: 'img_0',
+              src: canvasImage,
+              size: imageSize,
+              position: imagePosition,
+            }] : [],
           },
           cloudinaryPublicId: publicId,
           fileType: "image",
@@ -232,6 +319,10 @@ const CreateMessagePage = () => {
     canvasBg,
     canvasFrame,
     canvasVector,
+    aspectRatio,
+    canvasImage,
+    imageSize,
+    imagePosition,
   ]);
 
   const closePreview = () => {
@@ -246,19 +337,20 @@ const CreateMessagePage = () => {
 
   if (postSuccess) {
     return (
-      <Wrapper>
-        <SuccessCard>
-          <BsCheckCircleFill className="success_icon" />
-          <h2>Message Posted!</h2>
-          <p>Your message has been added to the board.</p>
-          <button
-            className="done_btn"
-            onClick={() => navigate(`/board/${slug}`)}
-          >
-            View Board
-          </button>
-        </SuccessCard>
-      </Wrapper>
+      <SuccessScreen
+        canvasData={pendingAudioFile ? null : {
+          canvasTexts: canvasText ? [{ ...canvasText, id: 'txt_0' }] : [],
+          canvasBg,
+          canvasFrame: activeFrame,
+          canvasVectors: canvasVector ? [{ id: 'vec_0', vectorId: canvasVector.id, icon: canvasVector.id, color: canvasVector.color, opacity: canvasVector.opacity ?? 1, size: canvasVector.size ?? 48, position: canvasVector.position }] : [],
+          canvasImages: canvasImage ? [{ id: 'img_0', src: canvasImage, size: imageSize, position: imagePosition }] : [],
+          aspectRatio,
+        }}
+        isAudio={!!pendingAudioFile}
+        boardSlug={slug}
+        onViewPost={() => navigate(`/board/${slug}`)}
+        onDone={() => navigate(`/board/${slug}`)}
+      />
     );
   }
 
@@ -289,160 +381,104 @@ const CreateMessagePage = () => {
           {/* Canvas tab */}
           {activeTab === "text" && (
             <>
+              {canvasExpanded && (
+                <div className="expanded_header">
+                  <button className="back_btn" onClick={() => setCanvasExpanded(false)}>
+                    <BsChevronLeft />
+                  </button>
+                  <button className="save_btn" onClick={() => setCanvasExpanded(false)}>
+                    Save
+                  </button>
+                </div>
+              )}
+
               {/* Aspect ratio + canvas */}
               <div className="canvas_unit">
-                <div className="aspect_header">
-                  <span className="aspect_label">
-                    <PiPerspective /> Aspect Ratio
-                  </span>
-                  <div className="ratio_toggles">
-                    <button
-                      className={`ratio_btn portrait_btn ${aspectRatio === "portrait" ? "active" : ""}`}
-                      onClick={() => setAspectRatio("portrait")}
-                      title="Portrait (3:4)"
-                    >
-                      {aspectRatio === "portrait" && <BsCheck2 />}
-                    </button>
-                    <button
-                      className={`ratio_btn landscape_btn ${aspectRatio === "landscape" ? "active" : ""}`}
-                      onClick={() => setAspectRatio("landscape")}
-                      title="Landscape (4:3)"
-                    >
-                      {aspectRatio === "landscape" && <BsCheck2 />}
-                    </button>
+                {!canvasExpanded && (
+                  <div className="aspect_header">
+                    <span className="aspect_label">
+                      <PiPerspective /> Aspect Ratio
+                    </span>
+                    <div className="ratio_toggles">
+                      <button
+                        className={`ratio_btn portrait_btn ${aspectRatio === "portrait" ? "active" : ""}`}
+                        onClick={() => setAspectRatio("portrait")}
+                        title="Portrait (3:4)"
+                      >
+                        {aspectRatio === "portrait" && <span className="check_circle"><BsCheckLg /></span>}
+                      </button>
+                      <button
+                        className={`ratio_btn landscape_btn ${aspectRatio === "landscape" ? "active" : ""}`}
+                        onClick={() => setAspectRatio("landscape")}
+                        title="Landscape (4:3)"
+                      >
+                        {aspectRatio === "landscape" && <span className="check_circle"><BsCheckLg /></span>}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="aspect_container">
-                  <div className="canvas_wrap">
-                    <CanvasArea
-                      ref={canvasRef}
-                      $ratio={aspectRatio}
-                      style={{
-                        ...canvasStyle,
-                        ...(canvasFrame
-                          ? {
-                              border: canvasFrame.border,
-                              borderRadius: canvasFrame.borderRadius,
-                            }
-                          : {}),
-                      }}
-                      data-canvas="true"
-                      onClick={() => setSelectedItem(null)}
-                    >
-                      {canvasImage && (
-                        <DraggableCanvasItem
-                          position={imagePosition}
-                          onPositionChange={setImagePosition}
-                          selected={selectedItem === "image"}
-                          onSelect={() => setSelectedItem("image")}
-                          onTap={() => setActiveModal("image")}
-                        >
-                          <div style={{ position: "relative" }}>
-                            <img
-                              src={canvasImage}
-                              alt="canvas"
-                              className="canvas_image"
-                              style={{
-                                width: `${imageSize * 2}px`,
-                                height: `${imageSize * 2}px`,
-                              }}
-                            />
-                            <button
-                              className="remove_image_btn"
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCanvasImage(null);
-                                setImageSize(80);
-                                setImagePosition({ x: 50, y: 50 });
-                              }}
-                            >
-                              <BsX />
-                            </button>
-                            {selectedItem === "image" && (
-                              <div
-                                className="image_resize_bar"
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="range"
-                                  min="30"
-                                  max="180"
-                                  step="2"
-                                  value={imageSize}
-                                  onChange={(e) =>
-                                    setImageSize(Number(e.target.value))
-                                  }
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </DraggableCanvasItem>
-                      )}
-
-                      {canvasVector && VectorIcon && (
-                        <DraggableCanvasItem
-                          position={canvasVector.position}
-                          onPositionChange={(pos) =>
-                            setCanvasVector((prev) => ({
-                              ...prev,
-                              position: pos,
-                            }))
-                          }
-                          selected={selectedItem === "vector"}
-                          onSelect={() => setSelectedItem("vector")}
-                          onTap={() => setActiveModal("editVector")}
-                        >
-                          <VectorIcon
-                            style={{
-                              color: canvasVector.color,
-                              opacity: canvasVector.opacity,
-                              fontSize: canvasVector.size ?? 48,
-                              display: "block",
-                            }}
+                <div className={`aspect_container${canvasExpanded ? " expanded" : ""}`}>
+                  <div className={`canvas_wrap${canvasExpanded ? " expanded" : ""}`}>
+                    {activeFrame ? (
+                      <CanvasFrameWrap
+                        ref={canvasRef}
+                        $ratio={aspectRatio}
+                        $expanded={canvasExpanded}
+                        style={{ background: activeFrame.color, padding: '20px', borderRadius: '32px' }}
+                        data-canvas="true"
+                      >
+                        <CanvasArea $ratio={aspectRatio} $expanded={canvasExpanded} $inFrame style={canvasStyle} onClick={() => { setCanvasExpanded(true); setSelectedItem(null); }}>
+                          <CanvasContent
+                            canvasImage={canvasImage}
+                            imageSize={imageSize}
+                            imagePosition={imagePosition}
+                            setImagePosition={setImagePosition}
+                            setImageSize={setImageSize}
+                            setCanvasImage={setCanvasImage}
+                            canvasVector={canvasVector}
+                            VectorIcon={VectorIcon}
+                            setCanvasVector={setCanvasVector}
+                            canvasText={canvasText}
+                            setCanvasText={setCanvasText}
+                            selectedItem={selectedItem}
+                            setSelectedItem={setSelectedItem}
+                            setActiveModal={setActiveModal}
+                            hasContent={hasContent}
                           />
-                        </DraggableCanvasItem>
-                      )}
-
-                      {canvasText && (
-                        <DraggableCanvasItem
-                          position={canvasText.position}
-                          onPositionChange={(pos) =>
-                            setCanvasText((prev) => ({
-                              ...prev,
-                              position: pos,
-                            }))
-                          }
-                          selected={selectedItem === "text"}
-                          onSelect={() => setSelectedItem("text")}
-                          onTap={() => setActiveModal("text")}
-                        >
-                          <p
-                            style={{
-                              margin: 0,
-                              fontFamily: canvasText.font?.family,
-                              color: canvasText.color,
-                              fontSize: canvasText.fontSize ?? 16,
-                              maxWidth: 200,
-                              textAlign: "center",
-                              lineHeight: 1.35,
-                              wordBreak: "break-word",
-                              ...canvasText.font?.style,
-                            }}
-                          >
-                            {canvasText.content}
-                          </p>
-                        </DraggableCanvasItem>
-                      )}
-                    </CanvasArea>
+                        </CanvasArea>
+                      </CanvasFrameWrap>
+                    ) : (
+                      <CanvasArea
+                        ref={canvasRef}
+                        $ratio={aspectRatio}
+                        $expanded={canvasExpanded}
+                        style={canvasStyle}
+                        data-canvas="true"
+                        onClick={() => { setCanvasExpanded(true); setSelectedItem(null); }}
+                      >
+                        <CanvasContent
+                          canvasImage={canvasImage}
+                          imageSize={imageSize}
+                          imagePosition={imagePosition}
+                          setImagePosition={setImagePosition}
+                          setImageSize={setImageSize}
+                          setCanvasImage={setCanvasImage}
+                          canvasVector={canvasVector}
+                          VectorIcon={VectorIcon}
+                          setCanvasVector={setCanvasVector}
+                          canvasText={canvasText}
+                          setCanvasText={setCanvasText}
+                          selectedItem={selectedItem}
+                          setSelectedItem={setSelectedItem}
+                          setActiveModal={setActiveModal}
+                          hasContent={hasContent}
+                        />
+                      </CanvasArea>
+                    )}
                   </div>
-                  {/* canvas_wrap */}
                 </div>
-                {/* aspect_container */}
               </div>
-              {/* canvas_unit */}
 
               {/* Toolbar */}
               <div className="toolbar">
@@ -459,23 +495,25 @@ const CreateMessagePage = () => {
               </div>
 
               {/* Send button */}
-              <button
-                className={`send_btn ${hasContent ? "ready" : ""}`}
-                disabled={!hasContent}
-                onClick={async () => {
-                  if (!hasContent) return;
-                  try {
-                    const file = await captureCanvasAsFile();
-                    setPendingCanvasFile(file);
-                    setCanvasSnapshot(URL.createObjectURL(file));
-                    setShowPreview(true);
-                  } catch {
-                    setPostError("Failed to render canvas. Please try again.");
-                  }
-                }}
-              >
-                {hasContent ? "Preview message" : "Preview"}
-              </button>
+              {!canvasExpanded && (
+                <button
+                  className={`send_btn ${hasContent ? "ready" : ""}`}
+                  disabled={!hasContent}
+                  onClick={async () => {
+                    if (!hasContent) return;
+                    try {
+                      const file = await captureCanvasAsFile();
+                      setPendingCanvasFile(file);
+                      setCanvasSnapshot(URL.createObjectURL(file));
+                      setShowPreview(true);
+                    } catch {
+                      setPostError("Failed to render canvas. Please try again.");
+                    }
+                  }}
+                >
+                  {hasContent ? "Preview message" : "Preview"}
+                </button>
+              )}
 
               {postError && <ErrorMsg>{postError}</ErrorMsg>}
             </>
@@ -775,6 +813,38 @@ const Wrapper = styled.div`
     gap: 1rem;
   }
 
+  .expanded_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .back_btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    color: #111;
+    cursor: pointer;
+  }
+
+  .save_btn {
+    height: 38px;
+    padding: 0 1.25rem;
+    border-radius: 25px;
+    background: #fff;
+    border: none;
+    color: #111;
+    font-size: 0.95em;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
   .canvas_unit {
     display: flex;
     flex-direction: column;
@@ -809,26 +879,22 @@ const Wrapper = styled.div`
       border: 1.5px solid #eceff3;
       background: #fff;
       cursor: pointer;
-      color: #10b981;
-      font-size: 1em;
       border-radius: 5px;
-      transition:
-        border-color 0.2s,
-        background 0.2s;
-      &.portrait_btn {
-        width: 24px;
-        height: 36px;
-      }
-      &.landscape_btn {
-        width: 40px;
-        height: 26px;
-      }
-      &.active {
-        border-color: #10b981;
-        background: #fff;
-      }
-      &:hover:not(.active) {
-        border-color: #d1d5db;
+      position: relative;
+      transition: border-color 0.2s;
+      &.portrait_btn  { width: 24px; height: 36px; }
+      &.landscape_btn { width: 40px; height: 26px; }
+      &.active { border-color: #eceff3; }
+      &:hover:not(.active) { border-color: #d1d5db; }
+      .check_circle {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #22c55e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        svg { color: #fff; font-size: 0.45em; }
       }
     }
   }
@@ -837,12 +903,18 @@ const Wrapper = styled.div`
     background: #f7f0ed;
     border-radius: 0 0 12px 12px;
     overflow: hidden;
+    &.expanded {
+      border-radius: 12px;
+    }
   }
 
   .canvas_wrap {
     display: flex;
     justify-content: center;
     padding: 0.75rem 3rem 1rem;
+    &.expanded {
+      padding: 8px;
+    }
   }
 
   .toolbar {
@@ -910,16 +982,53 @@ const Wrapper = styled.div`
   }
 `;
 
+const CanvasPlaceholder = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  pointer-events: none;
+
+  .placeholder_icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .placeholder_text {
+    margin: 0;
+    font-size: 0.9em;
+    font-weight: 700;
+    color: #111;
+    opacity: 0.25;
+    text-align: center;
+  }
+`
+
+const CanvasFrameWrap = styled.div`
+  width: ${({ $expanded, $ratio }) => $expanded ? "100%" : ($ratio === "landscape" ? "100%" : "82%")};
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
+  flex-shrink: 0;
+  transition: width 0.3s ease;
+`
+
 const CanvasArea = styled.div`
-  aspect-ratio: ${({ $ratio }) => ($ratio === "landscape" ? "4 / 3" : "3 / 4")};
-  width: ${({ $ratio }) => ($ratio === "landscape" ? "100%" : "82%")};
-  border-radius: 30px;
+  aspect-ratio: ${({ $expanded, $ratio }) =>
+    $expanded
+      ? ($ratio === "landscape" ? "1 / 1" : "3 / 4")
+      : ($ratio === "landscape" ? "4 / 3" : "3 / 4")};
+  width: ${({ $inFrame, $expanded, $ratio }) => ($inFrame || $expanded)
+    ? "100%"
+    : ($ratio === "landscape" ? "100%" : "82%")};
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
   border: none;
   overflow: hidden;
   position: relative;
-  transition:
-    aspect-ratio 0.3s ease,
-    width 0.3s ease;
+  transition: aspect-ratio 0.3s ease;
 
   .canvas_image {
     display: block;
@@ -1024,16 +1133,11 @@ const PreviewCard = styled.div`
 
   .snapshot_wrap {
     width: 100%;
-    aspect-ratio: 1 / 1;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 1.5px solid #eceff3;
-    background: #f3f4f6;
     .snapshot_img {
       width: 100%;
-      height: 100%;
-      object-fit: contain;
+      height: auto;
       display: block;
+      border-radius: 32px;
     }
   }
 
@@ -1134,47 +1238,6 @@ const AudioThumb = styled.div`
   }
 `;
 
-const SuccessCard = styled.div`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 3rem 1.5rem;
-  text-align: center;
-  .success_icon {
-    font-size: 3.5rem;
-    color: #10b981;
-  }
-  h2 {
-    margin: 0;
-    font-size: 1.2em;
-    font-weight: 700;
-    color: var(--text-color, #111);
-  }
-  p {
-    margin: 0;
-    color: #6b7280;
-    font-size: 0.9em;
-    line-height: 1.5;
-  }
-  .done_btn {
-    height: 50px;
-    padding: 0 2rem;
-    border: none;
-    border-radius: 25px;
-    background: var(--primary-color, #ef5a42);
-    color: #fff;
-    font-size: 1em;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    &:hover {
-      opacity: 0.88;
-    }
-  }
-`;
 
 const ErrorMsg = styled.p`
   font-size: 0.85em;

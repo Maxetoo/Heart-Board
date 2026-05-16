@@ -4,6 +4,7 @@ import {
   BsHeadphones, BsTrophy, BsBalloon, BsGift,
   BsDiamond, BsAward, BsClock, BsBriefcase,
 } from 'react-icons/bs'
+import paperImg from '../assets/paper.png'
 
 export const FONTS = [
   { label: 'Playfair Display', family: "'Playfair Display', serif",  style: { fontStyle: 'italic' } },
@@ -36,6 +37,7 @@ export const VECTOR_ICONS = [
 ]
 
 export const BG_OPTIONS = [
+  { id: 'paper', label: 'Paper',    value: `url(${paperImg}) center/cover no-repeat` },
   { id: 'bg1',  label: 'Marble',    value: 'linear-gradient(135deg, #f5f5f0 0%, #e8e4df 50%, #f0ede8 100%)' },
   { id: 'bg2',  label: 'Lines',     value: 'repeating-linear-gradient(0deg, #f9f9f9 0px, #f9f9f9 18px, #e5e5e5 18px, #e5e5e5 20px)' },
   { id: 'bg3',  label: 'Sky',       value: 'linear-gradient(180deg, #dbeafe 0%, #eff6ff 100%)' },

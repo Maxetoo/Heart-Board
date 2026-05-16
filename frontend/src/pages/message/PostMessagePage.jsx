@@ -1,6 +1,6 @@
-import React, {useState} from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
-import { BsX, BsPencil, BsMic, BsCameraVideo } from 'react-icons/bs'
+import { BsCameraVideo, BsX } from 'react-icons/bs'
 import { AiOutlineAudio } from "react-icons/ai";
 import { PiPencilSimpleLineLight } from "react-icons/pi";
 
@@ -26,11 +26,11 @@ const PostMessagePage = () => {
       <div className="page_header">
         <button className="close_btn" onClick={() => navigate(-1)}><BsX /></button>
         <h2 className="page_title">
-          {mention ? `Appreciate ${mention.startsWith('#') ? mention : `@${mention}`}` : 'Create Board'}
+          {mention ? `Appreciate ${mention.startsWith('#') ? mention : `@${mention}`}` : 'Drop a message'}
         </h2>
         <div className="tab_switcher">
           {tabs.map(tab => (
-            <button
+            <button 
               key={tab.id}
               className={`tab_btn ${activeTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
@@ -81,10 +81,10 @@ const Wrapper = styled.div`
     align-items: center;
     justify-content: center;
     font-size: 2em;
-    color: var(--text-color, #111);
     cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
-    &:hover { border-color: var(--primary-color, #EF5A42); color: var(--primary-color, #EF5A42); }
+    color: #111;
+    transition: color 0.2s;
+    &:hover { color: var(--primary-color, #ef5a42); }
   }
 
   .page_title {

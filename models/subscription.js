@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const PLAN_LIMITS = {
-  free:       { boardLimit: 10,  messageLimit: 30  },
+  free:       { boardLimit: 20,  messageLimit: 30  },
   pro:        { boardLimit: -1,  messageLimit: -1  },
   enterprise: { boardLimit: -1,  messageLimit: -1  },
 };

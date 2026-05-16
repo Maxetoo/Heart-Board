@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import styled from 'styled-components'
-import { BsX, BsImage, BsUpload } from 'react-icons/bs'
+import { BsImage, BsUpload } from 'react-icons/bs'
+import { RxCross2 } from 'react-icons/rx'
 import { ModalBackdrop, ModalBox } from '../sharedStyles/index'
 
 const ImageModal = ({ onClose, onConfirm, currentImage }) => {
@@ -22,7 +23,7 @@ const ImageModal = ({ onClose, onConfirm, currentImage }) => {
       <ModalBox onClick={(e) => e.stopPropagation()}>
         <div className="modal_header">
           <h3>Image</h3>
-          <button className="modal_close" onClick={onClose}><BsX /></button>
+          <button className="modal_close" onClick={onClose}><RxCross2 /></button>
         </div>
 
         <ImagePreviewBox onClick={() => fileRef.current.click()}>
@@ -95,8 +96,6 @@ const UploadRowBtn = styled.button`
   font-size: 0.95em;
   color: var(--text-color, #111);
   cursor: pointer;
-  transition: border-color 0.2s;
-  &:hover { border-color: var(--primary-color, #EF5A42); }
 `
 
 export default ImageModal

@@ -259,6 +259,41 @@ const likeBoard = async (req, res) => {
 };
 
 
+const getMyReaction = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user?.userId;
+  const like = await Like.findOne({ board: id, user: userId }).select('reaction').lean();
+  res.status(StatusCodes.OK).json({ reaction: like?.reaction || null });
+};
+
+
+const patchReaction = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user?.userId;
+  const { reaction } = req.body;
+
+  const validReactions = ['clap', 'heart', 'thumbs', 'smile', 'fire'];
+  if (reaction && !validReactions.includes(reaction)) {
+    throw new CustomError.BadRequestError('Invalid reaction type');
+  }
+
+  const like = await Like.findOne({ board: id, user: userId });
+  if (!like) throw new CustomError.NotFoundError('You have not liked this board.');
+
+  like.reaction = reaction || null;
+  await like.save();
+
+  const board = await Board.findById(id);
+  if (board) {
+    board.lastReaction = reaction || null;
+    await board.save();
+    await invalidate(keys.board(board.slug));
+  }
+
+  res.status(StatusCodes.OK).json({ reaction: like.reaction, lastReaction: reaction || null });
+};
+
+
 const shareBoard = async (req, res) => {
   const { id } = req.params;
   const board  = await Board.findOneAndUpdate(
@@ -279,7 +314,13 @@ const discoverBoards = async (req, res) => {
   const page  = Math.max(1, parseInt(req.query.page)  || 1);
   const limit = Math.min(50, parseInt(req.query.limit) || 12);
   const skip  = (page - 1) * limit;
-  const sort  = req.query.sort === 'popular' ? { 'stats.visits': -1 } : { createdAt: -1 };
+  const sortMap = {
+    popular:  { 'stats.visits':   -1 },
+    likes:    { 'stats.likes':    -1 },
+    shares:   { 'stats.shares':   -1 },
+    messages: { 'stats.messages': -1 },
+  }
+  const sort = sortMap[req.query.sort] || { createdAt: -1 };
 
   const filter = { visibility: 'public', isActive: true, receipentFlagged: false };
   if (req.query.event) filter.event = req.query.event;
@@ -390,6 +431,8 @@ module.exports = {
   updateBoard,
   deleteBoard,
   likeBoard,
+  getMyReaction,
+  patchReaction,
   shareBoard,
   discoverBoards,
   flagBoard,

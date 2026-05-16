@@ -5,11 +5,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import {
   BsMicFill,
-  BsPlayFill,
   BsEye,
-  BsChevronLeft,
   BsPersonX,
 } from "react-icons/bs";
+import { MdOutlineArrowBackIos } from "react-icons/md";
 import {
   getPublicProfile,
   clearPublicProfile,
@@ -23,51 +22,43 @@ import DefaultAvatar from "../../assets/Vector.svg";
 import { userProfileFirstMsgCache } from "../../utils/msgCache";
 
 const EmblemCard = ({ msg, isMulti, onClick }) => (
-  <CardWrap onClick={onClick}>
-    <CanvasRenderer canvasData={msg.canvasData} />
-    {isMulti && (
-      <MultiIndicator>
-        <BsPlayFill />
-      </MultiIndicator>
-    )}
+  <CardWrap onClick={onClick} $isMulti={isMulti}>
+    {isMulti && <><StackLayer $back /><StackLayer /></>}
+    <ContentTop>
+      <CanvasRenderer canvasData={msg.canvasData} />
+    </ContentTop>
   </CardWrap>
 );
 
 const StackCard = ({ msg, isMulti, onClick }) => {
   const src = msg?.content?.imageUrls?.[0] || null;
   return (
-    <CardWrap onClick={onClick}>
-      {src ? (
-        <img src={src} alt="" className="card_img" />
-      ) : (
-        <div className="card_placeholder" />
-      )}
-      {isMulti && (
-        <MultiIndicator>
-          <BsPlayFill />
-        </MultiIndicator>
-      )}
+    <CardWrap onClick={onClick} $isMulti={isMulti}>
+      {isMulti && <><StackLayer $back /><StackLayer /></>}
+      <ContentTop>
+        {src ? (
+          <img src={src} alt="" className="card_img" />
+        ) : (
+          <div className="card_placeholder" />
+        )}
+      </ContentTop>
     </CardWrap>
   );
 };
 
 const AudioCard = ({ isMulti, onClick }) => (
-  <AudioOuter onClick={onClick}>
+  <AudioOuter onClick={onClick} $isMulti={isMulti}>
+    {isMulti && <><StackLayer $back /><StackLayer /></>}
     <span className="ripple" />
     <span className="ripple" />
     <span className="ripple" />
     <div className="mic_center">
       <BsMicFill className="mic_icon" />
     </div>
-    {isMulti && (
-      <MultiIndicator>
-        <BsPlayFill />
-      </MultiIndicator>
-    )}
   </AudioOuter>
 );
 
-const NoteCard = ({ board, isMulti, onClick }) => (
+const NoteCard = ({ board, onClick }) => (
   <CardWrap
     onClick={onClick}
     style={{ background: "#FFF8E7", borderColor: "#F5C842" }}
@@ -81,11 +72,6 @@ const NoteCard = ({ board, isMulti, onClick }) => (
         <p className="note_body note_body_empty">No description</p>
       )}
     </div>
-    {isMulti && (
-      <MultiIndicator>
-        <BsPlayFill />
-      </MultiIndicator>
-    )}
   </CardWrap>
 );
 
@@ -99,7 +85,7 @@ const BoardCard = ({ board, msg, onOpen }) => {
   if (type === "audio") return <AudioCard isMulti={isMulti} onClick={open} />;
   if (msg?.content?.imageUrls?.[0])
     return <StackCard msg={msg} isMulti={isMulti} onClick={open} />;
-  return <NoteCard board={board} isMulti={isMulti} onClick={open} />;
+  return <NoteCard board={board} onClick={open} />;
 };
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -271,10 +257,10 @@ const handleSendAppreciation = useCallback(() => {
       <Page>
         <Header>
           <button className="back_btn" onClick={() => navigate(-1)}>
-            <BsChevronLeft />
+            <MdOutlineArrowBackIos />
           </button>
           <div className="header_profile">
-            <span className="header_username">Profile</span>
+            <span className="header_username">My Heartboard</span>
           </div>
           <div style={{ width: 36 }} />
         </Header>
@@ -295,13 +281,13 @@ const handleSendAppreciation = useCallback(() => {
     return (
       <Page>
         <Header>
-          <button className="back_btn" onClick={() => navigate(-1)}><BsChevronLeft /></button>
-          <span className="header_username">Profile</span>
+          <button className="back_btn" onClick={() => navigate(-1)}><MdOutlineArrowBackIos /></button>
+          <span className="header_username">My Heartboard</span>
           <div style={{ width: 36 }} />
         </Header>
         <Hero>
           <AvatarWrap>
-            <img src={DefaultAvatar} alt="avatar" style={{ width: "83px", height: "83px", objectFit: "contain" }} />
+            <img src={DefaultAvatar} alt="avatar" style={{ width: "68px", height: "68px", objectFit: "contain" }} />
           </AvatarWrap>
           <HeroInfo>
             <HeroUsername>#{username}</HeroUsername>
@@ -355,8 +341,8 @@ const handleSendAppreciation = useCallback(() => {
     return (
       <Page>
         <Header>
-          <button className="back_btn" onClick={() => navigate(-1)}><BsChevronLeft /></button>
-          <span className="header_username">Profile</span>
+          <button className="back_btn" onClick={() => navigate(-1)}><MdOutlineArrowBackIos /></button>
+          <span className="header_username">My Heartboard</span>
           <div style={{ width: 36 }} />
         </Header>
         <NotFoundWrap>
@@ -375,9 +361,9 @@ const handleSendAppreciation = useCallback(() => {
     <Page>
       <Header>
         <button className="back_btn" onClick={() => navigate(-1)}>
-          <BsChevronLeft />
+          <MdOutlineArrowBackIos />
         </button>
-        <span className="header_username">Profile</span>
+        <span className="header_username">My Profile</span>
         <div style={{ width: 36 }} />
       </Header>
 
@@ -390,7 +376,7 @@ const handleSendAppreciation = useCallback(() => {
             <img
               src={DefaultAvatar}
               alt="avatar"
-              style={{ width: "83px", height: "83px", objectFit: "contain" }}
+              style={{ width: "68px", height: "68px", objectFit: "contain" }}
             />
           )}
         </AvatarWrap>
@@ -441,7 +427,7 @@ const handleSendAppreciation = useCallback(() => {
                     <SkeletonWrap $tall={isTall(i)} />
                   </GridItem>
                 ))}
-              </MasonryGrid>
+              </MasonryGrid> 
             ) : filtered.length === 0 ? (
               <EmptyMsg>No boards yet.</EmptyMsg>
             ) : (
@@ -508,15 +494,14 @@ const Header = styled.div`
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.85rem 1.25rem;
+  gap: 0.25rem;
+  padding: 1.4rem 1.5rem 0.85rem;
   background: #fff;
 
   .back_btn {
     width: 36px;
     height: 36px;
-    border-radius: 50%;
-    border: 1.5px solid #eceff3;
+    border: none;
     background: transparent;
     cursor: pointer;
     display: flex;
@@ -525,9 +510,8 @@ const Header = styled.div`
     font-size: 1.05em;
     color: var(--text-color, #111);
     flex-shrink: 0;
-    transition: border-color 0.15s;
+    transition: color 0.15s;
     &:hover {
-      border-color: var(--primary-color, #ef5a42);
       color: var(--primary-color, #ef5a42);
     }
   }
@@ -601,24 +585,25 @@ const GoHomeBtn = styled.button`
 const Hero = styled.section`
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
-  padding: 1.5rem 1.5rem 0.8rem;
-  gap: 16px;
+  align-items: center;
+  padding: 1rem 1.5rem 1.2rem;
+  gap: 1rem;
   animation: ${fadeUp} 0.3s ease forwards;
 `;
 
 const HeroInfo = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   flex: 1;
 `;
 
 const AvatarWrap = styled.div`
   position: relative;
-  width: 110px;
-  height: 110px;
+  width: 90px;
+  height: 90px;
   border-radius: 50%;
+  flex-shrink: 0;
   background: #fde8e5;
   overflow: hidden;
   display: flex;
@@ -626,18 +611,22 @@ const AvatarWrap = styled.div`
   justify-content: center;
 
   img {
-   position: absolute;
+    position: absolute;
     width: 100%;
     height: 100%;
     object-fit: cover;
     bottom: -5px;
+  }
 
+  @media (max-width: 480px) {
+    width: 68px;
+    height: 68px;
   }
 `;
 
 const HeroUsername = styled.h2`
-  font-size: 1.1em;
-  font-weight: 700;
+  font-size: 1.25em;
+  font-weight: 800;
   color: #111;
   margin: 0;
 `;
@@ -707,7 +696,8 @@ const StatsRow = styled.div`
 const TabRow = styled.div`
   display: flex;
   gap: 8px;
-  padding: 0.6rem 1.5rem 0.8rem;
+  padding: 0 1.5rem 0.8rem;
+  margin-top: 1rem;
 `;
 
 const Tab = styled.button`
@@ -720,12 +710,13 @@ const Tab = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
+  box-shadow: ${({ $active }) => ($active ? "0 1px 4px rgba(0,0,0,0.10)" : "none")};
 `;
 
 
 const Feed = styled.main`
   max-width: 1400px;
-  margin: 0 auto;
+  margin: 0;
   padding: 0.8rem 1.5rem 2rem;
 `;
 
@@ -750,11 +741,12 @@ const GridItem = styled.div`
 
 const CardWrap = styled.div`
   position: relative;
-  border-radius: 30px;
+  border-radius: 16px;
   border: 2.5px solid transparent;
   overflow: hidden;
   width: 100%;
   cursor: pointer;
+  padding-bottom: ${({ $isMulti }) => $isMulti ? '14px' : '0'};
   .card_img {
     width: 100%;
     display: block;
@@ -794,24 +786,32 @@ const CardWrap = styled.div`
   }
 `;
 
-const MultiIndicator = styled.div`
+const StackLayer = styled.div`
   position: absolute;
-  bottom: 10px;
-  left: 10px;
-  z-index: 3;
-  color: #fff;
-  font-size: 1em;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
-`;
+  bottom: ${({ $back }) => $back ? '0' : '7px'};
+  left: ${({ $back }) => $back ? '12px' : '5px'};
+  right: ${({ $back }) => $back ? '12px' : '5px'};
+  height: 40px;
+  z-index: ${({ $back }) => $back ? 0 : 1};
+  background: #fff;
+  border-radius: 10px;
+  pointer-events: none;
+`
+
+const ContentTop = styled.div`
+  position: relative;
+  z-index: 2;
+`
 
 const AudioOuter = styled.div`
   position: relative;
   width: 100%;
   aspect-ratio: 4/3;
   background: #FDDDD7;
-  border-radius: 30px;
+  border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
+  padding-bottom: ${({ $isMulti }) => $isMulti ? '14px' : '0'};
   display: flex;
   align-items: center;
   justify-content: center;

@@ -11,8 +11,9 @@ import AccountSetupPage from './account/AccountSetupPage'
 import ProfilePage from './account/ProfilePage'
 import UserProfilePage from './account/UserProfilePage'
 
-// home page 
+// home page
 import HomePage from './home/HomePage'
+import MomentPage from './moments/MomentPage'
 
 // message 
 import PostMessagePage from './message/PostMessagePage';
@@ -40,5 +41,6 @@ export {
     ProfilePage,
     UserProfilePage,
     SingleBoardPage,
-    VerifyEmailPage
+    VerifyEmailPage,
+    MomentPage,
 }

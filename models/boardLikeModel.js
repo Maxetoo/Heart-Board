@@ -14,6 +14,11 @@ const LikeSchema = new Schema({
     ref: 'User',
     required: true,
   },
+  reaction: {
+    type: String,
+    enum: ['clap', 'heart', 'thumbs', 'smile', 'fire'],
+    default: null,
+  },
 }, { timestamps: true });
 
 LikeSchema.index({ board: 1, user: 1 }, { unique: true });

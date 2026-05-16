@@ -10,8 +10,8 @@ import {getMyProfile} from './slices/userSlice';
 import { useDispatch, useSelector } from 'react-redux'
 import {EmailVerificationBanner} from './components/auth';
 import { updateProfileStatus} from './slices/authSlice';
-import { ErrorPage, LoginPage, SignupPage, ForgotPasswordPage, ResendVerificationLinkPage, ResetPasswordPage, AccountSetupPage, 
-  HomePage, PostMessagePage, 
+import { ErrorPage, LoginPage, SignupPage, ForgotPasswordPage, ResendVerificationLinkPage, ResetPasswordPage, AccountSetupPage,
+  HomePage, MomentPage, PostMessagePage,
   CreateMessagePage,
     EditBoardPage,
     EditMessagePage, ProfilePage,
@@ -47,7 +47,11 @@ const App = () => {
       <EmailVerificationBanner/>
       <Routes>
 
-      <Route path="/" element={
+      <Route path="/" element={ 
+        <MomentPage />
+      } />
+
+      <Route path="/discover" element={
         <HomePage />
       } />
 

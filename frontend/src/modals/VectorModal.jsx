@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
-import { BsX } from 'react-icons/bs'
+import { BsCheckLg } from 'react-icons/bs'
+import { RxCross2 } from 'react-icons/rx'
 import { IoSearch } from 'react-icons/io5'
 import { ModalBackdrop, ModalBox, SearchInput } from '../sharedStyles/index'
 import { VECTOR_ICONS } from '../constants/messageConstant'
@@ -15,10 +16,10 @@ const VectorModal = ({ onClose, onConfirm }) => {
 
   return (
     <ModalBackdrop onClick={onClose}>
-      <ModalBox onClick={(e) => e.stopPropagation()}>
+      <ModalBox onClick={e => e.stopPropagation()}>
         <div className="modal_header">
           <h3>Vector</h3>
-          <button className="modal_close" onClick={onClose}><BsX /></button>
+          <button className="modal_close" onClick={onClose}><RxCross2 /></button>
         </div>
 
         <SearchInput>
@@ -26,20 +27,26 @@ const VectorModal = ({ onClose, onConfirm }) => {
           <input
             placeholder="Search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
           />
         </SearchInput>
 
         <VectorGrid>
-          {filtered.map((v) => {
+          {filtered.map(v => {
             const Icon = v.icon
+            const isActive = selected?.id === v.id
             return (
               <div
                 key={v.id}
-                className={`vector_cell ${selected?.id === v.id ? 'active' : ''}`}
+                className={`vector_cell ${isActive ? 'active' : ''}`}
                 onClick={() => setSelected(v)}
               >
                 <Icon />
+                {isActive && (
+                  <span className="vector_check">
+                    <BsCheckLg />
+                  </span>
+                )}
               </div>
             )
           })}
@@ -72,12 +79,26 @@ const VectorGrid = styled.div`
     font-size: 1.6em;
     color: var(--text-color, #2d3748);
     cursor: pointer;
+    position: relative;
     border: 2px solid transparent;
-    transition: border-color 0.2s, background 0.2s;
-    &:hover { background: #E9ECEF; }
+
     &.active {
-      border-color: var(--primary-color, #EF5A42);
-      background: rgba(239,90,66,0.06);
+      background: #F3F4F6;
+    }
+
+    .vector_check {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #22c55e;
+      border: 2px solid #22c55e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      svg { font-size: 0.45em; color: #fff; }
     }
   }
 `

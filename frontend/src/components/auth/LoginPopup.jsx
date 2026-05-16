@@ -146,16 +146,16 @@ const Form = styled.form`
 `
 
 const Input = styled.input`
-  width: 100%; padding: 13px 14px;
-  border: 1.5px solid #E0E0E0; border-radius: 10px;
-  font-size: 0.9em; outline: none; box-sizing: border-box;
-  transition: border-color 0.15s;
-  &:focus { border-color: #E05A42; }
+  width: 100%; height: 55px;
+  padding: 0 1rem;
+  border: none; border-radius: 10px;
+  font-size: 1em; outline: none; box-sizing: border-box;
+  background: var(--secondary-color);
 `
 
 const PwWrap = styled.div`
   position: relative;
-  input { padding-right: 44px; }
+  input { padding-right: 3rem; }
 `
 
 const EyeBtn = styled.button`
@@ -172,13 +172,14 @@ const ForgotLink = styled(Link)`
 `
 
 const SubmitBtn = styled.button`
-  width: 100%; padding: 14px;
-  background: #E05A42; color: #fff;
-  border: none; border-radius: 99px;
-  font-size: 0.95em; font-weight: 600;
-  cursor: pointer; margin-top: 4px;
+  width: 100%; height: 50px;
+  background: var(--primary-color); color: var(--white-color);
+  border: none; border-radius: 25px;
+  font-size: 1em; font-weight: 600;
+  cursor: pointer; margin-top: 2rem;
+  display: grid; place-content: center;
   transition: opacity 0.15s;
-  &:disabled { opacity: 0.65; cursor: default; }
+  &:disabled { opacity: 0.8; cursor: default; }
   &:hover:not(:disabled) { opacity: 0.88; }
 `
 

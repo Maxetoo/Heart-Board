@@ -29,7 +29,7 @@ const VECTOR_ICON_MAP = {
 // The width at which content was originally authored
 const REFERENCE_WIDTH = 300
 
-const CanvasRenderer = ({ canvasData, style, className }) => {
+const CanvasRenderer = ({ canvasData, style, className, radius = 16 }) => {
   const outerRef = useRef(null)
   const [scale, setScale] = useState(1)
 
@@ -76,17 +76,16 @@ const CanvasRenderer = ({ canvasData, style, className }) => {
   const ratioMultiplier = aspectRatio === 'landscape' ? 3 / 4 : aspectRatio === 'portrait' ? 4 / 3 : 1
   const stageHeight = REFERENCE_WIDTH * ratioMultiplier
 
-  return (
+  const inner = (
     <Canvas
       ref={outerRef}
       $ratio={aspectRatio}
-      className={className}
+      className={canvasFrame ? undefined : className}
       style={{
         background: canvasBg?.value || '#FFFFFF',
-        ...(canvasFrame
-          ? { border: canvasFrame.border, borderRadius: canvasFrame.borderRadius }
-          : {}),
-        ...style,
+        borderRadius: `${radius}px`,
+        clipPath: `inset(0 round ${radius}px)`,
+        ...(canvasFrame ? {} : style),
       }}
     >
       <InnerStage
@@ -135,7 +134,7 @@ const CanvasRenderer = ({ canvasData, style, className }) => {
               color:      txt.color,
               fontSize:   txt.fontSize ?? 16,
               maxWidth:   200,
-              textAlign:  'center',
+              textAlign:  txt.textAlign || 'center',
               lineHeight: 1.35,
               wordBreak:  'break-word',
               ...txt.font?.style,
@@ -147,7 +146,33 @@ const CanvasRenderer = ({ canvasData, style, className }) => {
       </InnerStage>
     </Canvas>
   )
+
+  if (canvasFrame) {
+    return (
+      <FrameWrapper
+        className={className}
+        style={{
+          background: canvasFrame.color,
+          padding: '20px',
+          borderRadius: `${radius}px`,
+          clipPath: `inset(0 round ${radius}px)`,
+          ...style,
+        }}
+      >
+        {inner}
+      </FrameWrapper>
+    )
+  }
+
+  return inner
 }
+
+const FrameWrapper = styled.div`
+  width: 100%;
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
+  flex-shrink: 0;
+`
 
 const Canvas = styled.div`
   width: 100%;
@@ -156,11 +181,11 @@ const Canvas = styled.div`
     if ($ratio === 'portrait')  return '3 / 4'
     return '1 / 1'
   }};
-  border-radius: 30px;
+  border-radius: 32px;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
-  clip-path: inset(0 round 30px);
+  clip-path: inset(0 round 32px);
 `
 
 const InnerStage = styled.div`

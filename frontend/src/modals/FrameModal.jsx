@@ -1,30 +1,36 @@
 import { useState } from 'react'
-import { BsX, BsCheck2, BsChevronDown, BsChevronUp } from 'react-icons/bs'
+import { BsCheckLg, BsChevronDown, BsChevronUp } from 'react-icons/bs'
+import { RxCross2 } from 'react-icons/rx'
 import { ModalBackdrop, ModalBox, AccordionRow } from '../sharedStyles/index'
 import { FRAME_SWATCHES } from '../constants/messageConstant'
 import styled from 'styled-components'
 
+const DEFAULT_FRAME = { style: 'solid', thickness: 16, radius: 16, color: '#111111', border: '16px solid #111111', borderRadius: '16px' }
+
 const FrameModal = ({ onClose, onConfirm, currentFrame }) => {
-  const [color,     setColor]     = useState(currentFrame?.color ?? '#111111')
+  const frame = currentFrame || DEFAULT_FRAME
+  const [color,     setColor]     = useState(frame.color ?? '#111111')
   const [colorOpen, setColorOpen] = useState(true)
 
   const handleApply = () => {
     onConfirm({
-      ...currentFrame,
+      ...frame,
       color,
-      border: `${currentFrame.thickness}px ${currentFrame.style} ${color}`,
+      border: `${frame.thickness}px ${frame.style} ${color}`,
     })
   }
 
   return (
     <ModalBackdrop onClick={onClose}>
-      <ModalBox onClick={(e) => e.stopPropagation()}>
+      <ModalBox onClick={e => e.stopPropagation()}>
         <div className="modal_header">
           <h3>Frame Colour</h3>
-          <button className="modal_close" onClick={onClose}><BsX /></button>
+          <button className="modal_close" onClick={onClose}><RxCross2 /></button>
         </div>
 
-        <FramePreview style={{ border: `${currentFrame.thickness}px ${currentFrame.style} ${color}`, borderRadius: currentFrame.borderRadius }} />
+        <FramePreview style={{ background: color }}>
+          <div className="frame_inner" />
+        </FramePreview>
 
         <AccordionRow onClick={() => setColorOpen(o => !o)}>
           <span>Colour</span>
@@ -50,14 +56,14 @@ const FrameModal = ({ onClose, onConfirm, currentFrame }) => {
                   onClick={() => setColor(c)}
                 >
                   {color === c && (
-                    <BsCheck2 style={{ color: c === '#FFFFFF' || c === '#F59E0B' ? '#333' : '#fff', fontSize: '0.75em' }} />
+                    <BsCheckLg style={{ color: c === '#FFFFFF' || c === '#F59E0B' ? '#333' : '#fff', fontSize: '0.65em' }} />
                   )}
                 </div>
               ))}
             </div>
             <div className="custom_color_row">
               <label>Custom colour</label>
-              <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+              <input type="color" value={color} onChange={e => setColor(e.target.value)} />
             </div>
           </SwatchesSection>
         )}
@@ -73,8 +79,17 @@ const FrameModal = ({ onClose, onConfirm, currentFrame }) => {
 const FramePreview = styled.div`
   width: 100%;
   aspect-ratio: 4/3;
-  background: #F3F4F6;
-  transition: border 0.15s, border-radius 0.15s;
+  border-radius: 32px;
+  padding: 20px;
+  box-sizing: border-box;
+  transition: background 0.15s;
+
+  .frame_inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 32px;
+    background: #F3F4F6;
+  }
 `
 
 const SwatchesSection = styled.div`
@@ -103,7 +118,7 @@ const SwatchesSection = styled.div`
     justify-content: center;
     flex-shrink: 0;
     transition: transform 0.15s;
-    &.active { outline: 2.5px solid var(--primary-color, #EF5A42); outline-offset: 2px; }
+    &.active { outline: 2.5px solid #22c55e; outline-offset: 2px; }
     &:hover:not(.active) { transform: scale(1.12); }
   }
 

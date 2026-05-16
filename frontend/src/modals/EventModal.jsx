@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
-import { BsX, BsCheck2 } from 'react-icons/bs'
-import { ModalBackdrop, ModalBox } from '../sharedStyles/index'
+import { BsCheckLg } from 'react-icons/bs'
+import { RxCross2 } from 'react-icons/rx'
+import { ModalBackdrop } from '../sharedStyles/index'
 import { EVENTS } from '../constants/messageConstant'
 
 const EventModal = ({ onClose, onConfirm, currentEvent }) => {
@@ -20,27 +21,21 @@ const EventModal = ({ onClose, onConfirm, currentEvent }) => {
 
   return (
     <ModalBackdrop onClick={onClose}>
-      <ModalBox onClick={(e) => e.stopPropagation()}>
-        <div className="modal_header">
-          <h3>Choose Event</h3>
-          <button className="modal_close" onClick={onClose}><BsX /></button>
-        </div>
+      <FilterBox onClick={e => e.stopPropagation()}>
+        <FilterTitle>Choose Event</FilterTitle>
+        <FilterDivider />
 
         <EventGrid>
-          {EVENTS.map((ev) => {
+          {EVENTS.map(ev => {
             const isActive = selected?.id === ev.id
             return (
-              <div
-                key={ev.id}
-                className={`event_cell ${isActive ? 'active' : ''}`}
-                onClick={() => setSelected(isActive ? null : ev)}
-              >
-                <div className={`event_radio ${isActive ? 'active' : ''}`}>
-                  {isActive && <BsCheck2 className="radio_check" />}
-                </div>
-                <span className="event_emoji">{ev.emoji}</span>
-                <span className="event_label">{ev.label}</span>
-              </div>
+              <EventCell key={ev.id} onClick={() => setSelected(isActive ? null : ev)}>
+                <span className="ev_emoji">{ev.emoji}</span>
+                <span className="ev_label">{ev.label}</span>
+                <CheckCircle $active={isActive}>
+                  {isActive && <BsCheckLg />}
+                </CheckCircle>
+              </EventCell>
             )
           })}
         </EventGrid>
@@ -50,99 +45,117 @@ const EventModal = ({ onClose, onConfirm, currentEvent }) => {
             type="text"
             placeholder="Describe your event..."
             value={customEvent}
-            onChange={(e) => setCustomEvent(e.target.value)}
+            onChange={e => setCustomEvent(e.target.value)}
             autoFocus
           />
         )}
 
-        <button
-          className="modal_continue"
-          disabled={!canContinue}
-          onClick={handleConfirm}
-        >
+        <ContinueBtn disabled={!canContinue} onClick={handleConfirm}>
           Continue
-        </button>
-      </ModalBox>
+        </ContinueBtn>
+      </FilterBox>
     </ModalBackdrop>
   )
 }
 
-const OthersInput = styled.input`
+const FilterBox = styled.div`
+  background: #fff;
+  border-radius: 24px;
+  padding: 1.75rem;
   width: 100%;
-  height: 48px;
-  padding: 0 1rem;
-  border: 1.5px solid var(--primary-color, #EF5A42);
-  border-radius: 10px;
-  background: rgba(239,90,66,0.03);
-  font-size: 0.95em;
-  color: var(--text-color, #111);
-  outline: none;
-  box-sizing: border-box;
-  transition: border-color 0.2s;
-  &::placeholder { color: #9CA3AF; }
-  &:focus { background: #fff; }
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+`
+
+const FilterTitle = styled.h3`
+  font-size: 1.1em;
+  font-weight: 700;
+  color: #111;
+  margin: 0;
+`
+
+const FilterDivider = styled.hr`
+  border: none;
+  border-top: 1.5px solid #f0f0f0;
+  margin: 0;
 `
 
 const EventGrid = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  max-height: 380px;
-  overflow-y: auto;
-  padding-right: 2px;
+`
 
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-track { background: transparent; }
-  &::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 99px; }
+const EventCell = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 1rem 0.65rem;
+  margin: 2px;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: none;
+  cursor: pointer;
 
-  .event_cell {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.7rem 0.85rem;
-    border-radius: 12px;
-    background: #F9FAFB;
-    border: 1.5px solid #ECEFF3;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-    &:hover:not(.active) { border-color: #D1D5DB; }
-    &.active {
-      border-color: var(--primary-color, #EF5A42);
-      background: rgba(239,90,66,0.04);
-    }
-  }
-
-  .event_radio {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 1.5px solid #D1D5DB;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: border-color 0.2s, background 0.2s;
-    &.active {
-      border-color: var(--primary-color, #EF5A42);
-      background: var(--primary-color, #EF5A42);
-    }
-    .radio_check { font-size: 0.65em; color: #fff; }
-  }
-
-  .event_emoji {
-    font-size: 1.05em;
-    flex-shrink: 0;
+  .ev_emoji {
+    font-size: 1em;
     line-height: 1;
   }
 
-  .event_label {
-    font-size: 0.88em;
+  .ev_label {
+    font-size: 0.86em;
     font-weight: 500;
-    color: var(--text-color, #111);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: #111;
+    flex: 1;
   }
+`
+
+const CheckCircle = styled.div`
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid ${p => p.$active ? '#22c55e' : '#d1d5db'};
+  background: ${p => p.$active ? '#22c55e' : 'transparent'};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s, background 0.2s;
+  svg {
+    font-size: 0.55em;
+    color: #fff;
+  }
+`
+
+const ContinueBtn = styled.button`
+  width: 100%;
+  height: 52px;
+  border: none;
+  border-radius: 99px;
+  background: #ef5a42;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1em;
+  cursor: pointer;
+  opacity: ${p => p.disabled ? 0.45 : 1};
+`
+
+const OthersInput = styled.input`
+  width: 100%;
+  height: 55px;
+  padding: 0 1rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--secondary-color);
+  font-size: 1em;
+  color: var(--text-color, #111);
+  outline: none;
+  box-sizing: border-box;
+  &::placeholder { color: #9CA3AF; }
 `
 
 export default EventModal

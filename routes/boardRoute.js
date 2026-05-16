@@ -8,6 +8,8 @@ const {
   updateBoard,
   deleteBoard,
   likeBoard,
+  getMyReaction,
+  patchReaction,
   shareBoard,
   discoverBoards,
   flagBoard,
@@ -53,7 +55,9 @@ BoardRoute.patch( '/:id',       authentication, updateBoard);
 BoardRoute.delete('/:id',       authentication, deleteBoard);
 BoardRoute.patch( '/:slug/flag',   authentication, flagBoard);
 BoardRoute.patch( '/:slug/unflag', authentication, unflagBoard);
-BoardRoute.post(  '/:id/like',     authentication, likeBoard);
+BoardRoute.post(  '/:id/like',        authentication, likeBoard);
+BoardRoute.get(   '/:id/reaction/me', authentication, getMyReaction);
+BoardRoute.patch( '/:id/reaction',    authentication, patchReaction);
 BoardRoute.post(  '/:id/share',    authentication, shareBoard);
 
 // ── Single board by slug — cache per slug ─────────────────────────────────────

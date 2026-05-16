@@ -275,7 +275,7 @@ const TagInputWrapper = styled.div`
       font-weight: 500;
       white-space: nowrap;
       line-height: 1;
-      &.user    { background: rgba(59,130,246,0.1);  color: #3B82F6; }
+      &.user    { background: #fff; color: #111; }
       &.hashtag { background: rgba(16,185,129,0.1);  color: #10B981; }
       &.event   { background: rgba(239,90,66,0.1);   color: var(--primary-color, #EF5A42); }
       &.plain   { background: #F3F4F6; color: var(--text-color, #111); }

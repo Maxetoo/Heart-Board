@@ -39,17 +39,15 @@ export const ModalBox = styled.div`
     .modal_close {
       width: 30px;
       height: 30px;
-      border-radius: 50%;
-      border: 1.5px solid #ECEFF3;
+      border: none;
       background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.1em;
+      font-size: 1.3em;
+      font-weight: 700;
       cursor: pointer;
-      color: var(--text-color, #111);
-      transition: border-color 0.2s;
-      &:hover { border-color: var(--primary-color, #EF5A42); color: var(--primary-color, #EF5A42); }
+      color: #111;
     }
   }
 
@@ -83,8 +81,6 @@ export const AccordionRow = styled.button`
   font-weight: 500;
   color: var(--text-color, #111);
   cursor: pointer;
-  transition: border-color 0.2s;
-  &:hover { border-color: var(--primary-color, #EF5A42); }
   svg { color: #9CA3AF; font-size: 0.9em; }
 `
 
@@ -115,7 +111,7 @@ export const ColorSection = styled.div`
     flex-shrink: 0;
     transition: transform 0.15s;
     &.active {
-      outline: 2.5px solid var(--primary-color, #EF5A42);
+      outline: 2.5px solid #22c55e;
       outline-offset: 2px;
     }
     &:hover:not(.active) { transform: scale(1.12); }
@@ -148,8 +144,6 @@ export const SearchInput = styled.div`
   background: #F3F4F6;
   border-radius: 99px;
   border: 1.5px solid transparent;
-  transition: border-color 0.2s;
-  &:focus-within { border-color: var(--primary-color, #EF5A42); background: #fff; }
   .search_icon { color: #9CA3AF; font-size: 1.15em; flex-shrink: 0; }
   input {
     flex: 1;
@@ -200,7 +194,7 @@ export const OpacityRow = styled.div`
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      background: #F59E0B;
+      background: var(--primary-color, #EF5A42);
       cursor: pointer;
     }
   }

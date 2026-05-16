@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
+import BoardIcon from '../../assets/board icon.svg'
 import styled from 'styled-components'
 import { useDispatch, useSelector } from 'react-redux'
 import {useNavigate} from 'react-router-dom'
 import {
-  BsX, BsChevronRight, BsCheck2,
+  BsX, BsChevronRight, BsChevronLeft, BsCheckLg,
 } from 'react-icons/bs'
 import { PiTextAUnderlineBold, PiRectangleDashed, PiImageBold, PiPerspective } from "react-icons/pi";
 import { IoColorPaletteOutline } from "react-icons/io5";
@@ -23,7 +24,6 @@ import FrameModal          from '../../modals/FrameModal'
 import EventModal          from '../../modals/EventModal'
 import DraggableCanvasItem from '../../canvas/DraggableCanvasItem'
 import AudioTab            from '../../tab/AudioTab'
-import VideoTab            from '../../tab/VideoTab'
 import TagInput            from './TagInput'
 import PreviewPanel, { SuccessScreen } from './PreviewPanel'
 import LoginPopup from '../auth/LoginPopup'
@@ -46,9 +46,10 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
   const [canvasTexts, setCanvasTexts]     = useState([])  // [{ id, content, font, color, fontSize, position }]
   const [canvasVectors, setCanvasVectors] = useState([])  // [{ id, vectorId, icon, color, opacity, size, position }]
   const [editingItemId, setEditingItemId] = useState(null)
-  const DEFAULT_FRAME = { style: 'solid', thickness: 25, radius: 30, color: '#111111', border: '25px solid #111111', borderRadius: '30px' }
-  const [canvasFrame, setCanvasFrame]     = useState(DEFAULT_FRAME)
- 
+  const [canvasFrame, setCanvasFrame]     = useState(null)
+  const DEFAULT_FRAME = { style: 'solid', thickness: 16, radius: 16, color: '#111111', border: '16px solid #111111', borderRadius: '16px' }
+  const [canvasExpanded, setCanvasExpanded] = useState(false)
+
   const [showPreview, setShowPreview]   = useState(false)
   const [caption, setCaption]           = useState('')
   const [previewSubModal, setPreviewSubModal]     = useState(null)
@@ -56,6 +57,8 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
   const [selectedPrivacy, setSelectedPrivacy]     = useState(PRIVACY_OPTIONS[0])
   const [postSuccess, setPostSuccess]             = useState(false)
   const [createdBoardSlug, setCreatedBoardSlug]   = useState(null)
+  const [createdBoardTitle, setCreatedBoardTitle] = useState('')
+  const [createdMsgCount, setCreatedMsgCount]     = useState(0)
   const [postError, setPostError]                 = useState('')
   const [showLoginPopup, setShowLoginPopup]       = useState(false)
   const [mentionedUser, setMentionedUser]         = useState(null)
@@ -80,6 +83,7 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
   ]
  
   const hasContent = canvasBg || canvasImages.length > 0 || canvasTexts.length > 0 || canvasVectors.length > 0
+  const activeFrame = canvasFrame || (hasContent ? DEFAULT_FRAME : null)
   const canvasStyle = { background: canvasBg ? canvasBg.value : '#FFFFFF' }
  
   const isHashtagReceipent = mentionedUser?.startsWith('#')
@@ -91,7 +95,7 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
  
   const handleToolClick = (toolId) => setActiveModal(toolId)
  
-  const handlePost = useCallback(async () => {
+  const handlePost = async () => {
     setPostError('')
     try {
       const eventValue = selectedEvent?.id ? (EVENT_MAP[selectedEvent.id] ?? 'other') : null
@@ -136,6 +140,8 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
           return
         }
         setCreatedBoardSlug(boardResult.response.board.slug)
+        setCreatedBoardTitle(boardResult.response.board.title || caption.trim() || 'My Appreciation Board')
+        setCreatedMsgCount(boardResult.response.board.stats?.messages || 1)
         setPostSuccess(true); return
       }
 
@@ -162,8 +168,8 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
           font:       canvasTexts[0]?.font?.family || null,
           color:      canvasTexts[0]?.color        || null,
           background: canvasBg?.value          || null,
-          frame:      canvasFrame
-            ? `${canvasFrame.thickness}px ${canvasFrame.style} ${canvasFrame.color}` : null,
+          frame:      activeFrame
+            ? `${activeFrame.thickness}px ${activeFrame.style} ${activeFrame.color}` : null,
           imageUrls:  [],
           vectorKey:  canvasVectors[0]?.vectorId   || null,
           audioUrl:   null, duration: null,
@@ -171,7 +177,7 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
         canvasData: {
           canvasTexts,
           canvasBg,
-          canvasFrame,
+          canvasFrame: activeFrame,
           canvasVectors: canvasVectors.map(v => ({ ...v, icon: v.vectorId })),
           canvasImages,
           aspectRatio,
@@ -186,15 +192,13 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
         return
       }
       setCreatedBoardSlug(boardResult.response.board.slug)
+      setCreatedBoardTitle(boardResult.response.board.title || caption.trim() || 'My Appreciation Board')
+      setCreatedMsgCount(boardResult.response.board.stats?.messages || 1)
       setPostSuccess(true)
     } catch {
       setPostError('Something went wrong. Please try again.')
     }
-  }, [
-    dispatch, hasContent, caption, selectedEvent, mentionedUser,
-    selectedPrivacy, selectedCapacity, canvasTexts, canvasBg, canvasFrame, canvasVectors,
-    canvasImages, aspectRatio, boardTags, pendingAudioFile,
-  ])
+  }
  
   const closePreview = () => {
     setShowPreview(false); setPreviewSubModal(null); setPostError('')
@@ -210,7 +214,7 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
     <>
     <PostCreationWrapper>
 
-      {type === 'board' && (
+      {!canvasExpanded && activeTab !== 'video' && type === 'board' && (
         <div className="select_row" onClick={() => setActiveModal('event')}>
           {selectedEvent ? (
             <>
@@ -224,150 +228,142 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
         </div>
       )}
 
-      <TagInput onMentionChange={setMentionedUser} onTagsChange={setBoardTags} initialMention={initialMention} />
+      {!canvasExpanded && activeTab !== 'video' && (
+        <TagInput onMentionChange={setMentionedUser} onTagsChange={setBoardTags} initialMention={initialMention} />
+      )}
 
       {activeTab === 'text' && (
         <>
-          <div className="canvas_unit">
-          <div className="aspect_header">
-            <span className="aspect_label"><PiPerspective /> Aspect Ratio</span>
-            <div className="ratio_toggles">
-              <button
-                className={`ratio_btn portrait_btn ${aspectRatio === 'portrait' ? 'active' : ''}`}
-                onClick={() => setAspectRatio('portrait')}
-                title="Portrait (6:13)"
-              >
-                {aspectRatio === 'portrait' && <BsCheck2 />}
+          {canvasExpanded && (
+            <div className="expanded_header">
+              <button className="back_btn" onClick={() => setCanvasExpanded(false)}>
+                <BsChevronLeft />
               </button>
-              <button
-                className={`ratio_btn landscape_btn ${aspectRatio === 'landscape' ? 'active' : ''}`}
-                onClick={() => setAspectRatio('landscape')}
-                title="Landscape (16:9)"
-              >
-                {aspectRatio === 'landscape' && <BsCheck2 />}
+              <button className="save_btn" onClick={() => setCanvasExpanded(false)}>
+                Save
               </button>
             </div>
-          </div>
+          )}
 
-          <div className="aspect_container">
-            <div className="canvas_wrap">
-            <CanvasArea
-              $ratio={aspectRatio}
-              style={{
-                ...canvasStyle,
-                ...(canvasFrame ? { border: canvasFrame.border, borderRadius: canvasFrame.borderRadius } : {}),
-              }}
-              data-canvas="true"
-              onClick={() => setSelectedItem(null)}
-            >
-              {canvasImages.map(img => (
-                <DraggableCanvasItem
-                  key={img.id}
-                  position={img.position}
-                  onPositionChange={pos => setCanvasImages(prev => prev.map(i => i.id === img.id ? { ...i, position: pos } : i))}
-                  selected={selectedItem?.id === img.id}
-                  onSelect={() => setSelectedItem({ type: 'image', id: img.id })}
-                  onTap={() => { setEditingItemId(img.id); setActiveModal('editImage') }}
-                >
-                  <div style={{ position: 'relative' }}>
-                    <img
-                      src={img.src} alt="canvas" className="canvas_image"
-                      style={{ width: `${img.size * 2}px`, height: `${img.size * 2}px` }}
-                    />
-                    <button
-                      className="remove_image_btn"
-                      onMouseDown={e => e.stopPropagation()}
-                      onClick={e => { e.stopPropagation(); setCanvasImages(prev => prev.filter(i => i.id !== img.id)) }}
+          <div className="canvas_unit">
+          {!canvasExpanded && (
+            <div className="aspect_header">
+              <span className="aspect_label"><PiPerspective /> Aspect Ratio</span>
+              <div className="ratio_toggles">
+                <button className={`ratio_btn portrait_btn ${aspectRatio === 'portrait' ? 'active' : ''}`} onClick={() => setAspectRatio('portrait')} title="Portrait (6:13)">
+                  {aspectRatio === 'portrait' && <span className="check_circle"><BsCheckLg /></span>}
+                </button>
+                <button className={`ratio_btn landscape_btn ${aspectRatio === 'landscape' ? 'active' : ''}`} onClick={() => setAspectRatio('landscape')} title="Landscape (16:9)">
+                  {aspectRatio === 'landscape' && <span className="check_circle"><BsCheckLg /></span>}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className={`aspect_container${canvasExpanded ? ' expanded' : ''}`}>
+            <div className={`canvas_wrap${canvasExpanded ? ' expanded' : ''}`}>
+            {(() => {
+              const canvasContent = (
+                <>
+                  {!hasContent && !canvasExpanded && (
+                    <CanvasPlaceholder>
+                      <img src={BoardIcon} alt="" className="placeholder_icon" />
+                      <p className="placeholder_text">Tap to create a message</p>
+                    </CanvasPlaceholder>
+                  )}
+                  {canvasImages.map(img => (
+                    <DraggableCanvasItem
+                      key={img.id}
+                      position={img.position}
+                      onPositionChange={pos => setCanvasImages(prev => prev.map(i => i.id === img.id ? { ...i, position: pos } : i))}
+                      selected={selectedItem?.id === img.id}
+                      onSelect={() => setSelectedItem({ type: 'image', id: img.id })}
+                      onTap={() => { setEditingItemId(img.id); setActiveModal('editImage') }}
                     >
-                      <BsX />
-                    </button>
-                    {selectedItem?.id === img.id && (
-                      <div
-                        className="image_resize_bar"
-                        onMouseDown={e => e.stopPropagation()}
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <input
-                          type="range" min="30" max="180" step="2"
-                          value={img.size}
-                          onChange={e => setCanvasImages(prev => prev.map(i => i.id === img.id ? { ...i, size: Number(e.target.value) } : i))}
-                        />
+                      <div style={{ position: 'relative' }}>
+                        <img src={img.src} alt="canvas" className="canvas_image" style={{ width: `${img.size * 2}px`, height: `${img.size * 2}px` }} />
+                        <button className="remove_image_btn" onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setCanvasImages(prev => prev.filter(i => i.id !== img.id)) }}><BsX /></button>
+                        {selectedItem?.id === img.id && (
+                          <div className="image_resize_bar" onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+                            <input type="range" min="30" max="180" step="2" value={img.size} onChange={e => setCanvasImages(prev => prev.map(i => i.id === img.id ? { ...i, size: Number(e.target.value) } : i))} />
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </DraggableCanvasItem>
-              ))}
+                    </DraggableCanvasItem>
+                  ))}
+                  {canvasVectors.map(vec => {
+                    const VIcon = vec.icon
+                    return VIcon ? (
+                      <DraggableCanvasItem
+                        key={vec.id}
+                        position={vec.position}
+                        onPositionChange={pos => setCanvasVectors(prev => prev.map(v => v.id === vec.id ? { ...v, position: pos } : v))}
+                        selected={selectedItem?.id === vec.id}
+                        onSelect={() => setSelectedItem({ type: 'vector', id: vec.id })}
+                        onTap={() => { setEditingItemId(vec.id); setActiveModal('editVector') }}
+                      >
+                        <VIcon style={{ color: vec.color, opacity: vec.opacity, fontSize: vec.size ?? 48, display: 'block' }} />
+                      </DraggableCanvasItem>
+                    ) : null
+                  })}
+                  {canvasTexts.map(txt => (
+                    <DraggableCanvasItem
+                      key={txt.id}
+                      position={txt.position}
+                      onPositionChange={pos => setCanvasTexts(prev => prev.map(t => t.id === txt.id ? { ...t, position: pos } : t))}
+                      selected={selectedItem?.id === txt.id}
+                      onSelect={() => setSelectedItem({ type: 'text', id: txt.id })}
+                      onTap={() => { setEditingItemId(txt.id); setActiveModal('editText') }}
+                    >
+                      <p style={{ margin: 0, fontFamily: txt.font?.family, color: txt.color, fontSize: txt.fontSize ?? 16, maxWidth: 200, textAlign: txt.textAlign || 'center', lineHeight: 1.35, wordBreak: 'break-word', ...txt.font?.style }}>
+                        {txt.content}
+                      </p>
+                    </DraggableCanvasItem>
+                  ))}
+                </>
+              )
 
-              {canvasVectors.map(vec => {
-                const VIcon = vec.icon
-                return VIcon ? (
-                  <DraggableCanvasItem
-                    key={vec.id}
-                    position={vec.position}
-                    onPositionChange={pos => setCanvasVectors(prev => prev.map(v => v.id === vec.id ? { ...v, position: pos } : v))}
-                    selected={selectedItem?.id === vec.id}
-                    onSelect={() => setSelectedItem({ type: 'vector', id: vec.id })}
-                    onTap={() => { setEditingItemId(vec.id); setActiveModal('editVector') }}
-                  >
-                    <VIcon style={{
-                      color: vec.color, opacity: vec.opacity,
-                      fontSize: vec.size ?? 48, display: 'block',
-                    }} />
-                  </DraggableCanvasItem>
-                ) : null
-              })}
-
-              {canvasTexts.map(txt => (
-                <DraggableCanvasItem
-                  key={txt.id}
-                  position={txt.position}
-                  onPositionChange={pos => setCanvasTexts(prev => prev.map(t => t.id === txt.id ? { ...t, position: pos } : t))}
-                  selected={selectedItem?.id === txt.id}
-                  onSelect={() => setSelectedItem({ type: 'text', id: txt.id })}
-                  onTap={() => { setEditingItemId(txt.id); setActiveModal('editText') }}
+              return activeFrame ? (
+                <CanvasFrameWrap
+                  $ratio={aspectRatio}
+                  $expanded={canvasExpanded}
+                  style={{ background: activeFrame.color, padding: '20px', borderRadius: '32px' }}
+                  data-canvas="true"
                 >
-                  <p style={{
-                    margin: 0,
-                    fontFamily: txt.font?.family,
-                    color: txt.color,
-                    fontSize: txt.fontSize ?? 16,
-                    maxWidth: 200, textAlign: 'center',
-                    lineHeight: 1.35, wordBreak: 'break-word',
-                    ...txt.font?.style,
-                  }}>
-                    {txt.content}
-                  </p>
-                </DraggableCanvasItem>
-              ))}
-            </CanvasArea>
+                  <CanvasArea $ratio={aspectRatio} $expanded={canvasExpanded} $inFrame style={canvasStyle} onClick={() => { setCanvasExpanded(true); setSelectedItem(null) }}>
+                    {canvasContent}
+                  </CanvasArea>
+                </CanvasFrameWrap>
+              ) : (
+                <CanvasArea $ratio={aspectRatio} $expanded={canvasExpanded} style={canvasStyle} data-canvas="true" onClick={() => { setCanvasExpanded(true); setSelectedItem(null) }}>
+                  {canvasContent}
+                </CanvasArea>
+              )
+            })()}
             </div>
           </div>
           </div>
 
           <div className="toolbar">
-            {tools.map(tool => {
-              return (
-                <button
-                  key={tool.id}
-                  className="tool_btn"
-                  onClick={() => handleToolClick(tool.id)}
-                >
-                  {tool.icon}<span>{tool.label}</span>
-                </button>
-              )
-            })}
+            {tools.map(tool => (
+              <button key={tool.id} className="tool_btn" onClick={() => handleToolClick(tool.id)}>
+                {tool.icon}<span>{tool.label}</span>
+              </button>
+            ))}
           </div>
 
-          <button
-            className={`preview_btn ${hasContent && recipentOk ? 'ready' : ''}`}
-            disabled={!hasContent || !recipentOk}
-            onClick={() => {
-              if (!hasContent || !recipentOk) return
-              setShowPreview(true)
-            }}
-          >
-            {hasContent ? 'Send appreciation' : 'Preview'}
-          </button>
+          {!canvasExpanded && (
+            <button
+              className={`preview_btn ${hasContent && recipentOk ? 'ready' : ''}`}
+              disabled={!hasContent || !recipentOk}
+              onClick={() => {
+                if (!hasContent || !recipentOk) return
+                setShowPreview(true)
+              }}
+            >
+              Preview Message
+            </button>
+          )}
         </>
       )}
 
@@ -382,14 +378,18 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
         />
       )}
 
-      {activeTab === 'video' && <VideoTab />}
+      {activeTab === 'video' && (
+        <div style={{ padding: '2rem 0', textAlign: 'center', color: '#9CA3AF', fontSize: '0.9em' }}>
+          Video messages coming soon
+        </div>
+      )}
 
       {activeModal === 'event'  && <EventModal  onClose={() => setActiveModal(null)} currentEvent={selectedEvent} onConfirm={ev  => { setSelectedEvent(ev); setActiveModal(null) }} />}
       {activeModal === 'image'  && <ImageModal  onClose={() => setActiveModal(null)} currentImage={null} onConfirm={src => { setCanvasImages(prev => [...prev, { id: Date.now(), src, size: 80, position: { x: 50, y: 50 } }]); setActiveModal(null) }} />}
       {activeModal === 'editImage' && (() => { const img = canvasImages.find(i => i.id === editingItemId); return img ? <ImageModal onClose={() => setActiveModal(null)} currentImage={img.src} onConfirm={src => { setCanvasImages(prev => prev.map(i => i.id === editingItemId ? { ...i, src } : i)); setActiveModal(null) }} /> : null })()}
       {activeModal === 'text'   && <TextModal   onClose={() => setActiveModal(null)} currentText={null}  onConfirm={t => { setCanvasTexts(prev => [...prev, { ...t, id: Date.now(), position: { x: 50, y: 50 } }]); setActiveModal(null) }} />}
       {activeModal === 'editText' && (() => { const txt = canvasTexts.find(t => t.id === editingItemId); return txt ? <TextModal onClose={() => setActiveModal(null)} currentText={txt} onConfirm={t => { setCanvasTexts(prev => prev.map(item => item.id === editingItemId ? { ...item, ...t } : item)); setActiveModal(null) }} onRemove={() => { setCanvasTexts(prev => prev.filter(t => t.id !== editingItemId)); setSelectedItem(null); setActiveModal(null) }} /> : null })()}
-      {activeModal === 'vector' && <VectorModal onClose={() => setActiveModal(null)} onConfirm={v => { setCanvasVectors(prev => [...prev, { ...v, id: Date.now(), size: 48, position: { x: 50, y: 30 } }]); setActiveModal(null) }} />}
+      {activeModal === 'vector' && <VectorModal onClose={() => setActiveModal(null)} onConfirm={v => { setCanvasVectors(prev => [...prev, { ...v, vectorId: v.id, id: Date.now(), size: 48, position: { x: 50, y: 30 } }]); setActiveModal(null) }} />}
       {activeModal === 'editVector' && (() => { const vec = canvasVectors.find(v => v.id === editingItemId); return vec ? <EditVectorModal onClose={() => setActiveModal(null)} vector={vec} onUpdate={updates => setCanvasVectors(prev => prev.map(v => v.id === editingItemId ? { ...v, ...updates } : v))} onRemove={() => { setCanvasVectors(prev => prev.filter(v => v.id !== editingItemId)); setActiveModal(null); setSelectedItem(null) }} /> : null })()}
       {activeModal === 'bg'    && <BgModal    onClose={() => setActiveModal(null)} currentBg={canvasBg}       onConfirm={bg    => { setCanvasBg(bg);       setActiveModal(null) }} />}
       {activeModal === 'frame' && <FrameModal onClose={() => setActiveModal(null)} currentFrame={canvasFrame} onConfirm={frame => { setCanvasFrame(frame); setActiveModal(null) }} />}
@@ -399,7 +399,7 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
           canvasData={activeTab === 'text' ? {
             canvasTexts,
             canvasBg,
-            canvasFrame,
+            canvasFrame: activeFrame,
             canvasVectors: canvasVectors.map(v => ({ ...v, icon: v.vectorId })),
             canvasImages,
             aspectRatio,
@@ -427,14 +427,24 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
           canvasData={!pendingAudioFile ? {
             canvasTexts,
             canvasBg,
-            canvasFrame,
+            canvasFrame: activeFrame,
             canvasVectors: canvasVectors.map(v => ({ ...v, icon: v.vectorId })),
             canvasImages,
             aspectRatio,
           } : null}
           boardSlug={createdBoardSlug}
+          boardTitle={createdBoardTitle}
+          messageCount={createdMsgCount}
           onDone={resetAll}
           onViewPost={() => { resetAll(); navigate(`/board/${createdBoardSlug}`) }}
+          onShare={() => {
+            const url = `${window.location.origin}/board/${createdBoardSlug}`
+            if (navigator.share) {
+              navigator.share({ title: 'Heartboard', url })
+            } else {
+              navigator.clipboard?.writeText(url)
+            }
+          }}
         />
       )}
 
@@ -450,10 +460,50 @@ const PostCreationComponent = ({ type, initialMention, activeTab = 'text' }) => 
   )
 }
 
+
+const CanvasPlaceholder = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  pointer-events: none;
+
+  .placeholder_icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .placeholder_text {
+    margin: 0;
+    font-size: 0.9em;
+    font-weight: 700;
+    color: #111;
+    opacity: 0.25;
+    text-align: center;
+  }
+`
+
+const CanvasFrameWrap = styled.div`
+  width: ${({ $expanded, $ratio }) => $expanded ? '100%' : ($ratio === 'landscape' ? '100%' : '82%')};
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
+  flex-shrink: 0;
+  transition: width 0.3s ease;
+`
+
 const CanvasArea = styled.div`
-  aspect-ratio: ${({ $ratio }) => $ratio === 'landscape' ? '4 / 3' : '3 / 4'};
-  width: ${({ $ratio }) => $ratio === 'landscape' ? '100%' : '82%'};
-  border-radius: 30px;
+  aspect-ratio: ${({ $expanded, $ratio }) =>
+    $expanded
+      ? ($ratio === 'landscape' ? '1 / 1' : '3 / 4')
+      : ($ratio === 'landscape' ? '4 / 3' : '3 / 4')};
+  width: ${({ $inFrame, $expanded, $ratio }) => ($inFrame || $expanded)
+    ? '100%'
+    : ($ratio === 'landscape' ? '100%' : '82%')};
+  border-radius: 32px;
+  clip-path: inset(0 round 32px);
   border: none;
   overflow: hidden;
   position: relative;
@@ -491,6 +541,38 @@ const PostCreationWrapper = styled.div`
   width: 100%;
   max-width: 480px;
   padding: 0 0.5rem;
+
+  .expanded_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .back_btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    color: #111;
+    cursor: pointer;
+  }
+
+  .save_btn {
+    height: 38px;
+    padding: 0 1.25rem;
+    border-radius: 25px;
+    background: #fff;
+    border: none;
+    color: #111;
+    font-size: 0.95em;
+    font-weight: 600;
+    cursor: pointer;
+  }
 
   .select_row {
     display: flex; 
@@ -532,23 +614,29 @@ const PostCreationWrapper = styled.div`
     }
     .ratio_toggles { display: flex; gap: 6px; align-items: center; }
     .ratio_btn {
-      display: flex; 
-      align-items: center; 
+      display: flex;
+      align-items: center;
       justify-content: center;
-      border: 1.5px solid #ECEFF3; 
+      border: 1.5px solid #ECEFF3;
       background: #fff;
-      cursor: pointer; 
-      color: #10B981;
-      font-size: 1em; 
+      cursor: pointer;
       border-radius: 5px;
-      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      transition: border-color 0.2s;
       &.portrait_btn  { width: 24px; height: 36px; }
       &.landscape_btn { width: 40px; height: 26px; }
-      &.active { 
-        border-color: #10B981; 
-        background: #fff;
-      }
+      &.active { border-color: #ECEFF3; }
       &:hover:not(.active) { border-color: #D1D5DB; }
+      .check_circle {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #22c55e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        svg { color: #fff; font-size: 0.45em; }
+      }
     }
   }
 
@@ -556,12 +644,18 @@ const PostCreationWrapper = styled.div`
     background: #F7F0ED;
     border-radius: 0 0 12px 12px;
     overflow: hidden;
+    &.expanded {
+      border-radius: 12px;
+    }
   }
 
   .canvas_wrap {
     display: flex;
     justify-content: center;
     padding: 0.75rem 3rem 1rem;
+    &.expanded {
+      padding: 8px;
+    }
   }
 
   .toolbar {

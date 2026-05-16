@@ -2,22 +2,18 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import styled, { keyframes } from "styled-components";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
-  BsGear,
-  BsPencil,
-  BsEye,
   BsMicFill,
-  BsPlayFill,
   BsX,
   BsChevronRight,
-  BsChevronLeft,
   BsCheck2,
   BsHeart,
 } from "react-icons/bs";
 import { IoSearch } from "react-icons/io5";
-import { PiShareFat } from "react-icons/pi";
+import { PiShareFatBold, PiPencilLineBold, PiEyesFill } from "react-icons/pi";
+import { RiSettings5Line } from "react-icons/ri";
+import { MdOutlineArrowBackIos } from "react-icons/md";
 import { LuSlidersHorizontal } from "react-icons/lu";
 import { getMyBoards } from "../../slices/boardSlice";
 import { updateProfile } from "../../slices/userSlice";
@@ -26,32 +22,29 @@ import NavComponent from "../../components/global/NavComponent";
 import CanvasRenderer from "../../canvas/CanvasRenderer";
 import BoardViewModal from "../../components/message/BoardViewModel";
 import DefaultAvatar from "../../assets/Vector.svg";
+import heartboardLogo from "../../assets/Heartboard logo 2.svg";
+import profileFrame from "../../assets/profile frame.svg";
 import { profileFirstMsgCache } from "../../utils/msgCache";
-// Board events — must match boardModel enum values exactly
-const BOARD_EVENTS = [
-  { id: "birthday", label: "Birthday", emoji: "🎂" },
-  { id: "wedding", label: "Wedding", emoji: "💍" },
-  { id: "anniversary", label: "Anniversary", emoji: "❤️" },
-  { id: "graduation", label: "Graduation", emoji: "🎓" },
-  { id: "sport", label: "Sport", emoji: "🏅" },
-  { id: "retirement", label: "Retirement", emoji: "🏖️" },
-  { id: "promotion", label: "Promotion", emoji: "🎊" },
-  { id: "other", label: "Other", emoji: "🌟" },
+import { EVENTS } from "../../constants/messageConstant";
+import html2canvas from 'html2canvas'
+const PRIVACY_OPTIONS = [
+  { id: "all",       label: "All" },
+  { id: "public",    label: "Public" },
+  { id: "private",   label: "Private to me" },
+  { id: "anonymous", label: "Anonymous Creator" },
 ];
 
-// ─── Board card sub-components ────────────────────────────────────────────────
+// Board events — must match boardModel enum values exactly
 
 const EmblemCard = ({ msg, isMulti, isPrivate, onClick }) => (
-  <CardWrap onClick={onClick}>
-    <CanvasRenderer canvasData={msg.canvasData} />
-    {isMulti && (
-      <MultiIndicator>
-        <BsPlayFill />
-      </MultiIndicator>
-    )}
+  <CardWrap onClick={onClick} $isMulti={isMulti}>
+    {isMulti && <><StackLayer $back /><StackLayer /></>}
+    <ContentTop>
+      <CanvasRenderer canvasData={msg.canvasData} />
+    </ContentTop>
     {isPrivate && (
       <PrivateBadge>
-        <BsEye />
+        <PiEyesFill />
       </PrivateBadge>
     )}
   </CardWrap>
@@ -60,20 +53,18 @@ const EmblemCard = ({ msg, isMulti, isPrivate, onClick }) => (
 const StackCard = ({ msg, isMulti, isPrivate, onClick }) => {
   const src = msg?.content?.imageUrls?.[0] || null;
   return (
-    <CardWrap onClick={onClick}>
-      {src ? (
-        <img src={src} alt="" className="card_img" />
-      ) : (
-        <div className="card_placeholder" />
-      )}
-      {isMulti && (
-        <MultiIndicator>
-          <BsPlayFill />
-        </MultiIndicator>
-      )}
+    <CardWrap onClick={onClick} $isMulti={isMulti}>
+      {isMulti && <><StackLayer $back /><StackLayer /></>}
+      <ContentTop>
+        {src ? (
+          <img src={src} alt="" className="card_img" />
+        ) : (
+          <div className="card_placeholder" />
+        )}
+      </ContentTop>
       {isPrivate && (
         <PrivateBadge>
-          <BsEye />
+          <PiEyesFill />
         </PrivateBadge>
       )}
     </CardWrap>
@@ -81,27 +72,23 @@ const StackCard = ({ msg, isMulti, isPrivate, onClick }) => {
 };
 
 const AudioCard = ({ isMulti, isPrivate, onClick }) => (
-  <AudioOuter onClick={onClick}>
+  <AudioOuter onClick={onClick} $isMulti={isMulti}>
+    {isMulti && <><StackLayer $back /><StackLayer /></>}
     <span className="ripple" />
     <span className="ripple" />
     <span className="ripple" />
     <div className="mic_center">
       <BsMicFill className="mic_icon" />
     </div>
-    {isMulti && (
-      <MultiIndicator>
-        <BsPlayFill />
-      </MultiIndicator>
-    )}
     {isPrivate && (
       <PrivateBadge>
-        <BsEye />
+        <PiEyesFill />
       </PrivateBadge>
     )}
   </AudioOuter>
 );
 
-const NoteCard = ({ board, isMulti, isPrivate, onClick }) => (
+const NoteCard = ({ board, isPrivate, onClick }) => (
   <CardWrap
     onClick={onClick}
     style={{ background: "#FFF8E7", borderColor: "#F5C842" }}
@@ -118,14 +105,9 @@ const NoteCard = ({ board, isMulti, isPrivate, onClick }) => (
         <p className="note_sign">— @{board.owner.username}</p>
       )}
     </div>
-    {isMulti && (
-      <MultiIndicator>
-        <BsPlayFill />
-      </MultiIndicator>
-    )}
     {isPrivate && (
       <PrivateBadge>
-        <BsEye />
+        <PiEyesFill />
       </PrivateBadge>
     )}
   </CardWrap>
@@ -154,33 +136,12 @@ const BoardCard = ({ board, msg, onOpen }) => {
   const type = msg?.type;
 
   if (type === "emblem" && msg?.canvasData)
-    return (
-      <EmblemCard
-        msg={msg}
-        isMulti={isMulti}
-        isPrivate={isPrivate}
-        onClick={open}
-      />
-    );
+    return <EmblemCard msg={msg} isMulti={isMulti} isPrivate={isPrivate} onClick={open} />;
   if (type === "audio")
     return <AudioCard isMulti={isMulti} isPrivate={isPrivate} onClick={open} />;
   if (msg?.content?.imageUrls?.[0])
-    return (
-      <StackCard
-        msg={msg}
-        isMulti={isMulti}
-        isPrivate={isPrivate}
-        onClick={open}
-      />
-    );
-  return (
-    <NoteCard
-      board={board}
-      isMulti={isMulti}
-      isPrivate={isPrivate}
-      onClick={open}
-    />
-  );
+    return <StackCard msg={msg} isMulti={isMulti} isPrivate={isPrivate} onClick={open} />;
+  return <NoteCard board={board} isPrivate={isPrivate} onClick={open} />;
 };
 
 
@@ -188,7 +149,6 @@ const BoardCard = ({ board, msg, onOpen }) => {
 
 const ProfilePage = () => {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
 
   const {
     myProfile,
@@ -220,11 +180,18 @@ const ProfilePage = () => {
   const [newUsername, setNewUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
 
+  // filter tab
+  const [filterTab, setFilterTab] = useState("event");
+  const [pendingPrivacy, setPendingPrivacy] = useState("all");
+  const [activePrivacy, setActivePrivacy] = useState("all");
+
   // share
   const [shareCopied, setShareCopied] = useState(false);
+  const [showProfileShareModal, setShowProfileShareModal] = useState(false);
 
-  const searchRef = useRef(null);
-  const dropdownRef = useRef(null);
+  const searchRef    = useRef(null);
+  const dropdownRef  = useRef(null);
+  const shareFrameRef = useRef(null);
 
   // debounce query
   useEffect(() => {
@@ -340,16 +307,31 @@ const ProfilePage = () => {
     dispatch(updateProfile({ username: trimmed }));
   }, [newUsername, dispatch]);
 
-  const handleShareProfile = useCallback(async () => {
+  const handleShareProfile = useCallback(() => {
+    setShowProfileShareModal(true);
+  }, []);
+
+  const handleProfileShareCopyLink = useCallback(async () => {
     if (!myProfile?.username) return;
     try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}/profile/${myProfile.username}`,
-      );
+      const link = `${window.location.origin}/profile/${myProfile.username}`
+      if (shareFrameRef.current) {
+        const canvas = await html2canvas(shareFrameRef.current, {
+          useCORS: true, allowTaint: true, backgroundColor: null, scale: 2,
+        })
+        const dataUrl = canvas.toDataURL('image/png')
+        const a = document.createElement('a')
+        a.href = dataUrl
+        a.download = `${myProfile.username}-profile-share.png`
+        a.click()
+        await navigator.clipboard.writeText(link)
+      } else {
+        await navigator.clipboard.writeText(link)
+      }
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2500);
     } catch (err) { console.error(err) }
-  }, [myProfile]);
+  }, [myProfile, shareFrameRef]);
 
   const handleToggleEvent = useCallback((id) => {
     if (id === null) {
@@ -388,7 +370,9 @@ const ProfilePage = () => {
       b.title?.toLowerCase().includes(q) ||
       b.description?.toLowerCase().includes(q) ||
       b.event?.toLowerCase().includes(q);
-    return hasMsg && matchText;
+    const matchPrivacy =
+      activePrivacy === "all" || b.visibility === activePrivacy;
+    return hasMsg && matchText && matchPrivacy;
   });
 
   const fmtCount = (n) => {
@@ -402,12 +386,8 @@ const ProfilePage = () => {
     <Page>
       {/* ── Header (CreateMessage style) ── */}
       <Header>
-        <button className="back_btn" onClick={() => navigate(-1)}>
-          <BsChevronLeft />
-        </button>
         <span className="header_username">My Heartboard</span>
-        <div style={{ width: 36 }} />
-      </Header> 
+      </Header>
 
       {/* ── Hero ── */}
       <Hero>
@@ -422,11 +402,11 @@ const ProfilePage = () => {
           <HeroEmail>{myProfile?.email ?? ""}</HeroEmail>
           <HeroBtns>
             <HeroBtn onClick={handleShareProfile}>
-              <PiShareFat />
+              <PiShareFatBold />
               {shareCopied ? "Copied!" : "Share"}
             </HeroBtn>
             <FreePlanBadge onClick={() => setShowSettings(true)}>
-              <BsGear />
+              <RiSettings5Line />
               Settings
             </FreePlanBadge>
           </HeroBtns>
@@ -477,14 +457,16 @@ const ProfilePage = () => {
           )}
         </SearchBar>
         <FilterBtn
-          $active={activeEvents.length > 0}
+          $active={activeEvents.length > 0 || activePrivacy !== "all"}
           onClick={() => {
             setPendingEvents([...activeEvents]);
+            setPendingPrivacy(activePrivacy);
+            setFilterTab("event");
             setShowFilter(true);
           }}
         >
           <LuSlidersHorizontal />
-          {activeEvents.length > 0 && <FilterDot />}
+          {(activeEvents.length > 0 || activePrivacy !== "all") && <FilterDot />}
         </FilterBtn>
       </SearchRow>
 
@@ -579,41 +561,88 @@ const ProfilePage = () => {
         createPortal(
           <FilterBackdrop onClick={() => setShowFilter(false)}>
             <FilterBox onClick={(e) => e.stopPropagation()}>
-              <FilterTitle>Filter by Event</FilterTitle>
+              <FilterTitle>Filter</FilterTitle>
               <FilterDivider />
-              <EventGrid>
-                <EventCell
-                  $active={pendingEvents.length === 0}
-                  onClick={() => handleToggleEvent(null)}
+
+              {/* Event / Privacy tab switcher */}
+              <FilterTabGroup>
+                <FilterTabBtn
+                  $active={filterTab === "event"}
+                  onClick={() => setFilterTab("event")}
                 >
-                  <Radio $active={pendingEvents.length === 0}>
-                    {pendingEvents.length === 0 && <BsCheck2 />}
-                  </Radio>
-                  <span className="ev_label">All Events</span>
-                </EventCell>
-                {BOARD_EVENTS.map((ev) => {
-                  const on = pendingEvents.includes(ev.id);
-                  return (
-                    <EventCell
-                      key={ev.id}
-                      $active={on}
-                      onClick={() => handleToggleEvent(ev.id)}
-                    >
-                      <Radio $active={on}>{on && <BsCheck2 />}</Radio>
-                      <span className="ev_emoji">{ev.emoji}</span>
-                      <span className="ev_label">{ev.label}</span>
-                    </EventCell>
-                  );
-                })}
-              </EventGrid>
-              <ContinueBtn
-                onClick={() => {
-                  setActiveEvents([...pendingEvents]);
-                  setShowFilter(false);
-                }}
-              >
-                Apply Filter
-              </ContinueBtn>
+                  Event
+                </FilterTabBtn>
+                <FilterTabBtn
+                  $active={filterTab === "privacy"}
+                  onClick={() => setFilterTab("privacy")}
+                >
+                  Privacy
+                </FilterTabBtn>
+              </FilterTabGroup>
+
+              {/* Scrollable content */}
+              <FilterContent>
+              {/* Event grid */}
+              {filterTab === "event" && (
+                <EventGrid>
+                  <EventCell
+                    $active={pendingEvents.length === 0}
+                    onClick={() => handleToggleEvent(null)}
+                  >
+                    <CheckCircle $active={pendingEvents.length === 0}>
+                      {pendingEvents.length === 0 && <BsCheck2 />}
+                    </CheckCircle>
+                    <span className="ev_emoji">🥰</span>
+                    <span className="ev_label">All Events</span>
+                  </EventCell>
+                  {EVENTS.filter((e) => e.id !== "others").map((ev) => {
+                    const on = pendingEvents.includes(ev.id);
+                    return (
+                      <EventCell
+                        key={ev.id}
+                        $active={on}
+                        onClick={() => handleToggleEvent(ev.id)}
+                      >
+                        <CheckCircle $active={on}>{on && <BsCheck2 />}</CheckCircle>
+                        <span className="ev_emoji">{ev.emoji}</span>
+                        <span className="ev_label">{ev.label}</span>
+                      </EventCell>
+                    );
+                  })}
+                </EventGrid>
+              )}
+
+              {/* Privacy list */}
+              {filterTab === "privacy" && (
+                <PrivacyList>
+                  {PRIVACY_OPTIONS.map((opt) => {
+                    const on = pendingPrivacy === opt.id;
+                    return (
+                      <PrivacyCell
+                        key={opt.id}
+                        $active={on}
+                        onClick={() => setPendingPrivacy(opt.id)}
+                      >
+                        <span className="pr_label">{opt.label}</span>
+                        <CheckCircle $active={on}>{on && <BsCheck2 />}</CheckCircle>
+                      </PrivacyCell>
+                    );
+                  })}
+                </PrivacyList>
+              )}
+              </FilterContent>
+
+              <FilterFooter>
+                <ContinueBtn
+                  onClick={() => {
+                    setActiveEvents([...pendingEvents]);
+                    setActivePrivacy(pendingPrivacy);
+                    setShowFilter(false);
+                  }}
+                >
+                  Continue
+                </ContinueBtn>
+              </FilterFooter>
             </FilterBox>
           </FilterBackdrop>,
           document.body,
@@ -627,100 +656,136 @@ const ProfilePage = () => {
             <SettingsHeader>
               <button
                 className="back_btn"
-                onClick={() => setShowSettings(false)}
+                onClick={() => {
+                  if (editingUsername) {
+                    setEditingUsername(false);
+                    setUsernameError("");
+                  } else {
+                    setShowSettings(false);
+                  }
+                }}
               >
-                ‹ Profile Settings
+                <MdOutlineArrowBackIos className="back_icon" />
+                {editingUsername ? "Edit Profile" : "Profile Settings"}
               </button>
             </SettingsHeader>
 
-            <SettingsSection>
-              <SectionTitle>Summary</SectionTitle>
-              <StatsGrid>
-                <StatCard>
-                  <span className="label">Total Likes</span>
-                  <span className="value">
-                    {fmtCount(myProfile?.stats?.totalLikes)}
-                  </span>
-                </StatCard>
-                <StatCard>
-                  <span className="label">Total Boards</span>
-                  <span className="value">
-                    {fmtCount(myProfile?.stats?.totalBoards)}
-                  </span>
-                </StatCard>
-                <StatCard>
-                  <span className="label">Total Tagged</span>
-                  <span className="value">
-                    {fmtCount(myProfile?.stats?.totalMessages)}
-                  </span>
-                </StatCard>
-              </StatsGrid>
-            </SettingsSection>
+            {!editingUsername ? (
+              <>
+                <SettingsSection>
+                  <SectionTitle>Summary</SectionTitle>
+                  <StatsGrid>
+                    <StatCard>
+                      <span className="label">Total Likes</span>
+                      <span className="value">
+                        {fmtCount(myProfile?.stats?.totalLikes)}
+                      </span>
+                    </StatCard>
+                    <StatCard>
+                      <span className="label">Total Boards</span>
+                      <span className="value">
+                        {fmtCount(myProfile?.stats?.totalBoards)}
+                      </span>
+                    </StatCard>
+                    <StatCard>
+                      <span className="label">Total Tagged</span>
+                      <span className="value">
+                        {fmtCount(myProfile?.stats?.totalMessages)}
+                      </span>
+                    </StatCard>
+                  </StatsGrid>
+                </SettingsSection>
 
-            <SettingsSection>
-              <SettingsRow
-                onClick={() => {
-                  setNewUsername(myProfile?.username ?? "");
-                  setEditingUsername(true);
-                  setUsernameError("");
-                }}
-              >
-                <span className="row_icon">
-                  <BsPencil />
-                </span>
-                <span className="row_label">Edit profile</span>
-                <BsChevronRight className="row_arrow" />
-              </SettingsRow>
-            </SettingsSection>
+                <SettingsSection>
+                  <SettingsRow
+                    onClick={() => {
+                      setNewUsername(myProfile?.username ?? "");
+                      setEditingUsername(true);
+                      setUsernameError("");
+                    }}
+                  >
+                    <span className="row_icon">
+                      <PiPencilLineBold />
+                    </span>
+                    <span className="row_label">Edit profile</span>
+                    <BsChevronRight className="row_arrow" />
+                  </SettingsRow>
+                </SettingsSection>
+              </>
+            ) : (
+              <SettingsSection>
+                <EditProfileForm>
+                  <UsernameInput
+                    type="text"
+                    placeholder="New username"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    maxLength={10}
+                  />
+                  {usernameError && <FieldError>{usernameError}</FieldError>}
+                  {updateProfileError && (
+                    <FieldError>{updateProfileErrorMsg}</FieldError>
+                  )}
+                  <SaveBtn
+                    onClick={handleSaveUsername}
+                    disabled={updateProfileLoad}
+                  >
+                    {updateProfileLoad ? "Saving…" : "Save"}
+                  </SaveBtn>
+                </EditProfileForm>
+              </SettingsSection>
+            )}
           </SettingsPanel>
         </>
       )}
 
-      {/* ── Edit username modal ── */}
-      {editingUsername && (
-        <ModalOverlay onClick={() => setEditingUsername(false)}>
-          <ModalCard onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>Edit Username</ModalTitle>
-            <UsernameInput
-              type="text"
-              placeholder="New username"
-              value={newUsername}
-              onChange={(e) => setNewUsername(e.target.value)}
-              maxLength={10}
-            />
-            {usernameError && <FieldError>{usernameError}</FieldError>}
-            {updateProfileError && (
-              <FieldError>{updateProfileErrorMsg}</FieldError>
-            )}
-            <ModalBtns>
-              <CancelBtnModal onClick={() => setEditingUsername(false)}>
-                Cancel
-              </CancelBtnModal>
-              <SaveBtn
-                onClick={handleSaveUsername}
-                disabled={updateProfileLoad}
-              >
-                {updateProfileLoad ? "Saving…" : "Save"}
-              </SaveBtn>
-            </ModalBtns>
-          </ModalCard>
-        </ModalOverlay>
+      {/* ── Share Profile Modal ── */}
+      {showProfileShareModal && (
+        <ProfileShareOverlay onClick={() => setShowProfileShareModal(false)}>
+          <ProfileShareCard onClick={e => e.stopPropagation()}>
+            <div className="share_frame_part">
+              <div className="share_canvas_frame" ref={shareFrameRef}>
+                <img src={heartboardLogo} alt="Heartboard" className="share_logo" />
+                <img src={profileFrame} alt="" className="share_frame_img" />
+                <div className="share_canvas_and_text">
+                  <div className="share_profile_inner">
+                    <div className="share_avatar">
+                      {myProfile?.profileImage
+                        ? <img src={myProfile.profileImage} alt="avatar" />
+                        : <img src={DefaultAvatar} alt="avatar" className="share_default_avatar" />
+                      }
+                    </div>
+                    <p className="share_username">@{myProfile?.username ?? ""}</p>
+                    <p className="share_caption">Write messages on my Heartboard wall</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="share_btn_part">
+              <button className="share_primary_btn" onClick={handleProfileShareCopyLink}>
+                {shareCopied ? "Copied!" : "Download & Copy Link"}
+              </button>
+              <button className="share_secondary_btn" onClick={() => setShowProfileShareModal(false)}>
+                Close
+              </button>
+            </div>
+          </ProfileShareCard>
+        </ProfileShareOverlay>
       )}
     </Page>
   );
 };
 
-// ── Keyframes ─────────────────────────────────────────────────────────────────
+// ── Keyframes 
 const shimmer = keyframes`0%{background-position:-200% 0}100%{background-position:200% 0}`;
 const slideIn = keyframes`from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}`;
 const fadeIn = keyframes`from{opacity:0}to{opacity:1}`;
-const modalPop = keyframes`from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}`;
 const audioRipple = keyframes`
   0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
   100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
 `;
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+// ── Layout 
 const Page = styled.div`
   min-height: 100vh;
   background: #fff;
@@ -729,13 +794,11 @@ const Page = styled.div`
 
 // CreateMessage-style header
 const Header = styled.div`
-  position: sticky;
-  top: 0;
   z-index: 50;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.85rem 1.25rem;
+  padding: 1.4rem 1.5rem 0.85rem;
   background: #fff;
 
   .back_btn {
@@ -782,8 +845,8 @@ const AvatarSmall = styled.div`
 const Hero = styled.section`
   display: flex;
   align-items: center;
-  gap: 1.4rem;
-  padding: 1.25rem 1.5rem 1.4rem;
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.2rem;
   @media (max-width: 480px) {
     padding: 1rem;
     gap: 1rem;
@@ -852,7 +915,7 @@ const HeroBtn = styled.button`
   border-radius: 99px;
   padding: 8px 16px;
   font-size: 0.82em;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
   transition: background 0.15s;
   svg {
@@ -873,7 +936,7 @@ const FreePlanBadge = styled.button`
   border-radius: 99px;
   padding: 8px 16px;
   font-size: 0.82em;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
   transition: background 0.15s;
   svg {
@@ -888,6 +951,7 @@ const TabRow = styled.div`
   display: flex;
   gap: 8px;
   padding: 0 1.5rem 0.8rem;
+  margin-top: 1rem;
 `;
 
 const Tab = styled.button`
@@ -900,6 +964,7 @@ const Tab = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
+  box-shadow: ${({ $active }) => ($active ? "0 1px 4px rgba(0,0,0,0.10)" : "none")};
 `;
 
 
@@ -1081,11 +1146,16 @@ const FilterBox = styled.div`
   padding: 1.75rem;
   width: 100%;
   max-width: 420px;
-  max-height: 85vh;
-  overflow-y: auto;
+  height: min(560px, 85vh);
   display: flex;
   flex-direction: column;
   gap: 1rem;
+`;
+
+const FilterContent = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 `;
 
 const FilterTitle = styled.h3`
@@ -1100,6 +1170,27 @@ const FilterDivider = styled.hr`
   margin: 0;
 `;
 
+const FilterTabGroup = styled.div`
+  display: flex;
+  background: #f0f2f5;
+  border-radius: 99px;
+  padding: 4px;
+`;
+
+const FilterTabBtn = styled.button`
+  flex: 1;
+  padding: 7px 18px;
+  border-radius: 99px;
+  border: none;
+  background: ${({ $active }) => ($active ? "#fff" : "transparent")};
+  color: ${({ $active }) => ($active ? "#111" : "#555")};
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: ${({ $active }) => ($active ? "0 1px 4px rgba(0,0,0,0.10)" : "none")};
+`; 
+ 
 const EventGrid = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1110,10 +1201,11 @@ const EventCell = styled.div`
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.65rem;
+  padding: 1rem 0.65rem;
+  margin: 2px;
   border-radius: 12px;
-  background: ${(p) => (p.$active ? "rgba(239,90,66,0.05)" : "#f9fafb")};
-  border: 1.5px solid ${(p) => (p.$active ? "#EF5A42" : "#eceff3")};
+  background: #f9fafb;
+  border: none;
   cursor: pointer;
   .ev_emoji {
     font-size: 1em;
@@ -1123,23 +1215,56 @@ const EventCell = styled.div`
     font-size: 0.86em;
     font-weight: 500;
     color: #111;
+    flex: 1;
   }
 `;
 
-const Radio = styled.div`
-  width: 17px;
-  height: 17px;
+const CheckCircle = styled.div`
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1.5px solid ${(p) => (p.$active ? "#EF5A42" : "#d1d5db")};
-  background: ${(p) => (p.$active ? "#EF5A42" : "transparent")};
+  border: 2px solid ${(p) => (p.$active ? "#22c55e" : "#d1d5db")};
+  background: ${(p) => (p.$active ? "#22c55e" : "transparent")};
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: border-color 0.2s, background 0.2s;
   svg {
-    font-size: 0.6em;
+    font-size: 0.55em;
     color: #fff;
   }
+`;
+
+const PrivacyList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const PrivacyCell = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0.85rem;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  .pr_label {
+    flex: 1;
+    font-size: 0.86em;
+    font-weight: 500;
+    color: #111;
+  }
+`;
+
+const FilterFooter = styled.div`
+  background: #f7f0ed;
+  margin: 0 -1.75rem -1.75rem;
+  padding: 1.25rem 1.75rem;
+  border-radius: 0 0 24px 24px;
 `;
 
 const ContinueBtn = styled.button`
@@ -1160,7 +1285,7 @@ const ContinueBtn = styled.button`
 // ── Feed ──────────────────────────────────────────────────────────────────────
 const Feed = styled.main`
   max-width: 1400px;
-  margin: 0 auto;
+  margin: 0;
   padding: 0.5rem 1.5rem 2rem;
   @media (max-width: 480px) {
     padding: 0.5rem 1rem 2rem;
@@ -1188,11 +1313,12 @@ const GridItem = styled.div`
 
 const CardWrap = styled.div`
   position: relative;
-  border-radius: 30px;
+  border-radius: 16px;
   border: 2.5px solid transparent;
   overflow: hidden;
   width: 100%;
   cursor: pointer;
+  padding-bottom: ${({ $isMulti }) => $isMulti ? '14px' : '0'};
   .card_img {
     width: 100%;
     display: block;
@@ -1238,15 +1364,22 @@ const CardWrap = styled.div`
   }
 `;
 
-const MultiIndicator = styled.div`
+const StackLayer = styled.div`
   position: absolute;
-  bottom: 10px;
-  left: 10px;
-  z-index: 3;
-  color: #fff;
-  font-size: 1em;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
-`;
+  bottom: ${({ $back }) => $back ? '0' : '7px'};
+  left: ${({ $back }) => $back ? '12px' : '5px'};
+  right: ${({ $back }) => $back ? '12px' : '5px'};
+  height: 40px;
+  z-index: ${({ $back }) => $back ? 0 : 1};
+  background: #fff;
+  border-radius: 10px;
+  pointer-events: none;
+`
+
+const ContentTop = styled.div`
+  position: relative;
+  z-index: 2;
+`
 
 const PrivateBadge = styled.div`
   position: absolute;
@@ -1270,9 +1403,10 @@ const AudioOuter = styled.div`
   width: 100%;
   aspect-ratio: 4/3;
   background: #FDDDD7;
-  border-radius: 30px;
+  border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
+  padding-bottom: ${({ $isMulti }) => $isMulti ? '14px' : '0'};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1346,7 +1480,6 @@ const SettingsPanel = styled.aside`
 
 const SettingsHeader = styled.div`
   padding: 1.4rem 1.5rem 1rem;
-  border-bottom: 1px solid #f0f0f0;
   .back_btn {
     background: none;
     border: none;
@@ -1357,7 +1490,10 @@ const SettingsHeader = styled.div`
     padding: 0;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    .back_icon {
+      font-size: 1.3em;
+    }
   }
 `;
 
@@ -1402,24 +1538,22 @@ const SettingsRow = styled.button`
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #f5f6f8;
-  border: none;
+  background: transparent;
+  border: 2px solid #f5f6f8;
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 14px 14px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
-  &:hover {
-    background: #eceef2;
-  }
+  transition: border-color 0.15s;
+
   .row_icon {
-    font-size: 1em;
+    font-size: 1.25em;
     color: #555;
   }
   .row_label {
     flex: 1;
-    font-size: 0.9em;
-    font-weight: 500;
+    font-size: 1em;
+    font-weight: 600;
     color: #111;
   }
   .row_arrow {
@@ -1428,81 +1562,44 @@ const SettingsRow = styled.button`
   }
 `;
 
-// ── Edit username modal ───────────────────────────────────────────────────────
-const ModalOverlay = styled.div`
-  position: fixed;
-  inset: 0;
-  z-index: 400;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-`;
-
-const ModalCard = styled.div`
-  background: #fff;
-  border-radius: 20px;
-  width: min(380px, 100%);
-  padding: 28px 24px 24px;
+// ── Edit profile inline form ──────────────────────────────────────────────────
+const EditProfileForm = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  animation: ${modalPop} 0.18s ease forwards;
+  gap: 12px;
+  margin-top: 0.5rem;
 `;
 
-const ModalTitle = styled.h3`
-  font-size: 1.05em;
-  font-weight: 700;
-  color: #111;
-  margin: 0;
-`;
 const UsernameInput = styled.input`
   width: 100%;
-  padding: 12px 14px;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 10px;
+  box-sizing: border-box;
+  padding: 14px;
+  background: #f6f8fa;
+  border: none;
+  border-radius: 12px;
   font-size: 0.92em;
   color: #111;
   outline: none;
-  transition: border-color 0.15s;
-  &:focus {
-    border-color: #e05a42;
+  transition: box-shadow 0.15s;
+  &::placeholder {
+    color: #bbb;
   }
 `;
+
 const FieldError = styled.p`
   font-size: 0.8em;
   color: #e05a42;
   margin: 0;
 `;
-const ModalBtns = styled.div`
-  display: flex;
-  gap: 10px;
-  button {
-    flex: 1;
-  }
-`;
-const CancelBtnModal = styled.button`
-  padding: 13px;
-  background: #f5f6f8;
-  color: #333;
-  border: none;
-  border-radius: 99px;
-  font-size: 0.9em;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-  &:hover {
-    background: #eceef2;
-  }
-`;
+
 const SaveBtn = styled.button`
-  padding: 13px;
-  background: #e05a42;
+  width: 100%;
+  padding: 14px;
+  background: var(--primary-color, #ef5a42);
   color: #fff;
   border: none;
-  border-radius: 99px;
-  font-size: 0.9em;
+  border-radius: 25px;
+  font-size: 0.95em;
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -1512,6 +1609,169 @@ const SaveBtn = styled.button`
   }
   &:hover:not(:disabled) {
     opacity: 0.88;
+  }
+`;
+
+const ProfileShareOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+`;
+
+const ProfileShareCard = styled.div`
+  background: #fff;
+  border-radius: 30px;
+  padding: 1rem;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+
+  .share_frame_part {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .share_canvas_frame {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 30px;
+  }
+
+  .share_logo {
+    position: absolute;
+    top: -10%; 
+    right: -20%;
+    width: 280px;
+    height: auto; 
+    z-index: 15;
+    pointer-events: none;
+  }
+
+  .share_rect {
+    position: absolute;
+    top: 15%;
+    width: 45%;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .share_rect_left { left: 10%; }
+  .share_rect_right { right: 10%; }
+
+  .share_frame_img {
+    width: 100%;
+    height: auto;
+    display: block;
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .share_canvas_and_text {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 62%;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .share_profile_inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+  }
+
+  .share_avatar {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #fde8e5;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    flex-shrink: 0;
+    img {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      bottom: -5px;
+    }
+    .share_default_avatar {
+      position: absolute;
+      width: 151px;
+      height: 151px;
+      object-fit: contain;
+      bottom: -10px;
+    }
+  }
+
+  .share_username {
+    margin-top: 1rem;
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #111;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .share_caption {
+    margin: 0;
+    font-size: 1em;
+    color: #272835;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .share_btn_part {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .share_primary_btn {
+    width: 100%;
+    height: 50px;
+    border: none;
+    border-radius: 25px;
+    background: var(--primary-color, #ef5a42);
+    color: #fff;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    &:hover { opacity: 0.88; }
+  }
+
+  .share_secondary_btn {
+    width: 100%;
+    height: 50px;
+    border: 1px solid #111;
+    border-radius: 25px;
+    background: transparent;
+    color: #111;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    &:hover { opacity: 0.7; }
   }
 `;
 

@@ -7,18 +7,18 @@ import React, {
   Suspense,
 } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import { useDispatch, useSelector } from "react-redux";
 import axios from "axios";
 import {
   BsMicFill,
-  BsPlayFill,
   BsX,
   BsCheck2,
   BsHeart,
   BsChevronLeft,
 } from "react-icons/bs";
+import { MdOutlineArrowBackIos } from "react-icons/md";
 import { PiShareFat } from "react-icons/pi";
 import { TfiWorld } from "react-icons/tfi";
 import { IoSearch } from "react-icons/io5";
@@ -61,8 +61,9 @@ const TopBar = styled.header`
   background: #fff;
   padding: 0.85rem 1.5rem;
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: ${p => p.$category ? 'column' : 'row'};
+  align-items: ${p => p.$category ? 'stretch' : 'center'};
+  gap: ${p => p.$category ? '0.5rem' : '1rem'};
   overflow: hidden;
 
 
@@ -90,6 +91,27 @@ const TopBar = styled.header`
     flex-shrink: 0;
   }
 `;
+
+const TopBarRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  &:nth-child(2) {
+    margin-top: 2rem;
+  }
+`
+
+const CategoryHeading = styled.h2`
+  font-size: 1.4em;
+  font-weight: 700;
+  color: #111;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+`
 
 const SearchWrap = styled.div`
   flex: 1;
@@ -178,7 +200,7 @@ const BackBtn = styled.button`
   background: none;
   border: none;
   color: #333;
-  font-size: 1.2em;
+  font-size: 1.6em;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -245,6 +267,22 @@ const AvatarCircle = styled.div`
     object-fit: cover;
     display: block;
   }
+`;
+
+const ThumbOuter = styled.div`
+  width: 70px;
+  height: 90px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+`;
+
+const ThumbFrame = styled.div`
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
 `;
 
 const BoardThumb = styled.div`
@@ -316,8 +354,7 @@ const EmptySearch = styled.p`
 
 const Feed = styled.main`
   max-width: 1400px;
-  margin: 0 auto;
-  padding: 1.5rem 1.5rem 2rem;
+  padding: 0.5rem 1.5rem 2rem;
 `;
 
 const MasonryGrid = styled.div`
@@ -342,11 +379,12 @@ const GridItem = styled.div`
 
 const CardWrap = styled.div`
   position: relative;
-  border-radius: 30px;
+  border-radius: 16px;
   border: 2.5px solid transparent;
   overflow: hidden;
   width: 100%;
   cursor: pointer;
+  padding-bottom: ${({ $isMulti }) => $isMulti ? '14px' : '0'};
   .card_img {
     width: 100%;
     display: block;
@@ -394,30 +432,38 @@ const CardWrap = styled.div`
       right: 0.75rem;
       width: 48px;
       height: 48px;
-      border-radius: 8px;
+      border-radius: 8px; 
       object-fit: cover;
     }
   }
 `;
 
-const PlayWrap = styled.div`
+const StackLayer = styled.div`
   position: absolute;
-  bottom: 12px;
-  left: 12px;
-  z-index: 4;
-  color: #fff;
-  font-size: 1.1em;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
-`;
+  bottom: ${({ $back }) => $back ? '0' : '7px'};
+  left: ${({ $back }) => $back ? '12px' : '5px'};
+  right: ${({ $back }) => $back ? '12px' : '5px'};
+  height: 40px;
+  z-index: ${({ $back }) => $back ? 0 : 1};
+  background: #fff;
+  border-radius: 10px;
+  pointer-events: none;
+`
+
+const ContentTop = styled.div`
+  position: relative;
+  z-index: 2;
+`
 
 const AudioOuter = styled.div`
   position: relative;
   width: 100%;
   aspect-ratio: 4/3;
   background: #FDDDD7;
-  border-radius: 30px;
+  border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
+  padding-bottom: ${({ $isMulti }) => $isMulti ? '14px' : '0'};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -443,7 +489,7 @@ const AudioOuter = styled.div`
     border-radius: 50%;
     background: #fff;
     display: flex;
-    align-items: center;
+    align-items: center; 
     justify-content: center;
   }
   .mic_icon {
@@ -471,7 +517,7 @@ const Backdrop = styled.div`
   position: fixed;
   inset: 0;
   z-index: 2147483647;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.5); 
   display: flex;
   align-items: center;
   justify-content: center;
@@ -512,10 +558,11 @@ const EventCell = styled.div`
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.65rem;
+  padding: 1rem 0.65rem;
+  margin: 2px;
   border-radius: 12px;
-  background: ${(p) => (p.$active ? "rgba(239,90,66,0.05)" : "#f9fafb")};
-  border: 1.5px solid ${(p) => (p.$active ? "#EF5A42" : "#eceff3")};
+  background: #f9fafb;
+  border: none;
   cursor: pointer;
   .ev_emoji {
     font-size: 1em;
@@ -525,21 +572,23 @@ const EventCell = styled.div`
     font-size: 0.86em;
     font-weight: 500;
     color: #111;
+    flex: 1;
   }
 `;
 
-const Radio = styled.div`
-  width: 17px;
-  height: 17px;
+const CheckCircle = styled.div`
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1.5px solid ${(p) => (p.$active ? "#EF5A42" : "#d1d5db")};
-  background: ${(p) => (p.$active ? "#EF5A42" : "transparent")};
+  border: 2px solid ${(p) => (p.$active ? "#22c55e" : "#d1d5db")};
+  background: ${(p) => (p.$active ? "#22c55e" : "transparent")};
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: border-color 0.2s, background 0.2s;
   svg {
-    font-size: 0.6em;
+    font-size: 0.55em;
     color: #fff;
   }
 `;
@@ -556,42 +605,40 @@ const ContinueBtn = styled.button`
   cursor: pointer;
 `;
 
-const PlayIcon = () => (
-  <PlayWrap>
-    <BsPlayFill />
-  </PlayWrap>
-);
-
 const EmblemCard = ({ msg, isMulti, onClick }) => (
-  <CardWrap onClick={onClick}>
-    <CanvasRenderer canvasData={msg.canvasData} />
-    {isMulti && <PlayIcon />}
+  <CardWrap onClick={onClick} $isMulti={isMulti}>
+    {isMulti && <><StackLayer $back /><StackLayer /></>}
+    <ContentTop>
+      <CanvasRenderer canvasData={msg.canvasData} />
+    </ContentTop>
   </CardWrap>
 );
 
 const StackCard = ({ msg, isMulti, onClick }) => {
   const src = msg?.content?.imageUrls?.[0] || null;
   return (
-    <CardWrap onClick={onClick}>
-      {src ? (
-        <img src={src} alt="" className="card_img" />
-      ) : (
-        <div className="card_placeholder" />
-      )}
-      {isMulti && <PlayIcon />}
+    <CardWrap onClick={onClick} $isMulti={isMulti}>
+      {isMulti && <><StackLayer $back /><StackLayer /></>}
+      <ContentTop>
+        {src ? (
+          <img src={src} alt="" className="card_img" />
+        ) : (
+          <div className="card_placeholder" />
+        )}
+      </ContentTop>
     </CardWrap>
   );
 };
 
 const AudioCard = ({ isMulti, onClick }) => (
-  <AudioOuter onClick={onClick}>
+  <AudioOuter onClick={onClick} $isMulti={isMulti}>
+    {isMulti && <><StackLayer $back /><StackLayer /></>}
     <span className="ripple" />
     <span className="ripple" />
     <span className="ripple" />
     <div className="mic_center">
       <BsMicFill className="mic_icon" />
     </div>
-    {isMulti && <PlayIcon />}
   </AudioOuter>
 );
 
@@ -622,45 +669,38 @@ const BoardCard = ({ board, msg, onOpen }) => {
   const isMulti = board.stats?.messages > 1;
   const type = msg?.type;
   const open = () => onOpen(board);
+
   if (type === "emblem" && msg?.canvasData)
-    return <EmblemCard msg={msg} isMulti={isMulti}  onClick={open} />;
+    return <EmblemCard msg={msg} isMulti={isMulti} onClick={open} />;
   if (type === "audio") return <AudioCard isMulti={isMulti} onClick={open} />;
   if (msg?.content?.imageUrls?.[0])
     return <StackCard msg={msg} isMulti={isMulti} onClick={open} />;
   return <NoteCard board={board} onClick={open} />;
 };
 
-// CanvasRenderer uses fixed px sizes internally — render at natural width then scale down
 const CANVAS_NATURAL_W = 210;
-const CANVAS_DISPLAY_W = 70;
-
-const getCanvasScale = (aspectRatio) => {
-  // For landscape (4:3), natural height < display height — scale by height to cover
-  if (aspectRatio === "landscape") {
-    const naturalH = CANVAS_NATURAL_W * (3 / 4);
-    return CANVAS_DISPLAY_W / naturalH;
-  }
-  // Square and portrait: width-based scale fills/covers height
-  return CANVAS_DISPLAY_W / CANVAS_NATURAL_W;
-};
+const THUMB_INNER_W = 62; // 70px outer - 4px padding each side
+const CANVAS_SCALE = (THUMB_INNER_W * 0.72) / CANVAS_NATURAL_W;
 
 const BoardDropThumb = ({ msg, coverImage }) => {
   if (msg?.type === "emblem" && msg?.canvasData) {
-    const scale = getCanvasScale(msg.canvasData.aspectRatio);
+    const frameBg = msg.canvasData.canvasFrame?.color || "#e0e0e0";
+    const canvasData = { ...msg.canvasData, canvasFrame: undefined };
     return (
-      <BoardThumb>
-        <div style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          width: CANVAS_NATURAL_W,
-          transformOrigin: "center center",
-          transform: `translate(-50%, -50%) scale(${scale})`,
-          pointerEvents: "none",
-        }}>
-          <CanvasRenderer canvasData={msg.canvasData} />
-        </div>
-      </BoardThumb>
+      <ThumbOuter>
+        <ThumbFrame style={{ background: frameBg }}>
+          <div style={{
+            position: "absolute",
+            top: "50%", left: "50%",
+            width: CANVAS_NATURAL_W,
+            transformOrigin: "center center",
+            transform: `translate(-50%, -50%) scale(${CANVAS_SCALE})`,
+            pointerEvents: "none",
+          }}>
+            <CanvasRenderer canvasData={canvasData} />
+          </div>
+        </ThumbFrame>
+      </ThumbOuter>
     );
   }
   if (msg?.type === "audio") {
@@ -676,11 +716,16 @@ const BoardDropThumb = ({ msg, coverImage }) => {
 
 
 const HomePage = () => {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
+  const dispatch  = useDispatch();
+  const navigate  = useNavigate();
+  const location  = useLocation();
   const { discoverBoards: boards = [], discoverLoad, boardCacheVersion } = useSelector(
     (s) => s.board,
   );
+
+  const categoryLabel = location.state?.categoryLabel ?? null;
+  const categorySort  = location.state?.sort          ?? 'latest';
+  const categoryEvent = location.state?.event         ?? null;
 
   const [query, setQuery] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -699,30 +744,19 @@ const HomePage = () => {
     return () => clearTimeout(t);
   }, [query]);
 
+  const effectiveEvent = categoryEvent ?? (activeEvents.length === 1 ? activeEvents[0] : undefined);
+
   // re-fetch boards when caches are invalidated (after edit/delete)
-  // resync from module cache — invalidateMsgCache already removed the edited board from it
   useEffect(() => {
     if (!boardCacheVersion) return;
     setFirstMessages({ ...homeFirstMsgCache });
-    dispatch(
-      discoverBoards({
-        page: 1,
-        limit: 20,
-        event: activeEvents.length === 1 ? activeEvents[0] : undefined,
-      }),
-    );
+    dispatch(discoverBoards({ page: 1, limit: 20, sort: categorySort, event: effectiveEvent }));
   }, [boardCacheVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // single effect — handles initial load AND filter changes
+  // single effect — handles initial load AND filter/sort/event changes
   useEffect(() => {
-    dispatch(
-      discoverBoards({
-        page: 1,
-        limit: 20,
-        event: activeEvents.length === 1 ? activeEvents[0] : undefined,
-      }),
-    );
-  }, [dispatch, activeEvents]);
+    dispatch(discoverBoards({ page: 1, limit: 20, sort: categorySort, event: effectiveEvent }));
+  }, [dispatch, activeEvents, categorySort, categoryEvent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // fetch first message for each board card — uses module-level cache
   useEffect(() => {
@@ -823,32 +857,58 @@ const HomePage = () => {
 
   return (
     <Page>
-      <TopBar>
-        <div className="logo">
-          <img src={Logo} alt="logo" />
-        </div>
+      <TopBar $category={!!categoryLabel}>
+        {categoryLabel ? (
+          <>
+            <TopBarRow>
+              <BackBtn onClick={() => navigate(-1)}><MdOutlineArrowBackIos /></BackBtn>
+              <CategoryHeading>{categoryLabel}</CategoryHeading>
+            </TopBarRow>
+            <TopBarRow>
+              <SearchWrap>
+                <SearchBar onClick={() => setShowSearch(true)} style={{ cursor: "pointer" }}>
+                  <IoSearch className="si" />
+                  <span style={{ fontSize: "0.88em", color: "#bbb", userSelect: "none" }}>
+                    Search name, event…
+                  </span>
+                </SearchBar>
+              </SearchWrap>
+              <FilterBtn
+                $active={activeEvents.length > 0}
+                onClick={() => { setPendingEvents([...activeEvents]); setShowFilter(true); }}
+              >
+                <LuSlidersHorizontal />
+                {activeEvents.length > 0 && <FilterDot />}
+              </FilterBtn>
+            </TopBarRow>
+          </>
+        ) : (
+          <>
+            <div className="logo"><img src={Logo} alt="logo" /></div>
 
-        <SearchWrap>
-          <SearchBar onClick={() => setShowSearch(true)} style={{ cursor: "pointer" }}>
-            <IoSearch className="si" />
-            <span style={{ fontSize: "0.88em", color: "#bbb", userSelect: "none" }}>
-              Search name, event…
-            </span>
-          </SearchBar>
-        </SearchWrap>
+            <SearchWrap>
+              <SearchBar onClick={() => setShowSearch(true)} style={{ cursor: "pointer" }}>
+                <IoSearch className="si" />
+                <span style={{ fontSize: "0.88em", color: "#bbb", userSelect: "none" }}>
+                  Search name, event…
+                </span>
+              </SearchBar>
+            </SearchWrap>
 
-        <div className="top_actions">
-          <FilterBtn
-            $active={activeEvents.length > 0}
-            onClick={() => {
-              setPendingEvents([...activeEvents]);
-              setShowFilter(true);
-            }}
-          >
-            <LuSlidersHorizontal />
-            {activeEvents.length > 0 && <FilterDot />}
-          </FilterBtn>
-        </div>
+            <div className="top_actions">
+              <FilterBtn
+                $active={activeEvents.length > 0}
+                onClick={() => {
+                  setPendingEvents([...activeEvents]);
+                  setShowFilter(true);
+                }}
+              >
+                <LuSlidersHorizontal />
+                {activeEvents.length > 0 && <FilterDot />}
+              </FilterBtn>
+            </div>
+          </>
+        )}
       </TopBar>
 
       <Feed>
@@ -864,7 +924,7 @@ const HomePage = () => {
           <EmptyMsg>
             {q
               ? `No boards match "${debouncedQ}"`
-              : activeEvents.length > 0
+              : effectiveEvent
                 ? "No boards found for this event."
                 : "No boards yet."}
           </EmptyMsg>
@@ -994,10 +1054,11 @@ const HomePage = () => {
                   $active={pendingEvents.length === 0}
                   onClick={() => handleToggleEvent(null)}
                 >
-                  <Radio $active={pendingEvents.length === 0}>
+                  <CheckCircle $active={pendingEvents.length === 0}>
                     {pendingEvents.length === 0 && <BsCheck2 />}
-                  </Radio>
-                  <span className="ev_label">All Events</span>
+                  </CheckCircle>
+                  <span className="ev_emoji">🥰</span>
+                  <span className="ev_label">Moments</span>
                 </EventCell>
                 {EVENTS.filter((e) => e.id !== "others").map((ev) => {
                   const on = pendingEvents.includes(ev.id);
@@ -1007,7 +1068,7 @@ const HomePage = () => {
                       $active={on}
                       onClick={() => handleToggleEvent(ev.id)}
                     >
-                      <Radio $active={on}>{on && <BsCheck2 />}</Radio>
+                      <CheckCircle $active={on}>{on && <BsCheck2 />}</CheckCircle>
                       <span className="ev_emoji">{ev.emoji}</span>
                       <span className="ev_label">{ev.label}</span>
                     </EventCell>
