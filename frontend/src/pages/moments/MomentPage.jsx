@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import styled, { keyframes } from 'styled-components'
@@ -186,6 +186,18 @@ const MomentPage = () => {
     return () => clearInterval(t)
   }, [slidesLen])
 
+  const touchStartX = useRef(null)
+  const handleTouchStart = useCallback((e) => {
+    touchStartX.current = e.touches[0].clientX
+  }, [])
+  const handleTouchEnd = useCallback((e) => {
+    if (touchStartX.current === null || slidesLen < 2) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (Math.abs(dx) < 40) return
+    setCarouselIdx(i => dx < 0 ? (i + 1) % slidesLen : (i - 1 + slidesLen) % slidesLen)
+  }, [slidesLen])
+
   const activeBoard = slides[carouselIdx % Math.max(slides.length, 1)] || null
   const activeMsg   = activeBoard ? firstMessages[activeBoard._id] : null
 
@@ -215,7 +227,7 @@ const MomentPage = () => {
         </FilterBtn>
       </TopBar>
 
-      <HeroSection>
+      <HeroSection onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         {discoverLoad
           ? <SkeletonHeroText />
           : heroText && (
@@ -405,7 +417,7 @@ const SkeletonCard = styled(SkeletonBase)`
   border-radius: 30px;
 
   @media (max-width: 480px) {
-    height: 280px;
+    height: 360px;
     border-radius: 18px;
   }
 `
@@ -651,7 +663,7 @@ const CategoryCard = styled.div`
   }
 
   @media (max-width: 480px) {
-    height: 280px;
+    height: 360px;
     border-radius: 18px;
     padding: 0.85rem;
 

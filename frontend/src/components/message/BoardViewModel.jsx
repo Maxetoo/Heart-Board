@@ -878,9 +878,14 @@ const MediaWrap = styled.div`
   flex: 1;
   min-height: 0;
 
-  @media (max-width: 600px) {
+  @media (max-width: 600px) and (orientation: portrait) {
     flex: none;
-    min-height: 500px;
+    min-height: 650px;
+  }
+
+  @media (max-width: 600px) and (orientation: landscape) {
+    flex: none;
+    min-height: 420px;
   }
 `
 
