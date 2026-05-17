@@ -1293,10 +1293,10 @@ const Feed = styled.main`
 `;
 
 const MasonryGrid = styled.div`
-  columns: 4;
+  columns: 3;
   column-gap: 0.85rem;
   @media (max-width: 1100px) {
-    columns: 3;
+    columns: 2;
   }
   @media (max-width: 720px) {
     columns: 2;

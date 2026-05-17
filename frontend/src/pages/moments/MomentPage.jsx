@@ -417,7 +417,7 @@ const SkeletonCard = styled(SkeletonBase)`
   border-radius: 30px;
 
   @media (max-width: 480px) {
-    height: 360px;
+    height: 280px;
     border-radius: 18px;
   }
 `
@@ -663,7 +663,7 @@ const CategoryCard = styled.div`
   }
 
   @media (max-width: 480px) {
-    height: 360px;
+    height: 280px;
     border-radius: 18px;
     padding: 0.85rem;
 
