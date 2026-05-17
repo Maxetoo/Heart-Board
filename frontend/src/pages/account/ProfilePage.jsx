@@ -145,8 +145,6 @@ const BoardCard = ({ board, msg, onOpen }) => {
 };
 
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 const ProfilePage = () => {
   const dispatch = useDispatch();
 
@@ -968,7 +966,7 @@ const Tab = styled.button`
 `;
 
 
-// ── Search ────────────────────────────────────────────────────────────────────
+// ── Search 
 const SearchRow = styled.div`
   display: flex;
   align-items: center;
@@ -1050,7 +1048,7 @@ const FilterDot = styled.span`
   border: 2px solid #fff;
 `;
 
-// ── Search dropdown ───────────────────────────────────────────────────────────
+// ── Search dropdown 
 const Dropdown = styled.div`
   position: fixed;
   z-index: 999999;
@@ -1128,7 +1126,7 @@ const DropMeta = styled.div`
   }
 `;
 
-// ── Filter modal ──────────────────────────────────────────────────────────────
+// ── Filter modal 
 const FilterBackdrop = styled.div`
   position: fixed;
   inset: 0;
@@ -1282,7 +1280,7 @@ const ContinueBtn = styled.button`
   }
 `;
 
-// ── Feed ──────────────────────────────────────────────────────────────────────
+// ── Feed 
 const Feed = styled.main`
   max-width: 1400px;
   margin: 0;
@@ -1293,16 +1291,17 @@ const Feed = styled.main`
 `;
 
 const MasonryGrid = styled.div`
-  columns: 3;
+  columns: 4;
   column-gap: 0.85rem;
   @media (max-width: 1100px) {
-    columns: 2;
+    columns: 3;
   }
   @media (max-width: 720px) {
     columns: 2;
   }
-  @media (max-width: 420px) {
+  @media (max-width: 480px) {
     columns: 2;
+    column-gap: 0.6rem;
   }
 `;
 
@@ -1456,7 +1455,7 @@ const EmptyMsg = styled.p`
   font-size: 0.95em;
 `;
 
-// ── Settings panel ────────────────────────────────────────────────────────────
+// ── Settings panel 
 const SettingsBackdrop = styled.div`
   position: fixed;
   inset: 0;
@@ -1553,7 +1552,7 @@ const SettingsRow = styled.button`
   .row_label {
     flex: 1;
     font-size: 1em;
-    font-weight: 600;
+    font-weight: 800;
     color: #111;
   }
   .row_arrow {
@@ -1562,7 +1561,7 @@ const SettingsRow = styled.button`
   }
 `;
 
-// ── Edit profile inline form ──────────────────────────────────────────────────
+// ── Edit profile inline form 
 const EditProfileForm = styled.div`
   display: flex;
   flex-direction: column;

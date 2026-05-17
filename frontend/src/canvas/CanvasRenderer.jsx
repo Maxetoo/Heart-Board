@@ -153,7 +153,6 @@ const CanvasRenderer = ({ canvasData, style, className, radius = 16 }) => {
         className={className}
         style={{
           background: canvasFrame.color,
-          padding: '20px',
           borderRadius: `${radius}px`,
           clipPath: `inset(0 round ${radius}px)`,
           ...style,
@@ -169,9 +168,13 @@ const CanvasRenderer = ({ canvasData, style, className, radius = 16 }) => {
 
 const FrameWrapper = styled.div`
   width: 100%;
+  padding: 20px;
   border-radius: 32px;
   clip-path: inset(0 round 32px);
   flex-shrink: 0;
+  @media (max-width: 480px) {
+    padding: 12px;
+  }
 `
 
 const Canvas = styled.div`
