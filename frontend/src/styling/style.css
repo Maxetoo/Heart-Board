@@ -7,6 +7,11 @@
     margin: 0;
 }
 
+html {
+    overflow-x: hidden;
+    height: 100%;
+}
+
 body {
     -webkit-tap-highlight-color: transparent;
     font-family: 'Varela Round', sans-serif;
@@ -14,6 +19,7 @@ body {
     background: var(--background-color);
     overflow-x: hidden;
     overflow-y: auto;
+    min-height: 100%;
 }
 
 h1,

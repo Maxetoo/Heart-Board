@@ -1302,7 +1302,7 @@ const MasonryGrid = styled.div`
     columns: 2;
   }
   @media (max-width: 420px) {
-    columns: 1;
+    columns: 2;
   }
 `;
 

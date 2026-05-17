@@ -170,12 +170,11 @@ export const updateBoard = createAsyncThunk(
  
 export const deleteBoard = createAsyncThunk(
   'board/deleteBoard',
-  async (id, thunkApi) => {
+  async (id) => {
     try {
       const resp = await axios.delete(`${URL}/api/v1/board/${id}`, {
         withCredentials: true,
       })
-      thunkApi.dispatch(discoverBoards())
       return { response: resp.data, status: 'success' }
     } catch (error) {
       return {
@@ -419,8 +418,12 @@ const boardSlice = createSlice({
         const { status, response } = action.payload
         state.deleteBoardLoad = false
         if (status === 'success') {
-          state.deleteBoardError = false
-          state.boards = state.boards.filter(b => b._id !== action.meta.arg)
+          state.deleteBoardError  = false
+          state.boards            = state.boards.filter(b => b._id?.toString() !== action.meta.arg?.toString())
+          state.discoverBoards    = state.discoverBoards.filter(b => b._id?.toString() !== action.meta.arg?.toString())
+          state.discoverLastEvent = undefined
+          state.discoverLastSort  = undefined
+          state.boardCacheVersion = (state.boardCacheVersion ?? 0) + 1
         } else {
           state.deleteBoardError    = true
           state.deleteBoardErrorMsg = response.msg || response.message || 'Failed to delete board'

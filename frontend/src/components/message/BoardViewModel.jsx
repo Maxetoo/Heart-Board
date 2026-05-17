@@ -13,9 +13,10 @@ import { PiShareFat, PiHandsClapping, PiSmileyFill, PiFireFill, PiPlusBold, PiSh
 import { RiDeleteBinLine, RiEdit2Line } from 'react-icons/ri'
 import { AiFillLike } from 'react-icons/ai'
 import { IoHeart } from 'react-icons/io5'
-import { likeBoard, shareBoard, getBoardLikes, optimisticToggleLike, deleteBoard } from '../../slices/boardSlice'
+import { likeBoard, shareBoard, getBoardLikes, optimisticToggleLike, deleteBoard, invalidateBoardCaches } from '../../slices/boardSlice'
 import { deleteMessage } from '../../slices/messageSlice'
-import { URL } from '../../paths/url' 
+import { invalidateMsgCache } from '../../utils/msgCache'
+import { URL } from '../../paths/url'
 import CanvasRenderer from '../../canvas/CanvasRenderer'
 import LoginPopup from '../auth/LoginPopup'
 import DefaultAvatar   from '../../assets/Vector.svg'
@@ -365,6 +366,10 @@ const BoardViewModal = ({ board: initialBoard, onClose, onPrev, onNext }) => {
       onClose()
     } else {
       await dispatch(deleteMessage(deleteTarget.id))
+      if (fullBoard?._id) {
+        invalidateMsgCache(fullBoard._id.toString())
+        dispatch(invalidateBoardCaches())
+      }
       setDeleteLoading(false)
       setShowDeleteModal(false)
       setMsgIdx(0)
@@ -375,7 +380,7 @@ const BoardViewModal = ({ board: initialBoard, onClose, onPrev, onNext }) => {
         .then(r => { setMessages(r.data.messages ?? []); setMessagesLoading(false) })
         .catch(() => setMessagesLoading(false))
     }
-  }, [deleteTarget, deleteLoading, dispatch, onClose, board.slug])
+  }, [deleteTarget, deleteLoading, dispatch, onClose, board.slug, fullBoard])
 
   const renderMedia = (msg) => {
     if (!msg) return null
@@ -608,7 +613,7 @@ const BoardViewModal = ({ board: initialBoard, onClose, onPrev, onNext }) => {
                       <ActionMenuRowLabel>Board</ActionMenuRowLabel>
                       <ActionMenuIconsGroup>
                         <RiEdit2Line style={{ color: '#000', opacity: 0.4 }} />
-                        <RiDeleteBinLine style={{ color: '#000', opacity: 0.4 }} onClick={e => { e.stopPropagation(); setShowActionMenu(false); setDeleteTarget({ type: 'board', id: board.slug }); setShowDeleteModal(true) }} />
+                        <RiDeleteBinLine style={{ color: '#000', opacity: 0.4 }} onClick={e => { e.stopPropagation(); setShowActionMenu(false); setDeleteTarget({ type: 'board', id: fullBoard?._id || board._id }); setShowDeleteModal(true) }} />
                       </ActionMenuIconsGroup>
                     </ActionMenuRow>
                   )}
