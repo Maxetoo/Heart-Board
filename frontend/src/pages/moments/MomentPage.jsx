@@ -740,6 +740,7 @@ const CanvasBg = styled.div`
     bottom: auto;
     width: 88%;
     transform: translate(-50%, -50%);
+    padding: 12px;
   }
 `
 

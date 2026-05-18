@@ -820,6 +820,15 @@ const Wrapper = styled.div`
     }
   }
 
+  @media only screen and (max-width: 480px) {
+    .tab_switcher {
+      gap: 1.5rem;
+    }
+    .tab_btn {
+      width: 80px;
+    }
+  }
+
   @media only screen and (min-width: 768px) {
     .page_body { justify-content: flex-start; }
   }

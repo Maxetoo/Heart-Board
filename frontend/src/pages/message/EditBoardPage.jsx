@@ -524,6 +524,15 @@ const Wrapper = styled.div`
     padding: 2rem 1rem 4rem; overflow-y: auto;
   }
 
+  @media only screen and (max-width: 480px) {
+    .tab_switcher {
+      gap: 1.5rem;
+    }
+    .tab_btn {
+      width: 80px;
+    }
+  }
+
   @media only screen and (min-width: 768px) {
     .page_body { justify-content: flex-start; }
   }

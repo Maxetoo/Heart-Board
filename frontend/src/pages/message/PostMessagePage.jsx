@@ -106,7 +106,7 @@ const Wrapper = styled.div`
     justify-content: center;
     gap: 0.4rem;
     padding: 0.5rem 0;
-      width: 100px;
+    width: 100px;
     border: none;
     background: transparent;
     color: var(--light-text-color, #6B7280);
@@ -131,6 +131,15 @@ const Wrapper = styled.div`
     align-items: center;
     padding: 2rem 1rem 4rem;
     overflow-y: auto;
+  }
+
+  @media only screen and (max-width: 480px) {
+    .tab_switcher {
+      gap: 1.5rem;
+    }
+    .tab_btn {
+      width: 80px;
+    }
   }
 
   @media only screen and (min-width: 768px) {
