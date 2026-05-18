@@ -977,7 +977,7 @@ const Wrapper = styled.div`
 
   @media only screen and (max-width: 480px) {
     .tab_switcher {
-      gap: 1.5rem;
+      gap: 2.5rem;
     }
     .tab_btn {
       width: 80px;

@@ -753,7 +753,7 @@ const CanvasWrap = styled.div`
 
   @media (max-width: 768px) {
     width: ${({ $ratio }) => $ratio === 'landscape' ? '95%' : '90%'};
-    ${({ $ratio }) => $ratio === 'portrait' ? 'height: 90%;' : ''}
+    ${({ $ratio }) => $ratio === 'portrait' ? 'height: 90%;' : '90%'}
   }
 
   .canvas_fallback {
