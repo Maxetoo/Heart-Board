@@ -738,7 +738,7 @@ const CanvasBg = styled.div`
     left: 50%;
     right: auto;
     bottom: auto;
-    width: 70%;
+    width: 88%;
     transform: translate(-50%, -50%);
   }
 `
@@ -749,6 +749,11 @@ const CanvasWrap = styled.div`
 
   width: ${({ $ratio }) => $ratio === 'landscape' ? '85%' : '80%'};
   ${({ $ratio }) => $ratio === 'portrait' ? 'height: 80%;' : ''}
+
+  @media (max-width: 768px) {
+    width: ${({ $ratio }) => $ratio === 'landscape' ? '95%' : '90%'};
+    ${({ $ratio }) => $ratio === 'portrait' ? 'height: 90%;' : ''}
+  }
 
   .canvas_fallback {
     width: 100%;
