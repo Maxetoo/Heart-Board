@@ -609,7 +609,7 @@ const EmblemCard = ({ msg, isMulti, onClick }) => (
   <CardWrap onClick={onClick} $isMulti={isMulti}>
     {isMulti && <><StackLayer $back /><StackLayer /></>}
     <ContentTop>
-      <CanvasRenderer canvasData={msg.canvasData} />
+      <CanvasRenderer canvasData={msg.canvasData} tallMobile />
     </ContentTop>
   </CardWrap>
 );

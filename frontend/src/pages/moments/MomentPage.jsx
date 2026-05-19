@@ -667,13 +667,25 @@ const CategoryCard = styled.div`
     border-radius: 18px;
     padding: 0.85rem;
 
+    .cat_header {
+      height: 2.4rem;
+      overflow: hidden;
+      align-items: flex-start;
+      flex-shrink: 0;
+    }
+
     .cat_label {
       font-size: 0.78em;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .cat_count {
       font-size: 0.6em;
       margin-bottom: 0.25rem;
+      flex-shrink: 0;
     }
   }
 `

@@ -170,11 +170,11 @@ const CanvasRenderer = ({ canvasData, style, className, radius = 16, tallMobile 
 const FrameWrapper = styled.div`
   width: 100%;
   padding: 20px;
-  border-radius: 32px;
-  clip-path: inset(0 round 32px);
+  border-radius: 30px;
+  clip-path: inset(0 round 30px);
   flex-shrink: 0;
   @media (max-width: 480px) {
-    padding: 12px;
+    padding: 15px;
   }
 `
 
