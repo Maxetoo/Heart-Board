@@ -25,11 +25,11 @@ const VECTOR_ICON_MAP = {
   clock:      BsClock,
   briefcase:  BsBriefcase,
 }
-
+ 
 // The width at which content was originally authored
 const REFERENCE_WIDTH = 300
 
-const CanvasRenderer = ({ canvasData, style, className, radius = 16 }) => {
+const CanvasRenderer = ({ canvasData, style, className, radius = 16, tallMobile = false }) => {
   const outerRef = useRef(null)
   const [scale, setScale] = useState(1)
 
@@ -80,6 +80,7 @@ const CanvasRenderer = ({ canvasData, style, className, radius = 16 }) => {
     <Canvas
       ref={outerRef}
       $ratio={aspectRatio}
+      $tallMobile={tallMobile}
       className={canvasFrame ? undefined : className}
       style={{
         background: canvasBg?.value || '#FFFFFF',
@@ -189,6 +190,11 @@ const Canvas = styled.div`
   position: relative;
   flex-shrink: 0;
   clip-path: inset(0 round 32px);
+  ${({ $tallMobile, $ratio }) => $tallMobile && `
+    @media (max-width: 480px) {
+      aspect-ratio: ${$ratio === 'landscape' ? '1 / 1' : '3 / 5'};
+    }
+  `}
 `
 
 const InnerStage = styled.div`

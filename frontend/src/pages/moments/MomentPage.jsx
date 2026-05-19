@@ -290,7 +290,7 @@ const MomentPage = () => {
                         {canvasData
                           ? <CanvasRenderer
                               canvasData={canvasData}
-                              style={ratio === 'portrait' ? { width: '100%', height: '100%' } : {}}
+                              style={{ width: '100%', height: '100%' }}
                             />
                           : <SkeletonCanvas />}
                       </CanvasWrap>
@@ -752,8 +752,8 @@ const CanvasWrap = styled.div`
   ${({ $ratio }) => $ratio === 'portrait' ? 'height: 80%;' : ''}
 
   @media (max-width: 768px) {
-    width: ${({ $ratio }) => $ratio === 'landscape' ? '95%' : '90%'};
-    ${({ $ratio }) => $ratio === 'portrait' ? 'height: 90%;' : '90%'}
+    width: 88%;
+    height: 88%;
   }
 
   .canvas_fallback {

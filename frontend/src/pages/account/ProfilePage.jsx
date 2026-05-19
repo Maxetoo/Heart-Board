@@ -40,7 +40,7 @@ const EmblemCard = ({ msg, isMulti, isPrivate, onClick }) => (
   <CardWrap onClick={onClick} $isMulti={isMulti}>
     {isMulti && <><StackLayer $back /><StackLayer /></>}
     <ContentTop>
-      <CanvasRenderer canvasData={msg.canvasData} />
+      <CanvasRenderer canvasData={msg.canvasData} tallMobile />
     </ContentTop>
     {isPrivate && (
       <PrivateBadge>
