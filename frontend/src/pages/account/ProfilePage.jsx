@@ -1551,7 +1551,7 @@ const SettingsRow = styled.button`
   }
   .row_label {
     flex: 1;
-    font-size: 1.1em;
+    font-size: 1.2em;
     font-weight: 500;
     color: #111;
   }

@@ -665,7 +665,7 @@ const Wrapper = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem 1rem 4rem;
+    padding: 3rem 1rem 4rem;
     overflow-y: auto;
   }
 
