@@ -801,7 +801,7 @@ const Wrapper = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 3rem 1rem 4rem;
+    padding: 2rem 1rem 4rem;
     overflow-y: auto;
   }
 
@@ -979,6 +979,7 @@ const Wrapper = styled.div`
     .tab_switcher {
       width: calc(100% + 3rem);
       margin-left: -1.5rem;
+      margin-top: 1.5rem;
       gap: 0;
       justify-content: space-between;
     }

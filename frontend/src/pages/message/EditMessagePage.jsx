@@ -665,7 +665,7 @@ const Wrapper = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 3rem 1rem 4rem;
+    padding: 2rem 1rem 4rem;
     overflow-y: auto;
   }
 
@@ -823,7 +823,7 @@ const Wrapper = styled.div`
   @media only screen and (max-width: 480px) {
     .tab_switcher {
       align-self: stretch;
-      margin: 0 -1.5rem;
+      margin: 1.5rem -1.5rem 0;
       gap: 0;
       justify-content: space-between;
     }
