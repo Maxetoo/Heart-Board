@@ -977,10 +977,14 @@ const Wrapper = styled.div`
 
   @media only screen and (max-width: 480px) {
     .tab_switcher {
-      gap: 2.5rem;
+      width: calc(100% + 3rem);
+      margin-left: -1.5rem;
+      gap: 0;
+      justify-content: space-between;
     }
     .tab_btn {
-      width: 80px;
+      flex: 1;
+      width: auto;
     }
   }
 

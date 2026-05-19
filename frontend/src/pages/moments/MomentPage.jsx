@@ -680,6 +680,7 @@ const CategoryCard = styled.div`
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+      margin-top: 0.25rem;
     }
 
     .cat_count {
