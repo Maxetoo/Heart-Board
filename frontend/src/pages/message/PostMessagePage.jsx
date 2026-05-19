@@ -135,8 +135,8 @@ const Wrapper = styled.div`
 
   @media only screen and (max-width: 480px) {
     .tab_switcher {
-      width: calc(100% + 3rem);
-      margin-left: -1.5rem;
+      align-self: stretch;
+      margin: 0 -1.5rem;
       gap: 0;
       justify-content: space-between;
     }

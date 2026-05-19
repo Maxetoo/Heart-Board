@@ -670,7 +670,7 @@ const CategoryCard = styled.div`
     .cat_header {
       height: 2.4rem;
       overflow: hidden;
-      align-items: flex-start;
+      align-items: center;
       flex-shrink: 0;
     }
 
