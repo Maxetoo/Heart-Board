@@ -10,6 +10,57 @@
 ================================================================================
 
 
+================================================================================
+ IMPLEMENTATION STATUS — updated 2026-09-05, branch `migration/client`
+================================================================================
+
+ DONE
+   Phase 0  safety net, gitignores, prototype committed as-is
+   Phase 1  frontend/ -> legacy-frontend/; app.js + build script now use client/
+   Phase 2  importmap removed, real Tailwind build, SEO head, metadata/bun.lock
+   Phase 3  BrowserRouter + full route table + URL<->view sync + auth pages
+   Phase 4  axios client, 8 service modules, DTO types
+   Phase 5  adapters, incl. a converter for the LEGACY canvasData format
+   Phase 6  AuthContext, real login/register/verify/OAuth, account setup
+   Phase 9  backend bug fixes (see below)
+   Partial Phase 7: discover feed, search, stats, board detail + contributions,
+            create/edit/delete board, create/edit/delete message, likes,
+            reactions, sharing, hashtag pages
+
+ NOT DONE — still on mock data, see §11
+   - HeartboardView profile tabs still render local mock arrays (§10.6)
+   - Heart tokens: no backend at all (§11.3)
+   - Collaborative boards / collaboration tab (§11.2)
+   - Per-type reaction counts (§11.4) — enum names aligned, counts not aggregated
+   - Subscriptions / board upgrades (§10.10)
+   - Audio recording upload path (pendingAudioUrl is wired but not populated)
+
+ EXTRA FIXES MADE BEYOND THE ORIGINAL PLAN
+   - @types/react was missing entirely, masking ~3,000 type errors. Installing
+     it exposed three latent RUNTIME crashes that the build had tolerated:
+       * MediaModal used <Plus> without importing it — threw on any board with
+         zero contributions
+       * CreateAppreciationModal referenced an undefined STICKERS
+       * HeartboardView used RegisteredUser without importing it
+   - getBoardsByHashtag had three bugs: it ignored the tags array, populated a
+     non-existent `avatar` field, and filtered on a `link-only` visibility that
+     is not in the schema
+   - updateProfile crashed on a null username, which broke account setup for
+     every Google OAuth account
+   - createBoard crashed for any user with no Subscription document
+   - CORRECTION to §9.3 below: authController.register DOES call createCookies,
+     so registration signs the user in immediately (unverified). The doc's
+     original claim that it establishes no session was wrong.
+
+ VERIFIED AGAINST THE RUNNING STACK
+   register -> session -> account setup -> create board -> post message ->
+   read back, plus likes, reactions, share, hashtag feed, and the two routes
+   that were dead code before this migration. All 21 production canvasData
+   documents convert and render. tsc --noEmit passes with 0 errors.
+
+================================================================================
+
+
 --------------------------------------------------------------------------------
 0. READ THIS FIRST — WHAT THIS MIGRATION ACTUALLY IS
 --------------------------------------------------------------------------------
