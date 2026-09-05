@@ -1,7 +1,15 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import { EntityType, Post, PostVisibility, MOCK_REGISTERED_USERS, RegisteredUser, Contribution } from './types';
+import { Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { EntityType, Post, PostVisibility, RegisteredUser, Contribution } from './types';
+import { useAuth } from './contexts/AuthContext';
+import { useSearch } from './hooks/useSearch';
+import { useDiscoverFeed } from './hooks/useBoards';
+import { getGlobalStats } from './services/stats.api';
+import * as boardApi from './services/board.api';
+import * as messageApi from './services/message.api';
+import { toApiError } from './lib/api';
+import { usernameOf } from './lib/adapters';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
 import { CreateAppreciationModal } from './components/CreateAppreciationModal';
@@ -48,451 +56,6 @@ export function canViewPostPublicly(post: any) {
   return true;
 }
 
-const INITIAL_MOCK_POSTS: (Post & { 
-  theme?: string; 
-  mediaType?: 'audio' | 'video' | 'image' | 'text' | 'note'; 
-  sponsor?: string; 
-  sticker?: string; 
-  secondaryImage?: string;
-  category?: 'tears' | 'vouch' | 'hype';
-  statusBadge?: string;
-  isBlurred?: boolean;
-  inactive?: boolean;
-})[] = [
-  {
-    id: 'b1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    content: 'The Queen herself live on world tour! Curated with infinite admiration.',
-    type: 'image',
-    mediaUrl: 'https://images.unsplash.com/photo-1574100004472-e536d3b6bacc?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-20T10:00:00Z',
-    targetId: 'bey',
-    targetType: EntityType.WALL,
-    reactions: 12400,
-    theme: '#FAF0EC', // cozy peach
-    mediaType: 'image',
-    category: 'hype',
-    eventType: 'Appreciation',
-    statusBadge: '🔥 PURE HYPE STATUS',
-    isCreatedByUser: true,
-    section: 'board'
-  },
-  {
-    id: 'tagged-board-mercy',
-    authorName: 'Mercy24',
-    authorHandle: '@mercy24',
-    recipientName: 'Micky Mouse',
-    recipientHandle: '@mickymouse',
-    recipients: ['@mickymouse'],
-    content: 'A heartfelt tribute to @mickymouse for inspiring our entire team with infectious positivity and incredible craftsmanship! 🌟💖',
-    type: 'text',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-20T08:30:00Z',
-    targetId: 'mickymouse',
-    targetType: EntityType.WALL,
-    reactions: 940,
-    theme: '#F7F0ED',
-    mediaType: 'note',
-    category: 'vouch',
-    eventType: 'Appreciation',
-    statusBadge: '⭐ HIGH-AUTHORITY VOUCH',
-    isCreatedByUser: false,
-    isTaggedForUser: true,
-    section: 'tagged'
-  },
-  {
-    id: 'tagged-board-tyler',
-    authorName: 'Tyler',
-    authorHandle: '@tyler_grandson',
-    recipientName: 'Micky Mouse',
-    recipientHandle: '@mickymouse',
-    recipients: ['@mickymouse'],
-    content: 'Thank you @mickymouse for being a wonderful mentor and supporting our community milestone celebration! 🎉✨',
-    type: 'text',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T11:20:00Z',
-    targetId: 'mickymouse',
-    targetType: EntityType.WALL,
-    reactions: 320,
-    theme: '#ECEFE6',
-    mediaType: 'note',
-    category: 'vouch',
-    eventType: 'Congratulations',
-    statusBadge: '🌸 COMMUNITY SHOUTOUT',
-    isCreatedByUser: false,
-    isTaggedForUser: true,
-    section: 'tagged'
-  },
-  {
-    id: 'collab-board-grandpa-james',
-    authorName: 'Tyler',
-    authorHandle: '@tyler_grandson',
-    title: 'Grandpa James 80th Birthday Celebration Card 🎉🎂',
-    content: 'A collective card honoring Grandpa James for 80 incredible years of kindness and wisdom. Leave your love and tributes below!',
-    type: 'text',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T10:00:00Z',
-    targetId: 'family',
-    targetType: EntityType.BOARD,
-    reactions: 1450,
-    theme: '#FEF3C7',
-    mediaType: 'note',
-    category: 'tears',
-    eventType: 'Birthday',
-    statusBadge: '🎂 80TH CELEBRATION CARD',
-    boardCapacity: 'collaborative',
-    maxCapacity: 20,
-    isCreatedByUser: false,
-    hasUserContributed: true,
-    collaboratorHandles: ['@mickymouse', '@sarah_zen', '@alex_dev'],
-    section: 'collaboration',
-    contributions: [
-      {
-        id: 'c-g1',
-        authorName: 'Sarah',
-        authorHandle: '@sarah_zen',
-        authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200',
-        content: 'Happy 80th Birthday Grandpa! Wishing you endless health, joy, and peace! ❤️',
-        createdAt: '2024-03-19T10:30:00Z',
-        isCreatedByUser: false
-      },
-      {
-        id: 'c-g2',
-        authorName: 'Micky Mouse',
-        authorHandle: '@mickymouse',
-        authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-        content: 'Grandpa James, thank you for your warmth, gentle guidance, and joyful spirit every single day! 🌟🎂',
-        createdAt: '2024-03-19T11:00:00Z',
-        isCreatedByUser: true
-      },
-      {
-        id: 'c-g3',
-        authorName: 'Alex_Dev',
-        authorHandle: '@alex_dev',
-        authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
-        content: 'An absolute legend of kindness. Happy 80th birthday! 🏆✨',
-        createdAt: '2024-03-19T11:45:00Z',
-        isCreatedByUser: false
-      }
-    ]
-  },
-  {
-    id: 'collab-board-workspace-legends',
-    authorName: 'Alex_Dev',
-    authorHandle: '@alex_dev',
-    title: 'Q1 Team All-Stars & Workspace Legends 🏆🚀',
-    content: 'Celebrating the incredible team members who went above and beyond this quarter! Add your vouch and appreciation.',
-    type: 'text',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T14:00:00Z',
-    targetId: 'workspace',
-    targetType: EntityType.BOARD,
-    reactions: 890,
-    theme: '#E0F2FE',
-    mediaType: 'note',
-    category: 'vouch',
-    eventType: 'Appreciation',
-    statusBadge: '🏆 TEAM ALL-STARS',
-    boardCapacity: 'collaborative',
-    maxCapacity: 20,
-    isCreatedByUser: false,
-    hasUserContributed: true,
-    collaboratorHandles: ['@mickymouse', '@mercy24'],
-    section: 'collaboration',
-    contributions: [
-      {
-        id: 'c-w1',
-        authorName: 'Mercy24',
-        authorHandle: '@mercy24',
-        authorAvatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200',
-        content: 'Incredible quarter team! Super grateful for the collaborative energy! ✨',
-        createdAt: '2024-03-18T14:20:00Z',
-        isCreatedByUser: false
-      },
-      {
-        id: 'c-w2',
-        authorName: 'Micky Mouse',
-        authorHandle: '@mickymouse',
-        authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-        content: 'Proud to collaborate with such talented, supportive teammates! 🚀🙌',
-        createdAt: '2024-03-18T14:45:00Z',
-        isCreatedByUser: true
-      }
-    ]
-  },
-  {
-    id: 'cr7-note',
-    authorName: 'Amino',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T14:30:00Z',
-    targetId: 'ronaldo',
-    targetType: EntityType.WALL,
-    reactions: 562,
-    theme: '#FAF0EC', // cozy peach
-    mediaType: 'note',
-    sticker: 'star',
-    category: 'vouch',
-    eventType: 'Love',
-    statusBadge: '⭐ HIGH-AUTHORITY VOUCH',
-    isTaggedForUser: true,
-    section: 'tagged',
-    hashtags: ['#ronaldo', '#loveRonaldo', '#cr7'],
-    recipients: ['@cristiano', '#ronaldo']
-  },
-  {
-    id: 'cr7-note-teal',
-    authorName: 'Amino',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T14:32:00Z',
-    targetId: 'ronaldo',
-    targetType: EntityType.WALL,
-    reactions: 1240,
-    theme: '#029875', // deep teal
-    mediaType: 'note',
-    sticker: 'star',
-    category: 'vouch',
-    eventType: 'Congratulations',
-    statusBadge: '⭐ LEGENDARY TRIBUTE',
-    isTaggedForUser: true,
-    section: 'board',
-    hashtags: ['#ronaldo', '#loveRonaldo'],
-    recipients: ['@cristiano', '#ronaldo']
-  },
-  {
-    id: 'cr7-note-green',
-    authorName: 'Amino',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T14:35:00Z',
-    targetId: 'ronaldo',
-    targetType: EntityType.WALL,
-    reactions: 890,
-    theme: '#CBEB99', // lime green
-    mediaType: 'note',
-    sticker: 'star',
-    category: 'vouch',
-    eventType: 'Graduation',
-    statusBadge: '⭐ LEGENDARY TRIBUTE',
-    isTaggedForUser: true,
-    section: 'board',
-    hashtags: ['#ronaldo', '#loveRonaldo'],
-    recipients: ['@cristiano', '#ronaldo']
-  },
-  {
-    id: 'cr7-note-yellow',
-    authorName: 'Amino',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T14:38:00Z',
-    targetId: 'ronaldo',
-    targetType: EntityType.WALL,
-    reactions: 3400,
-    theme: '#F5D298', // wheat yellow
-    mediaType: 'note',
-    sticker: 'star',
-    category: 'vouch',
-    eventType: 'Birthday',
-    statusBadge: '⭐ LEGENDARY TRIBUTE',
-    isTaggedForUser: true,
-    section: 'board',
-    hashtags: ['#ronaldo', '#loveRonaldo'],
-    recipients: ['@cristiano', '#ronaldo']
-  },
-  {
-    id: 'cr7-note-blue',
-    authorName: 'Amino',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T14:40:00Z',
-    targetId: 'ronaldo',
-    targetType: EntityType.WALL,
-    reactions: 2150,
-    theme: '#BCE7F5', // sky blue
-    mediaType: 'note',
-    sticker: 'star',
-    category: 'vouch',
-    eventType: 'Anniversary',
-    statusBadge: '⭐ LEGENDARY TRIBUTE',
-    isTaggedForUser: true,
-    section: 'board',
-    hashtags: ['#ronaldo', '#loveRonaldo'],
-    recipients: ['@cristiano', '#ronaldo']
-  },
-  {
-    id: 'cr7-note-periwinkle',
-    authorName: 'Amino',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=400',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-19T14:42:00Z',
-    targetId: 'ronaldo',
-    targetType: EntityType.WALL,
-    reactions: 4120,
-    theme: '#A4B8F5', // periwinkle
-    mediaType: 'note',
-    sticker: 'star',
-    category: 'vouch',
-    eventType: 'Wedding',
-    statusBadge: '⭐ LEGENDARY TRIBUTE',
-    isTaggedForUser: true,
-    section: 'board',
-    hashtags: ['#ronaldo', '#loveRonaldo'],
-    recipients: ['@cristiano', '#ronaldo']
-  },
-  {
-    id: 'm1',
-    authorName: 'Argentina Fans',
-    content: 'Live at 2022 world cup LFG Argentina - the goat has claimed his ultimate crown!',
-    type: 'image',
-    mediaUrl: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=600',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T09:15:00Z',
-    targetId: 'messi',
-    targetType: EntityType.WALL,
-    reactions: 89000,
-    theme: '#EEF1FA', // dreamy lavender
-    category: 'hype',
-    eventType: 'Sport',
-    statusBadge: '🔥 GOLDEN REP',
-    isCreatedByUser: true,
-    section: 'board'
-  },
-  {
-    id: 'trump-card',
-    authorName: 'Supporter',
-    content: 'Unmatched leadership that shapes history. Proud vouch for the movement!',
-    type: 'image',
-    mediaUrl: 'https://images.unsplash.com/photo-1580128660010-fd027e1e587a?auto=format&fit=crop&q=80&w=400',
-    secondaryImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Supporter',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T11:00:00Z',
-    targetId: 'politics',
-    targetType: EntityType.BOARD,
-    reactions: 89,
-    theme: '#EEF1FA', // dreamy lavender
-    mediaType: 'image',
-    category: 'vouch',
-    eventType: 'Promotion',
-    statusBadge: '🛡️ PLATINUM VOUCH',
-    isCreatedByUser: true,
-    section: 'board'
-  },
-  {
-    id: 'birthday-note',
-    authorName: 'Tyler',
-    content: 'Happy birthday grandpa James! Thank you for being there for me when everyone left. Your grandson, Tyler',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T09:15:00Z',
-    targetId: 'family',
-    targetType: EntityType.BOARD,
-    reactions: 412,
-    theme: '#FAF5E8', // soft sunlight
-    mediaType: 'note',
-    category: 'tears',
-    eventType: 'Birthday',
-    isBlurred: true,
-    statusBadge: '😭 BROUGHT THEM TO TEARS',
-    isCreatedByUser: true,
-    section: 'board'
-  },
-  {
-    id: 'funeral-tribute',
-    authorName: 'Tyler',
-    content: 'Rest in peace grandpa James. Your warmth, wisdom, and love remain in our hearts forever.',
-    type: 'text',
-    mediaUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T09:30:00Z',
-    targetId: 'family',
-    targetType: EntityType.BOARD,
-    reactions: 290,
-    theme: '#272835', // cosmic dark
-    mediaType: 'note',
-    category: 'tears',
-    eventType: 'Funeral',
-    isBlurred: false,
-    statusBadge: '🕯️ MEMORIAL TRIBUTE',
-    isCreatedByUser: true,
-    section: 'board'
-  },
-  {
-    id: 'audio-mic',
-    authorName: 'Anonymous',
-    content: 'A heartfelt voice recording of sheer appreciation for helping through university',
-    type: 'audio',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T10:00:00Z',
-    targetId: 'global',
-    targetType: EntityType.EVENT,
-    reactions: 45,
-    theme: '#FAF0EC', // cozy peach
-    mediaType: 'audio',
-    category: 'tears',
-    eventType: 'Graduation',
-    isBlurred: true,
-    statusBadge: '😭 BROUGHT THEM TO TEARS',
-    isCreatedByUser: true,
-    section: 'board'
-  },
-  {
-    id: 'heart-token-sample',
-    authorName: 'Mercy24',
-    recipientName: 'Micky Mouse',
-    content: 'Loving Heart 💖 blown to Micky Mouse with deepest appreciation!',
-    type: 'heart_token',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-21T08:00:00Z',
-    targetId: 'mickymouse',
-    targetType: EntityType.WALL,
-    reactions: 88,
-    theme: '#FAF0EC',
-    frameBg: '#FAF0EC',
-    heartDetails: {
-      label: 'Loving Partner',
-      emoji: '💖',
-      bubbleColor: '#FE6349'
-    },
-    category: 'vouch',
-    eventType: 'Moment',
-    statusBadge: '💖 HEART TOKEN',
-    isHeartToken: true,
-    section: 'hearts'
-  },
-  {
-    id: 'davido-feed',
-    authorName: 'Davido Fans',
-    content: '5ive Tour @ Canada. Unbelievable energy. Pure historic status!',
-    type: 'image',
-    mediaUrl: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?auto=format&fit=crop&q=80&w=500',
-    visibility: PostVisibility.PUBLIC,
-    createdAt: '2024-03-18T12:00:00Z',
-    targetId: 'davido',
-    targetType: EntityType.WALL,
-    reactions: 1200000,
-    sponsor: 'Microsoft Inc',
-    theme: '#272835', // cosmic slate
-    category: 'hype',
-    eventType: 'Groove',
-    statusBadge: '🔥 INSTANT VIRAL'
-  }
-];
 
 interface TopNavigationProps {
   onFilterClick: () => void;
@@ -536,42 +99,23 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
 
   const query = searchQuery.trim().toLowerCase();
 
-  // Filter registered user accounts
-  const matchingUsers = MOCK_REGISTERED_USERS.filter((user) => {
-    if (!query) return true;
-    return (
-      user.name.toLowerCase().includes(query) ||
-      user.handle.toLowerCase().includes(query) ||
-      user.bio.toLowerCase().includes(query) ||
-      (user.role && user.role.toLowerCase().includes(query))
-    );
-  });
+  // Real platform search — GET /api/v1/search, debounced.
+  // This replaces filtering a hard-coded list of fabricated celebrity accounts,
+  // which showed users that do not exist in the database.
+  const searchResults = useSearch(searchQuery, currentUser?.id);
 
-  // Filter created boards
-  const matchingBoards = posts.filter((post) => {
-    if (!canViewPostPublicly(post)) return false;
-    if (!query) return true;
-    const author = (post.authorName || '').toLowerCase();
-    const recipient = (post.recipientName || post.targetId || '').toLowerCase();
-    const content = (post.content || '').toLowerCase();
-    const badge = (post.statusBadge || '').toLowerCase();
-    const cat = (post.category || '').toLowerCase();
-    return (
-      author.includes(query) ||
-      recipient.includes(query) ||
-      content.includes(query) ||
-      badge.includes(query) ||
-      cat.includes(query)
-    );
-  });
+  const matchingUsers = searchResults.users;
 
-  const popularHashtags = [
-    { tag: '#loveRonaldo', count: '890k hearts', category: 'Global Icon' },
-    { tag: '#messi', count: '2.1M hearts', category: 'Legend' },
-    { tag: '#30BG', count: '1.2M hearts', category: 'Official Celebrity' },
-    { tag: '#BeyHive', count: '12.4k hearts', category: 'Community' },
-    { tag: '#WorkplaceHeroes', count: '1.8k hearts', category: 'Vouches' }
-  ].filter(h => !query || h.tag.toLowerCase().includes(query) || h.category.toLowerCase().includes(query));
+  // Boards come from the server when searching; otherwise show the loaded feed.
+  const matchingBoards = searchResults.active
+    ? searchResults.boards
+    : posts.filter(canViewPostPublicly);
+
+  const popularHashtags = searchResults.hashtags.map((h) => ({
+    tag: h.tag.startsWith('#') ? h.tag : `#${h.tag}`,
+    count: `${h.count} ${h.count === 1 ? 'board' : 'boards'}`,
+    category: 'Hashtag',
+  }));
 
   const hasSearchInput = searchQuery.trim().length > 0;
 
@@ -1397,7 +941,23 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
 };
 
 const App: React.FC = () => {
-  const [posts, setPosts] = useState(INITIAL_MOCK_POSTS);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Identity comes from the server session (GET /user/me), never localStorage.
+  const {
+    user: currentUser,
+    isAuthenticated,
+    needsProfileSetup,
+    isEmailVerified,
+    ready: authReady,
+    logout,
+  } = useAuth();
+
+  // Server-paginated discover feed, replacing INITIAL_MOCK_POSTS.
+  const feed = useDiscoverFeed({ currentUserId: currentUser?.id, enabled: authReady });
+  const { posts, setPosts, patchPost, removePost, prependPost } = feed;
+
   const [selectedFilterId, setSelectedFilterId] = useState<string>('moment');
   const [selectedPostIndex, setSelectedPostIndex] = useState<number | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -1407,18 +967,8 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeNavTab, setActiveNavTab] = useState<'home' | 'hearts'>('home');
   const [heartFilter, setHeartFilter] = useState<'received' | 'sent'>('received');
-  const [liveReactionTicks, setLiveReactionTicks] = useState(0);
 
   // Authentication & Onboarding State
-  const [currentUser, setCurrentUser] = useState<RegisteredUser | null>(() => {
-    try {
-      const saved = localStorage.getItem('heartboard_current_user');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      // ignore
-    }
-    return null;
-  });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [authModalPrompt, setAuthModalPrompt] = useState<string | undefined>(undefined);
@@ -1459,15 +1009,11 @@ const App: React.FC = () => {
     setIsAuthModalOpen(true);
   };
 
-  const handleAuthSuccess = (user: RegisteredUser, isNewRegistration?: boolean) => {
-    setCurrentUser(user);
-    try {
-      localStorage.setItem('heartboard_current_user', JSON.stringify(user));
-    } catch (e) {
-      // ignore
-    }
+  // AuthContext already holds the session; this only resets local view state.
+  const handleAuthSuccess = (_user: RegisteredUser, isNewRegistration?: boolean) => {
     setIsAuthModalOpen(false);
     setAuthModalPrompt(undefined);
+    feed.reload();
 
     if (isNewRegistration) {
       // Return user to Home Page and show welcome popup
@@ -1479,17 +1025,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSignOut = () => {
-    setCurrentUser(null);
-    try {
-      localStorage.removeItem('heartboard_current_user');
-    } catch (e) {
-      // ignore
-    }
+  const handleSignOut = async () => {
+    await logout();
     setActiveNavTab('home');
     setSelectedFilterId('moment');
     setViewingProfileUser(null);
     setViewingHashtag(null);
+    navigate('/');
   };
 
   const handleCloseWelcomeModal = () => {
@@ -1578,25 +1120,43 @@ const App: React.FC = () => {
     setIsCreateModalOpen(true);
   };
 
-  // Real-time ticker effect simulating global hearts blown continuously
+  // Real platform totals from GET /api/v1/stats.
+  //
+  // These used to be fabricated: a hard-coded 8,300 messages / 245 curators /
+  // 7,600,000 reactions, plus a timer that added 1-4 random "reactions" every
+  // 2.8 seconds so the number appeared to climb. That is now a real query.
+  const [realtimeStats, setRealtimeStats] = useState({
+    totalMessages: 0,
+    totalCurators: 0,
+    totalReactions: 0,
+  });
+
   useEffect(() => {
-    const timer = setInterval(() => {
-      setLiveReactionTicks(prev => prev + Math.floor(Math.random() * 4) + 1);
-    }, 2800);
-    return () => clearInterval(timer);
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const stats = await getGlobalStats();
+        if (!cancelled) {
+          setRealtimeStats({
+            totalMessages: stats.totalMessages,
+            totalCurators: stats.totalCurators,
+            totalReactions: stats.totalReactions,
+          });
+        }
+      } catch {
+        // Leave the previous figures in place on a transient failure.
+      }
+    };
+
+    void load();
+    // Refresh periodically so the counters stay live without inventing motion.
+    const timer = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
-
-  // Calculate live real-time statistics dynamically
-  const totalMessagesCount = 8300 + (posts.length - INITIAL_MOCK_POSTS.length);
-  const uniqueAuthorsCount = 245 + new Set(posts.map(p => p.authorName)).size;
-  const postsReactionsSum = posts.reduce((sum, p) => sum + (p.reactions || 0), 0);
-  const totalReactionsCount = 7600000 + postsReactionsSum + liveReactionTicks;
-
-  const realtimeStats = {
-    totalMessages: totalMessagesCount,
-    totalCurators: uniqueAuthorsCount,
-    totalReactions: totalReactionsCount
-  };
 
   const handleTabChange = (tab: 'home' | 'hearts') => {
     setActiveNavTab(tab);
@@ -1639,7 +1199,7 @@ const App: React.FC = () => {
         section: 'hearts',
         type: 'heart_token'
       };
-      setPosts([heartPost, ...posts]);
+      prependPost(heartPost);
       recordUserCreatedMessageOrHeart();
       return;
     }
@@ -1671,7 +1231,7 @@ const App: React.FC = () => {
       category: inferredCategory,
       statusBadge: label
     };
-    setPosts([postWithTheme, ...posts]);
+    prependPost(postWithTheme);
     recordUserCreatedMessageOrHeart();
   };
 
@@ -1689,15 +1249,9 @@ const App: React.FC = () => {
 
   const query = searchQuery.trim().toLowerCase();
 
-  const matchingUsersCount = MOCK_REGISTERED_USERS.filter((user) => {
-    if (!query) return true;
-    return (
-      user.name.toLowerCase().includes(query) ||
-      user.handle.toLowerCase().includes(query) ||
-      user.bio.toLowerCase().includes(query) ||
-      (user.role && user.role.toLowerCase().includes(query))
-    );
-  }).length;
+  // Count of real matching accounts, from GET /api/v1/search.
+  const appSearch = useSearch(searchQuery, currentUser?.id);
+  const matchingUsersCount = appSearch.users.length;
 
   const filteredPosts = momentPosts.filter(post => {
     // Filter category
@@ -1742,7 +1296,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <Router>
+    <>
       <div className="min-h-screen flex flex-col bg-white font-sans selection:bg-orange-100">
         {isAuthModalOpen ? (
           <main className="flex-grow bg-[#F8F9FB] min-h-screen">
@@ -2018,19 +1572,27 @@ const App: React.FC = () => {
               setEditMode(null);
               setIsCreateModalOpen(false);
             }}
-            onDeletePost={(postId) => {
-              setPosts((prevPosts) => prevPosts.filter((p) => p.id !== postId));
+            onDeletePost={async (postId) => {
+              // Optimistic removal, rolled back by a reload if the server refuses.
+              const snapshot = posts;
+              removePost(postId);
               setSelectedPostIndex(null);
               setEditingPost(null);
               setEditMode(null);
               setIsCreateModalOpen(false);
+              try {
+                await boardApi.deleteBoard(postId);
+              } catch (e) {
+                setPosts(snapshot);
+                window.alert(toApiError(e).message);
+              }
             }}
             onDeleteContribution={(parentBoardId, contribId) => {
               setPosts((prevPosts) =>
                 prevPosts.map((p) => {
                   if (p.id !== parentBoardId) return p;
                   const remaining = (p.contributions || []).filter((c) => c.id !== contribId);
-                  const userHandle = currentUser?.handle || '@mickymouse';
+                  const userHandle = currentUser?.handle ?? '';
                   const userStillHasContrib = remaining.some((c) => 
                     c.isCreatedByUser === true || 
                     (c.authorHandle && c.authorHandle.toLowerCase().replace(/^@/, '') === userHandle.toLowerCase().replace(/^@/, ''))
@@ -2120,9 +1682,16 @@ const App: React.FC = () => {
               setEditMode('board');
               setIsCreateModalOpen(true);
             }}
-            onDeleteBoard={(postId) => {
-              setPosts((prevPosts) => prevPosts.filter((p) => p.id !== postId));
+            onDeleteBoard={async (postId) => {
+              const snapshot = posts;
+              removePost(postId);
               setSelectedPostIndex(null);
+              try {
+                await boardApi.deleteBoard(postId);
+              } catch (e) {
+                setPosts(snapshot);
+                window.alert(toApiError(e).message);
+              }
             }}
             onEditMessage={(targetPost, targetContribution) => {
               if (targetContribution) {
@@ -2138,7 +1707,8 @@ const App: React.FC = () => {
               }
               setIsCreateModalOpen(true);
             }}
-            onDeleteMessage={(targetPost, targetContribution) => {
+            onDeleteMessage={async (targetPost, targetContribution) => {
+              const snapshot = posts;
               if (targetContribution) {
                 setPosts((prevPosts) =>
                   prevPosts.map((p) => {
@@ -2151,19 +1721,43 @@ const App: React.FC = () => {
                     };
                   })
                 );
+                try {
+                  const res = await messageApi.deleteMessage(targetContribution.id);
+                  // Removing the last message can delete the board too.
+                  if (res.boardDeleted) {
+                    removePost(targetPost.id);
+                    setSelectedPostIndex(null);
+                  }
+                } catch (e) {
+                  setPosts(snapshot);
+                  window.alert(toApiError(e).message);
+                }
               } else {
-                setPosts((prevPosts) => prevPosts.filter((p) => p.id !== targetPost.id));
+                removePost(targetPost.id);
                 setSelectedPostIndex(null);
+                try {
+                  await boardApi.deleteBoard(targetPost.id);
+                } catch (e) {
+                  setPosts(snapshot);
+                  window.alert(toApiError(e).message);
+                }
               }
             }}
-            onReactionBlown={(postId) => {
-              setPosts((prevPosts) =>
-                prevPosts.map((p) => {
-                  if (p.id !== postId) return p;
-                  return { ...p, reactions: (p.reactions || 0) + 1 };
-                })
-              );
+            onReactionBlown={async (postId) => {
+              const snapshot = posts;
+              patchPost(postId, {
+                reactions: (posts.find((p) => p.id === postId)?.reactions || 0) + 1,
+              });
               recordUserCreatedMessageOrHeart();
+              try {
+                const { likeCount } = await boardApi.likeBoard(postId);
+                patchPost(postId, { reactions: likeCount });
+              } catch (e) {
+                setPosts(snapshot);
+                if (toApiError(e).status === 401) {
+                  handleOpenAuth('login', 'Sign in to react to this board.');
+                }
+              }
             }}
             onUpdateReactions={(postId, counts, userReactions) => {
               const total = (counts.clap || 0) + (counts.heart || 0) + (counts.smiley || 0) + (counts.fire || 0);
@@ -2197,7 +1791,7 @@ const App: React.FC = () => {
           onSendLoveOrHeart={handleEngagementPromptSendLove}
         />
       </div>
-    </Router>
+    </>
   );
 };
 

@@ -17,11 +17,17 @@ const requireBoardOwner = async (res, boardId, userId) => {
 
 const createBoard = async (req, res) => {
   const userId = req.user.userId;
-  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe } = req.body;
+  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe, style } = req.body;
   let createdBoard = null;
 
   try {
-    const subscription = await Subscription.findOne({ user: userId });
+    // Accounts created before subscriptions existed (and any user whose
+    // Subscription document was lost) have none. Fall back to free-plan limits
+    // instead of throwing on `null.getLimits()`.
+    let subscription = await Subscription.findOne({ user: userId });
+    if (!subscription) {
+      subscription = await Subscription.create({ user: userId });
+    }
     const limits = subscription.getLimits();
 
     if (limits.boardLimit !== -1) {
@@ -59,6 +65,11 @@ const createBoard = async (req, res) => {
       coverImage:       coverImage || null,
       tags:             Array.isArray(tags) ? tags : [],
       onlyMe:           onlyMe === true || onlyMe === 'true',
+      style: {
+        theme:    style?.theme    ?? null,
+        sticker:  style?.sticker  ?? null,
+        confetti: style?.confetti ?? null,
+      },
     });
     createdBoard = board;
 

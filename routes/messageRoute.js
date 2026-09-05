@@ -36,10 +36,24 @@ MessageRoute.get(
   getBoardMessages
 );
 
-MessageRoute.post('/:slug', authentication, postMessage);
+// Board and direct posting are now on distinct literal prefixes.
+//
+// Previously these were POST /:slug and POST /:username — two single-segment
+// patterns, so Express matched the first one every time and postDirectMessage
+// was unreachable dead code. Same story for GET /:id vs GET /:username, which
+// made getUserWallMessages unreachable.
+MessageRoute.post('/board/:slug', authentication, postMessage);
+MessageRoute.post('/direct/:username', authentication, postDirectMessage);
+
+MessageRoute.get(
+  '/wall/:username',
+  authentication,
+  cache(TTL.MY_MESSAGES, req => `wallMsgs:${req.params.username}:${sortedQS(req.query)}`),
+  getUserWallMessages
+);
 
 MessageRoute.patch('/:id/board/moderate',  authentication, moderateBoardMessage);
-MessageRoute.patch('/:id/direct/moderate', authentication, moderateDirectMessage); 
+MessageRoute.patch('/:id/direct/moderate', authentication, moderateDirectMessage);
 
 MessageRoute.get(
   '/:id',
@@ -50,13 +64,5 @@ MessageRoute.get(
 
 MessageRoute.delete('/:id', authentication, deleteMessage);
 MessageRoute.patch( '/:id', authentication, editMessage);
-
-MessageRoute.post('/:username', authentication, postDirectMessage);
-MessageRoute.get(
-  '/:username',
-  authentication,
-  cache(TTL.MY_MESSAGES, req => `wallMsgs:${req.params.username}:${new URLSearchParams(req.query).toString()}`),
-  getUserWallMessages
-);
 
 module.exports = MessageRoute;

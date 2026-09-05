@@ -29,11 +29,27 @@ const server = http.createServer(app);
 
 app.set('trust proxy', 1); 
 
-// Rate limit setup 
-const limiter = rateLimit({ 
+// Rate limit setup.
+// The SPA is chattier than the old frontend (feed + profile + reactions +
+// message loads on a single screen), so a 100/15min budget was exhausting a
+// normal session. Reads get a generous budget here; auth and AI routes carry
+// their own tighter limiters.
+const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests from this IP, please try again later.',
+  max: 600,
+  message: { message: 'Too many requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Never rate-limit the SPA's own static assets.
+  skip: (req) => !req.path.startsWith('/api/'),
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { message: 'Too many authentication attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Apply rate limiter
@@ -43,8 +59,19 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 
+// In production the SPA is served by this same Express app, so CORS is mostly
+// moot. In development the Vite dev server runs on :3000 and proxies /api here,
+// but the localhost origins are allowed too as a fallback for direct calls.
+const allowedOrigins = [
+  origin,
+  'https://res.cloudinary.com',
+  ...(process.env.NODE_ENV === 'production'
+    ? []
+    : ['http://localhost:3000', 'http://127.0.0.1:3000']),
+].filter(Boolean);
+
 app.use(cors({
-  origin:      [origin, 'https://res.cloudinary.com'],
+  origin:      allowedOrigins,
   credentials: true,
 }));
 
@@ -64,7 +91,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Serve Vite frontend static files
-app.use(express.static(path.join(__dirname, 'frontend', 'dist')));
+app.use(express.static(path.join(__dirname, 'client', 'dist')));
 
 // Importing and using routers
 const AuthRouter        = require('./routes/authRoute');
@@ -74,15 +101,20 @@ const MessageRouter     = require('./routes/messageRoute');
 const SubscriptionRouter   = require('./routes/subscriptionRoute');
 const BoardPaymentRouter   = require('./routes/boardPaymentRoute');
 const UploadRouter      = require('./routes/uploadRoute');
+const SearchRouter      = require('./routes/searchRoute');
+const AiRouter          = require('./routes/aiRoute');
 
-// API routes  
-app.use('/api/v1/auth', AuthRouter);
+// API routes
+app.use('/api/v1/auth', authLimiter, AuthRouter);
 app.use('/api/v1/user', UserRouter);
 app.use('/api/v1/board', BoardRouter);
 app.use('/api/v1/message', MessageRouter);
 app.use('/api/v1/subscription', SubscriptionRouter);
 app.use('/api/v1/board/payments', BoardPaymentRouter);
 app.use('/api/v1/upload', UploadRouter);
+app.use('/api/v1/search', SearchRouter);
+app.use('/api/v1/ai', AiRouter);
+app.get('/api/v1/stats', SearchRouter.globalStats);
 
 // Error handling middlewares
 const ErrorMiddleware    = require('./middlewares/errorMiddleware');
@@ -91,7 +123,7 @@ const NotFoundMiddleware = require('./middlewares/notFoundRoute');
 // Serve frontend for all non-API routes — must be BEFORE NotFoundMiddleware
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+  res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
 });
 
 app.use(NotFoundMiddleware);

@@ -50,7 +50,29 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: false,
     },
-    
+
+    // Optional presentation name. `username` stays the unique 3-14 char handle
+    // used in URLs; displayName is what the UI shows when it is set.
+    displayName: {
+        type: String,
+        maxLength: [50, 'Maximum of 50 characters'],
+        trim: true,
+    },
+
+    bio: {
+        type: String,
+        maxLength: [160, 'Maximum of 160 characters'],
+        trim: true,
+        default: '',
+    },
+
+    // Editorial badge, set by an admin. Unrelated to isEmailVerified.
+    isVerified: {
+        type: Boolean,
+        default: false,
+    },
+
+
     role: {
         type: String,
         enum: ['user', 'admin', 'super_admin'],

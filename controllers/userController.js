@@ -113,21 +113,28 @@ const getMyProfile = async (req, res) => {
 
 
 const updateProfile = async (req, res) => {
-    const { username, profileImage, country, accountType } = req.body;
+    const { username, profileImage, country, accountType, bio, displayName } = req.body;
     const userId = req.user.userId;
- 
-    if (username) {
-        const taken = await User.findOne({ username, _id: { $ne: userId } });
+
+    // Usernames are stored lowercase and matched lowercase everywhere else
+    // (checkUsername, getPublicProfile, createBoard receipent lookup), so
+    // normalise here too or a mixed-case signup becomes unreachable by URL.
+    const normalisedUsername = username ? username.trim().toLowerCase() : undefined;
+
+    if (normalisedUsername) {
+        const taken = await User.findOne({ username: normalisedUsername, _id: { $ne: userId } });
         if (taken) throw new CustomError.ConflictError('Username is already taken.');
     }
- 
+
     // Fetch old username before updating so we can bust the public-profile cache
     const oldUser = await User.findById(userId).select('username').lean();
- 
+
     const updates = {};
-    if (username)     updates.username     = username;
+    if (normalisedUsername) updates.username = normalisedUsername;
     if (profileImage) updates.profileImage = profileImage;
     if (country)      updates.country      = country;
+    if (bio !== undefined)         updates.bio         = bio;
+    if (displayName !== undefined) updates.displayName = displayName;
     // Only allow 'personal' from the client. 'enterprise' is set exclusively
     // by the subscription webhook after a confirmed payment.
     // if (accountType === 'personal') updates.accountType = 'personal';
@@ -139,13 +146,17 @@ const updateProfile = async (req, res) => {
         new: true, runValidators: true,
     }).select('-password -resetPasswordToken -emailVerificationToken');
  
-    // ── Cache invalidation 
+    // ── Cache invalidation
+    // oldUser.username is null until the user completes account setup (and is
+    // always null for a fresh Google OAuth account), so guard both keys.
+    const oldUsername = oldUser?.username ? oldUser.username.toLowerCase() : null;
+
     await Promise.all([
         invalidate(keys.profile(userId)),
-        invalidate(keys.publicProfile(oldUser.username.toLowerCase())),
-        // If username changed, also bust the new username key
-        username && username.toLowerCase() !== oldUser.username.toLowerCase()
-            ? invalidate(keys.publicProfile(username.toLowerCase()))
+        oldUsername ? invalidate(keys.publicProfile(oldUsername)) : Promise.resolve(),
+        // If the username changed, also bust the new username key
+        normalisedUsername && normalisedUsername !== oldUsername
+            ? invalidate(keys.publicProfile(normalisedUsername))
             : Promise.resolve(),
     ]);
  

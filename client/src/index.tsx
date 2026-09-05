@@ -1,32 +1,38 @@
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { AuthProvider } from './contexts/AuthContext';
+import './index.css';
 
-// Gracefully handle browser extension injection errors (e.g. MetaMask in sandboxed iframes)
+// Suppress only crypto-wallet extension noise. Narrow on purpose: the original
+// AI Studio version also swallowed anything containing "ethereum", which hides
+// real application errors.
 if (typeof window !== 'undefined') {
   const isExtensionError = (msg?: string | null) => {
     if (!msg) return false;
     const lower = String(msg).toLowerCase();
     return (
       lower.includes('metamask') ||
-      lower.includes('failed to connect to metamask') ||
-      lower.includes('ethereum') ||
       lower.includes('chrome-extension://') ||
       lower.includes('moz-extension://')
     );
   };
 
-  window.addEventListener('error', (event) => {
-    if (isExtensionError(event.message) || isExtensionError(event.filename)) {
-      event.preventDefault();
-      event.stopPropagation();
-      return false;
-    }
-  }, true);
+  window.addEventListener(
+    'error',
+    (event) => {
+      if (isExtensionError(event.message) || isExtensionError(event.filename)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
+    },
+    true,
+  );
 
   window.addEventListener('unhandledrejection', (event) => {
-    const reason = event.reason;
+    const reason = event.reason as { message?: string } | undefined;
     const message = reason?.message || String(reason || '');
     if (isExtensionError(message)) {
       event.preventDefault();
@@ -96,8 +102,12 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
     </ErrorBoundary>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
 

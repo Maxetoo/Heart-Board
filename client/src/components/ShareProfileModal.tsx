@@ -49,8 +49,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   // Determine effective share data
   const effectiveData: ShareData = shareData || {
     type: 'profile',
-    userHandle: propUserHandle || '@mickymouse',
-    userName: propUserName || 'Micky Mouse',
+    userHandle: propUserHandle || '',
+    userName: propUserName || '',
     profileImage: propProfileImage || null,
   };
 
@@ -65,17 +65,24 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     ? 'Write messages on my Heartboard wall'
     : 'Write messages on this heartboard';
 
-  // Construct target URL
+  // Construct target URL.
+  //
+  // These are real, crawlable paths now. They previously produced hash URLs
+  // (/#handle and /?board=id) that matched the prototype's HashRouter; with
+  // BrowserRouter those would not resolve to anything.
+  //
+  // Prefer `effectiveData.url` — for boards that is the canonical shareUrl
+  // returned by POST /api/v1/board/:id/share, which also counts the share.
   const getShareUrl = () => {
     if (effectiveData.url) return effectiveData.url;
     const origin = window.location.origin;
     if (isProfile) {
-      const cleanHandle = (effectiveData.userHandle || 'mickymouse').replace('@', '');
-      return `${origin}/#${cleanHandle}`;
-    } else {
-      const boardId = effectiveData.boardId || 'board';
-      return `${origin}/?board=${encodeURIComponent(boardId)}`;
+      const cleanHandle = (effectiveData.userHandle || '').replace('@', '');
+      return cleanHandle ? `${origin}/profile/${cleanHandle}` : origin;
     }
+    // boardId here is the board slug used by /board/:slug.
+    const boardId = effectiveData.boardId;
+    return boardId ? `${origin}/board/${encodeURIComponent(boardId)}` : origin;
   };
 
   const shareUrl = getShareUrl();

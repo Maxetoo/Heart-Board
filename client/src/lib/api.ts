@@ -1,0 +1,73 @@
+import axios, { AxiosError } from 'axios';
+
+/**
+ * Base origin for the API.
+ *
+ * Default is '' (same origin), which works in both environments:
+ *   - dev:  vite.config.ts proxies /api -> http://localhost:8080
+ *   - prod: app.js serves client/dist from the same Express server
+ *
+ * Set VITE_ORIGIN_URL only if you deploy the SPA to a different origin than the
+ * API. If you do, the backend must send `sameSite=none; secure=true` on the
+ * auth cookie (helpers/jwtHelper.js) or authentication will silently fail.
+ */
+export const API_ORIGIN: string = import.meta.env.VITE_ORIGIN_URL || '';
+
+export const api = axios.create({
+  baseURL: `${API_ORIGIN}/api/v1`,
+  // REQUIRED: the backend authenticates via a signed httpOnly-ish cookie
+  // (helpers/jwtHelper.js -> createCookies). Without this the cookie is never
+  // sent and every authenticated route returns 401.
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+/** Fired when any request comes back 401, so AuthContext can clear the session. */
+export const UNAUTHORIZED_EVENT = 'heartboard:unauthorized';
+
+export interface ApiError {
+  status: number;
+  message: string;
+  /** True when the request never reached the server. */
+  isNetworkError: boolean;
+}
+
+/**
+ * Normalises the backend's inconsistent error envelope.
+ * Most controllers return { message }, but authController.logout and parts of
+ * errorMiddleware return { msg }. Read both, always.
+ */
+export function toApiError(e: unknown): ApiError {
+  const err = e as AxiosError<{ message?: string; msg?: string }>;
+  const status = err?.response?.status ?? 0;
+  const data = err?.response?.data;
+
+  return {
+    status,
+    message:
+      data?.message ||
+      data?.msg ||
+      err?.message ||
+      'Network error occurred',
+    isNetworkError: status === 0,
+  };
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    if (error?.response?.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+    }
+    return Promise.reject(error);
+  },
+);
+
+/** Strips undefined values so axios does not serialise them as "undefined". */
+export function cleanParams<T extends Record<string, unknown>>(params: T): Partial<T> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') out[k] = v;
+  }
+  return out as Partial<T>;
+}

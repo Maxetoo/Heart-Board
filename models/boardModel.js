@@ -93,6 +93,15 @@ const BoardSchema = new Schema({
     default: [],
   },
 
+  // Presentation chosen in the create flow: frame theme, sticker and confetti.
+  // Free-form strings on purpose — these are asset keys owned by the frontend,
+  // so new frames can ship without a schema migration.
+  style: {
+    theme:    { type: String, default: null },
+    sticker:  { type: String, default: null },
+    confetti: { type: String, default: null },
+  },
+
   stats: {
     likes:    { type: Number, default: 0 },
     shares:   { type: Number, default: 0 },

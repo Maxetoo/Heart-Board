@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Post, Contribution, PostVisibility, ReactionCounts, RegisteredUser, MOCK_REGISTERED_USERS } from '../types';
+import { Post, Contribution, PostVisibility, ReactionCounts, RegisteredUser } from '../types';
+import { userFromHandle } from '../lib/adapters';
 import {
   X,
   ChevronLeft,
@@ -502,25 +503,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     ? post.authorAvatar
     : activeMessage.authorAvatar;
 
-  // Resolve creator's profile object
+  // Resolve creator's profile object.
+  // The post already carries the author fields populated by the server, so we
+  // build the stub from those rather than looking the handle up in a table.
   const creatorUser = useMemo((): RegisteredUser => {
-    const authorHandle = (post.authorHandle || '').trim().replace(/^@/, '').toLowerCase();
-    const authorName = (post.authorName || '').trim().toLowerCase();
-    const authorId = (post.authorId || '').trim().toLowerCase();
-
-    // 1. Check in MOCK_REGISTERED_USERS
-    const matched = MOCK_REGISTERED_USERS.find(u => {
-      const uHandle = u.handle.replace(/^@/, '').toLowerCase();
-      const uName = u.name.toLowerCase();
-      const uId = u.id.toLowerCase();
-      if (authorHandle && uHandle === authorHandle) return true;
-      if (authorName && (uName === authorName || uName.replace(/\s+/g, '') === authorName.replace(/\s+/g, ''))) return true;
-      if (authorId && (uId === authorId || uId === `u-${authorId}`)) return true;
-      return false;
-    });
-
-    if (matched) return matched;
-
     if (isViewerCreator && currentUser) return currentUser;
 
     const displayName = post.authorName || 'Curator';
@@ -555,38 +541,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       return creatorUser;
     }
 
-    // 1. Direct match on handle, id, or name
-    const directMatch = MOCK_REGISTERED_USERS.find(u =>
-      u.name.toLowerCase() === clean ||
-      u.handle.toLowerCase() === `@${clean}` ||
-      u.handle.toLowerCase() === clean ||
-      u.id.toLowerCase() === clean ||
-      u.id.toLowerCase() === `u-${clean}` ||
-      u.name.toLowerCase().replace(/\s+/g, '') === clean.replace(/\s+/g, '')
-    );
-    if (directMatch) return directMatch;
-
-    // 2. Partial match on name/handle
-    const partialMatch = MOCK_REGISTERED_USERS.find(u =>
-      u.name.toLowerCase() === clean ||
-      clean.includes(u.name.toLowerCase()) ||
-      u.handle.toLowerCase() === clean
-    );
-    if (partialMatch) return partialMatch;
-
-    // 3. Fallback dynamically constructed RegisteredUser
-    const rawDisplayName = input.trim().replace(/^@/, '');
-    return {
-      id: `u-${rawDisplayName.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'user'}`,
-      name: rawDisplayName.charAt(0).toUpperCase() + rawDisplayName.slice(1),
-      handle: input.startsWith('@') ? input.trim() : `@${rawDisplayName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(rawDisplayName)}`,
-      isVerified: false,
-      heartsCount: 1,
-      boardsCount: 1,
-      bio: 'Heartboard member',
-      role: 'Registered Member'
-    };
+    // Build a navigable stub from the handle. The profile route fetches the
+    // authoritative record via GET /user/profile/:username and renders a
+    // not-found state if the handle does not exist.
+    return userFromHandle(input);
   };
 
   const handleUserClick = (userNameOrHandle: string) => {
@@ -668,13 +626,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       // Filter out internal non-user entity keywords (e.g. 'bey', 'family', 'workspace', 'wall', 'board')
       const nonUserKeywords = ['bey', 'family', 'workspace', 'wall', 'board', 'all'];
       const cleanNoAt = trimmed.replace(/^@/, '').toLowerCase();
-      const isKnownUser = MOCK_REGISTERED_USERS.some(u => 
-        u.name.toLowerCase() === cleanNoAt || 
-        u.handle.toLowerCase() === `@${cleanNoAt}` ||
-        u.handle.toLowerCase() === cleanNoAt ||
-        u.id.toLowerCase() === cleanNoAt
-      );
-      if (!isKnownUser && nonUserKeywords.includes(cleanNoAt) && !trimmed.startsWith('@')) {
+      // Anything explicitly written as @handle is treated as a user mention;
+      // bare keywords from the list above are structural, not people.
+      if (nonUserKeywords.includes(cleanNoAt) && !trimmed.startsWith('@')) {
         return;
       }
 

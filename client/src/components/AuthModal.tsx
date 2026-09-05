@@ -17,9 +17,31 @@ import {
   ChevronRight,
   Globe
 } from 'lucide-react';
-import { RegisteredUser, MOCK_REGISTERED_USERS } from '../types';
+import { RegisteredUser } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { toApiError } from '../lib/api';
+import * as authApi from '../services/auth.api';
+import * as userApi from '../services/user.api';
+import { uploadFile } from '../services/upload.api';
+import { userToRegisteredUser } from '../lib/adapters';
 
 export type AuthMode = 'login' | 'signup' | 'verify' | 'onboarding_step1' | 'onboarding_step2';
+
+/**
+ * Mirrors the server rule in models/userModel.js, which runs
+ * validator.isStrongPassword with:
+ *   minLength 5, minLowercase 1, minUppercase 1, minNumbers 1, minSymbols 1
+ * Keeping these in sync means the user never passes the client check and then
+ * gets a 400 from the API.
+ */
+export function validatePassword(password: string): string | null {
+  if (password.length < 5) return 'Password must be at least 5 characters long';
+  if (!/[a-z]/.test(password)) return 'Password must include a lowercase letter';
+  if (!/[A-Z]/.test(password)) return 'Password must include an uppercase letter';
+  if (!/[0-9]/.test(password)) return 'Password must include a number';
+  if (!/[^A-Za-z0-9]/.test(password)) return 'Password must include a symbol';
+  return null;
+}
 
 export interface AuthModalProps {
   isOpen?: boolean;
@@ -54,9 +76,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // OTP Verification State
-  const [otpValues, setOtpValues] = useState<string[]>(['', '', '', '', '', '']);
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // Email-verification resend cooldown
   const [resendTimer, setResendTimer] = useState(30);
   const [canResend, setCanResend] = useState(false);
 
@@ -69,13 +89,18 @@ export const AuthView: React.FC<AuthModalProps> = ({
   // Onboarding Step 2 State
   const [agreedToRules, setAgreedToRules] = useState(false);
 
+  // Real auth wiring
+  const { login, register, refresh, loginWithGoogle } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  /** Data URL preview vs the File we actually upload to Cloudinary. */
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+
   // Reset or initialize state on open / mode change
   useEffect(() => {
     if (isOpen) {
       setCurrentStep(initialMode);
       setErrorMessage(null);
       setSuccessMessage(null);
-      setOtpValues(['', '', '', '', '', '']);
       setResendTimer(30);
       setCanResend(false);
       setAgreedToRules(false);
@@ -110,63 +135,33 @@ export const AuthView: React.FC<AuthModalProps> = ({
     }
 
     setHandleAvailability('checking');
-    const timer = setTimeout(() => {
-      // Check against MOCK_REGISTERED_USERS
-      const isTaken = MOCK_REGISTERED_USERS.some((u) => {
-        const existingClean = u.handle.replace(/^@/, '').toLowerCase();
-        return existingClean === trimmed || u.name.toLowerCase() === trimmed;
-      });
+    let cancelled = false;
 
-      if (isTaken) {
-        setHandleAvailability('taken');
-      } else {
-        setHandleAvailability('available');
+    // Debounced hit against GET /user/check-username/:username
+    const timer = setTimeout(async () => {
+      try {
+        const { available } = await userApi.checkUsername(trimmed);
+        if (!cancelled) setHandleAvailability(available ? 'available' : 'taken');
+      } catch {
+        if (!cancelled) setHandleAvailability('idle');
       }
-    }, 280);
+    }, 350);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [customHandle, currentStep]);
 
   if (!isOpen) return null;
 
-  // Handle OTP Input Change
-  const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      // User pasted full OTP
-      const pasted = value.replace(/\D/g, '').slice(0, 6).split('');
-      const newOtp = [...otpValues];
-      pasted.forEach((char, i) => {
-        if (i < 6) newOtp[i] = char;
-      });
-      setOtpValues(newOtp);
-      const nextIdx = Math.min(pasted.length, 5);
-      otpInputRefs.current[nextIdx]?.focus();
-      return;
-    }
-
-    const newOtp = [...otpValues];
-    newOtp[index] = value;
-    setOtpValues(newOtp);
-
-    // Auto focus next input
-    if (value && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpValues[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  // Submit Handler: Login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Submit Handler: Login  ->  POST /auth/login
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!emailOrPhone.trim()) {
-      setErrorMessage(authMethod === 'email' ? 'Please enter your email address' : 'Please enter your phone number');
+      setErrorMessage('Please enter your email address');
       return;
     }
     if (!password) {
@@ -174,112 +169,106 @@ export const AuthView: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Lookup existing user mock
-    const cleanInput = emailOrPhone.trim().toLowerCase();
-    const existing = MOCK_REGISTERED_USERS.find(u => 
-      u.name.toLowerCase().includes(cleanInput) || 
-      u.handle.toLowerCase().includes(cleanInput)
-    ) || MOCK_REGISTERED_USERS[2]; // Default to Micky if not found
-
-    onAuthSuccess(existing, false);
-    onClose();
+    setSubmitting(true);
+    try {
+      await login(emailOrPhone.trim(), password);
+      const profile = await refresh();
+      if (profile) {
+        onAuthSuccess(profile, false);
+        onClose();
+      } else {
+        setErrorMessage('Signed in, but your profile could not be loaded. Please retry.');
+      }
+    } catch (err) {
+      const { status, message } = err as { status: number; message: string };
+      setErrorMessage(
+        status === 401 || status === 400
+          ? message || 'That email or password is incorrect.'
+          : message,
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Submit Handler: Sign Up Form -> Move to Verification
-  const handleSignUpSubmit = (e: React.FormEvent) => {
+  // Submit Handler: Sign Up  ->  POST /auth/register
+  // The server returns only a message: no cookie and no session. The account
+  // must be verified via the emailed link before login will work.
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!emailOrPhone.trim()) {
-      setErrorMessage(authMethod === 'email' ? 'Please enter your email address' : 'Please enter your phone number');
-      return;
-    }
-    if (password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long');
+    const email = emailOrPhone.trim();
+    if (!email) {
+      setErrorMessage('Please enter your email address');
       return;
     }
 
-    // Auto populate suggested handle based on email / phone
-    const cleanPrefix = emailOrPhone.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase().slice(0, 15);
-    setCustomHandle(cleanPrefix);
+    const passwordProblem = validatePassword(password);
+    if (passwordProblem) {
+      setErrorMessage(passwordProblem);
+      return;
+    }
 
-    // Send code -> move to Verify Step
-    setCurrentStep('verify');
-    setSuccessMessage(`Verification code sent to ${emailOrPhone}`);
-    setResendTimer(30);
-    setCanResend(false);
+    setSubmitting(true);
+    try {
+      const message = await register(email, password);
+
+      // Suggest a handle for after they verify.
+      const cleanPrefix = email
+        .split('@')[0]
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .toLowerCase()
+        .slice(0, 14);
+      setCustomHandle(cleanPrefix);
+
+      setCurrentStep('verify');
+      setSuccessMessage(message || `We sent a verification link to ${email}`);
+      setResendTimer(30);
+      setCanResend(false);
+    } catch (err) {
+      setErrorMessage((err as { message: string }).message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Verify OTP
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    const code = otpValues.join('');
-    if (code.length < 6) {
-      setErrorMessage('Please enter the full 6-digit verification code');
-      return;
-    }
-
-    // Code verified -> move to Onboarding Step 1
+  /**
+   * The backend verifies by emailed LINK (/verify-email?verificationToken=...),
+   * not by a 6-digit code. This step is therefore a "check your inbox" screen:
+   * the user clicks the link, lands on /verify-email, and comes back to log in.
+   */
+  const handleGoToLogin = () => {
     setSuccessMessage(null);
-    setCurrentStep('onboarding_step1');
+    setErrorMessage(null);
+    setPassword('');
+    setCurrentStep('login');
   };
 
-  // Resend OTP Code
-  const handleResendCode = () => {
-    if (!canResend) return;
-    setResendTimer(45);
-    setCanResend(false);
-    setSuccessMessage(`A new verification code has been dispatched to ${emailOrPhone}`);
-    setOtpValues(['', '', '', '', '', '']);
-    otpInputRefs.current[0]?.focus();
-  };
-
-  // Google Authentication (Login or Signup)
-  const handleGoogleAuth = () => {
-    const googleUser: RegisteredUser = {
-      id: `u-g-${Date.now()}`,
-      name: 'alex_rivera',
-      handle: '@alex_rivera',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-      isVerified: true,
-      heartsCount: 14,
-      boardsCount: 2,
-      messagesCount: '5',
-      taggedCount: '3',
-      bio: 'Digital storyteller & grateful collaborator',
-      role: 'Registered Member'
-    };
-
-    if (currentStep === 'login') {
-      // Direct login for existing accounts
-      onAuthSuccess(googleUser, false);
-      onClose();
-    } else {
-      // Direct to onboarding for new registrations
-      setCustomHandle('alex_rivera');
-      setSelectedAvatar(googleUser.avatar);
-      setCurrentStep('onboarding_step1');
+  // Resend the verification email  ->  POST /auth/resend-verification-email
+  const handleResendCode = async () => {
+    if (!canResend || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await authApi.resendVerificationEmail(emailOrPhone.trim());
+      setResendTimer(45);
+      setCanResend(false);
+      setSuccessMessage(res.message || `A new verification link is on its way to ${emailOrPhone}`);
+    } catch (err) {
+      setErrorMessage(toApiError(err).message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Quick Demo Login Handler
-  const handleQuickDemoLogin = () => {
-    const defaultMicky: RegisteredUser = {
-      id: 'u-micky',
-      name: 'Micky Mouse',
-      handle: '@mickymouse',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-      isVerified: true,
-      heartsCount: 342,
-      boardsCount: 6,
-      messagesCount: '24',
-      taggedCount: '18',
-      bio: 'Official Curator on Heartboard',
-      role: 'Verified Curator'
-    };
-    onAuthSuccess(defaultMicky, false);
-    onClose();
+  /**
+   * Google OAuth is a full-page redirect to /api/v1/auth/google. The server
+   * redirects back to CLIENT_URL once the session cookie is set; the app then
+   * boots, calls /user/me, and routes to /account-setup if there is no username.
+   */
+  const handleGoogleAuth = () => {
+    loginWithGoogle();
   };
 
   // Complete Onboarding Step 1
@@ -300,47 +289,66 @@ export const AuthView: React.FC<AuthModalProps> = ({
     setCurrentStep('onboarding_step2');
   };
 
-  // Complete Onboarding Step 2 (Final Finish)
-  const handleStep2Finish = (e: React.FormEvent) => {
+  /**
+   * Complete onboarding  ->  PATCH /user/profile
+   * Requires an authenticated session, so this step only runs after the user
+   * has verified their email and signed in (or arrived via Google OAuth).
+   */
+  const handleStep2Finish = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
     if (!agreedToRules) {
       setErrorMessage('You must agree to the Community Rules to continue');
       return;
     }
 
     const cleanUsername = customHandle.trim().replace(/^@/, '').toLowerCase();
-    const userHandle = `@${cleanUsername}`;
+    if (cleanUsername.length < 3 || cleanUsername.length > 14) {
+      setErrorMessage('Username must be between 3 and 14 characters');
+      return;
+    }
 
-    const newUser: RegisteredUser = {
-      id: `u-${Date.now()}`,
-      name: cleanUsername,
-      handle: userHandle,
-      avatar: selectedAvatar || PRESET_AVATARS[0],
-      isVerified: false,
-      heartsCount: 0,
-      boardsCount: 0,
-      messagesCount: '0',
-      taggedCount: '0',
-      bio: 'Heartboard curator & appreciation sender',
-      role: 'Registered Member'
-    };
+    setSubmitting(true);
+    try {
+      // Upload a picked avatar first; preset avatars are already URLs.
+      let profileImage = selectedAvatar;
+      if (avatarFile) {
+        const uploaded = await uploadFile(avatarFile, 'image');
+        profileImage = uploaded.url;
+      }
 
-    onAuthSuccess(newUser, true);
-    onClose();
+      const { user } = await userApi.updateProfile({
+        username: cleanUsername,
+        profileImage,
+      });
+
+      const view = userToRegisteredUser(user);
+      await refresh();
+      onAuthSuccess(view, true);
+      onClose();
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : (err as { message: string }).message,
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Handle Photo File Upload
+  // Handle Photo File Upload — keeps a local preview and the File for upload.
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setSelectedAvatar(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setSelectedAvatar(event.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -720,67 +728,47 @@ export const AuthView: React.FC<AuthModalProps> = ({
                 <span>Security Step</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1A1B25] tracking-tight">
-                Enter verification code
+                Check your inbox
               </h1>
               <p className="text-xs sm:text-sm text-[#808897] font-medium mt-1.5 leading-relaxed">
-                We sent a 6-digit verification code to <strong className="text-[#1A1B25]">{emailOrPhone || 'your contact'}</strong>.
+                We sent a verification link to{' '}
+                <strong className="text-[#1A1B25]">{emailOrPhone || 'your email address'}</strong>.
+                Open it to activate your account, then sign in.
               </p>
             </div>
 
-            {/* 6 Digit OTP Inputs */}
-            <form onSubmit={handleVerifyOtp} className="space-y-6">
-              <div className="flex justify-between gap-2 sm:gap-3 my-4">
-                {otpValues.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => (otpInputRefs.current[idx] = el)}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    className="w-11 h-14 sm:w-13 sm:h-16 bg-[#F8F9FB] border-none rounded-2xl text-center text-xl sm:text-2xl font-extrabold text-[#1A1B25] focus:bg-[#ECEFF3]/60 focus:outline-none transition-all shadow-2xs"
-                  />
-                ))}
-              </div>
-
-              {/* Simulated Auto-Fill Hint */}
-              <div className="p-3.5 bg-[#F8F9FB] rounded-2xl flex items-center justify-between text-xs text-[#808897]">
-                <span>Demo Test Code: <strong className="text-[#1A1B25]">123456</strong></span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtpValues(['1', '2', '3', '4', '5', '6']);
-                  }}
-                  className="font-bold text-[#FE6349] hover:underline cursor-pointer"
-                >
-                  Auto-fill Code
-                </button>
+            <div className="space-y-6">
+              <div className="p-4 bg-[#F8F9FB] rounded-2xl text-xs text-[#666D80] leading-relaxed">
+                The link expires after a short while. If it does not arrive within a
+                couple of minutes, check your spam folder or send another one.
               </div>
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleGoToLogin}
                 className="w-full py-3.5 px-4 rounded-2xl bg-[#FE6349] hover:bg-[#FE6349]/90 text-white font-extrabold text-xs sm:text-sm transition-all cursor-pointer shadow-md"
               >
-                Verify & Continue
+                Continue to sign in
               </button>
 
-              {/* Resend Code Section */}
+              {/* Resend verification email */}
               <div className="text-center text-xs font-semibold text-[#808897] pt-2">
                 {resendTimer > 0 ? (
-                  <span>Resend code in <strong className="text-[#1A1B25]">{resendTimer}s</strong></span>
+                  <span>
+                    Resend link in <strong className="text-[#1A1B25]">{resendTimer}s</strong>
+                  </span>
                 ) : (
                   <button
                     type="button"
                     onClick={handleResendCode}
-                    className="text-[#FE6349] font-extrabold hover:underline cursor-pointer"
+                    disabled={submitting}
+                    className="text-[#FE6349] font-extrabold hover:underline cursor-pointer disabled:opacity-50"
                   >
-                    Resend Code Now
+                    {submitting ? 'Sending…' : 'Resend verification link'}
                   </button>
                 )}
               </div>
-            </form>
+            </div>
           </div>
         )}
 
