@@ -421,14 +421,30 @@ const getBoardsByHashtag = async (req, res) => {
 
   if (!tag) throw new CustomError.BadRequestError('Hashtag is required.');
 
+  // A board reaches a hashtag page two ways: it was addressed TO the hashtag
+  // (receipentHashtag), or it carries the tag in its tags array. Matching only
+  // the former hid every board tagged through the normal create flow.
+  //
+  // Visibility: the schema enum is public | private | anonymous. The previous
+  // filter looked for a 'link-only' value that does not exist, and excluded
+  // 'anonymous' boards, which are publicly readable — only the author is hidden.
+  const filter = {
+    isActive:   true,
+    visibility: { $in: ['public', 'anonymous'] },
+    $or: [{ receipentHashtag: tag }, { tags: tag }],
+  };
+
   const [boards, total] = await Promise.all([
-    Board.find({ receipentHashtag: tag, isActive: true, visibility: { $in: ['public', 'link-only'] } })
+    Board.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('owner', 'username avatar')
+      // User has `profileImage`, not `avatar` — the old projection always
+      // returned owners without a picture.
+      .populate('owner', 'username displayName profileImage isVerified')
+      .select('title description slug stats tier tags owner coverImage event style createdAt')
       .lean(),
-    Board.countDocuments({ receipentHashtag: tag, isActive: true, visibility: { $in: ['public', 'link-only'] } }),
+    Board.countDocuments(filter),
   ]);
 
   res.status(StatusCodes.OK).json({ boards, total, page, pages: Math.ceil(total / limit) });

@@ -37,6 +37,36 @@ import {
   Send
 } from 'lucide-react';
 import { refineText } from '../services/geminiService';
+import { createBoard } from '../services/board.api';
+import { postMessage } from '../services/message.api';
+import { uploadFile, validateFile } from '../services/upload.api';
+import { toApiError } from '../lib/api';
+import {
+  fromClientMessageType,
+  fromPostVisibility,
+  usernameOf,
+  wrapCanvasData,
+} from '../lib/adapters';
+import type { BoardEvent } from '../types/api';
+
+/**
+ * Maps the UI's free-text event label onto the server's `event` enum
+ * (models/boardModel.js). Anything unrecognised becomes 'other' rather than
+ * failing schema validation.
+ */
+const BOARD_EVENTS: BoardEvent[] = [
+  'birthday', 'wedding', 'anniversary', 'graduation',
+  'sport', 'retirement', 'promotion', 'other',
+];
+
+function toBoardEvent(label?: string): BoardEvent | null {
+  if (!label) return null;
+  const clean = label.trim().toLowerCase();
+  const direct = BOARD_EVENTS.find((e) => e === clean);
+  if (direct) return direct;
+  const partial = BOARD_EVENTS.find((e) => clean.includes(e));
+  return partial ?? 'other';
+}
 import { VectorPicker, PHOSPHOR_VECTORS } from './VectorPicker';
 import { ChooseColor } from './ColorPicker';
 import { ConfettiOverlay, ConfettiType } from './ConfettiOverlay';
@@ -1102,6 +1132,13 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [uploadedImage, setUploadedImage] = useState<string | null>(() => {
     return editingContribution?.imageUrl || editingContribution?.mediaUrl || editingPost?.imageUrl || editingPost?.mediaUrl || null;
   });
+  /**
+   * The picked File, held until submit. `uploadedImage` is only a data-URL
+   * preview — data URLs must never be sent to the API as an image reference.
+   */
+  const [pendingCoverFile, setPendingCoverFile] = useState<File | null>(null);
+  /** Cloudinary URL for a recorded audio clip, set once it has been uploaded. */
+  const [pendingAudioUrl, setPendingAudioUrl] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Dynamic Canvas Elements state
@@ -1229,15 +1266,30 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
   const editingElement = canvasElements.find(el => el.id === editingElementId);
 
+  /**
+   * Keeps a data-URL preview for the canvas AND the original File, which is
+   * what actually gets uploaded to Cloudinary on submit. Validating here means
+   * the user sees a real message instead of a generic 400 after filling in the
+   * whole form.
+   */
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setUploadedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    const problem = validateFile(file, 'image');
+    if (problem) {
+      setModerationError(problem);
+      return;
     }
+
+    setModerationError(null);
+    setPendingCoverFile(file);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   // Advanced variables
@@ -1644,13 +1696,83 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         newPost.content = `${newPost.content} (${heartLabels.join(', ')})`;
       }
 
+      // ── Persist to the API ──────────────────────────────────────────────
+      // Two-step media flow: upload first, then reference the returned
+      // url + publicId, so the server can clean up the Cloudinary asset if
+      // the board write fails.
+      let coverImage: string | undefined;
+      let coverImagePublicId: string | undefined;
+
+      if (pendingCoverFile) {
+        const uploaded = await uploadFile(pendingCoverFile, 'image');
+        coverImage = uploaded.url;
+        coverImagePublicId = uploaded.publicId;
+        newPost.imageUrl = uploaded.url;
+      }
+
+      // The server takes a bare username or a #hashtag and resolves it
+      // itself; it does not want a leading '@'.
+      const primaryRecipient = recipients.find((r) => r !== '@you');
+      const receipent = primaryRecipient
+        ? primaryRecipient.startsWith('#')
+          ? primaryRecipient
+          : usernameOf(primaryRecipient)
+        : undefined;
+
+      const { board } = await createBoard({
+        title: (caption.trim() || safeTextCheck).slice(0, 80),
+        description: (content.trim() || safeTextCheck).slice(0, 300),
+        visibility: fromPostVisibility(effectiveVisibility),
+        receipent,
+        event: toBoardEvent(selectedEventType),
+        coverImage,
+        coverImagePublicId,
+        tags: extractedHashtags.map((t) => t.replace(/^#/, '').toLowerCase()),
+        style: {
+          theme: newPost.theme,
+          sticker: newPost.sticker,
+          confetti: newPost.confetti,
+        },
+      });
+
+      // Post the author's own message onto the new board so the board is not
+      // created empty.
+      const elements = canvasElements.filter(hasElementContent);
+      try {
+        await postMessage(board.slug, {
+          type: fromClientMessageType(activeType === 'video' ? 'image' : activeType),
+          content: {
+            text: safeTextCheck,
+            imageUrls: coverImage ? [coverImage] : [],
+            audioUrl: pendingAudioUrl ?? null,
+          },
+          cloudinaryPublicId: coverImagePublicId ?? null,
+          fileType: coverImage ? 'image' : null,
+          canvasData: wrapCanvasData(elements, 'portrait'),
+        });
+      } catch (msgErr) {
+        // The board exists either way; surface the failure without losing it.
+        console.error('Board created but first message failed:', msgErr);
+      }
+
+      // Reconcile the optimistic object with what the server actually stored.
+      newPost.id = board._id;
+      newPost.slug = board.slug;
+      newPost.createdAt = board.createdAt;
+      newPost.tier = board.tier;
+
       onPostCreated(newPost);
       setIsModerating(false);
       setIsPreviewOpen(false);
       setCreatedPostConfirmation(newPost);
     } catch (e) {
       console.error(e);
-      setModerationError("Network check failed. Sending direct tribute...");
+      const err = toApiError(e);
+      setModerationError(
+        err.status === 401
+          ? 'Please sign in again to publish this board.'
+          : err.message || 'We could not publish that board. Please try again.',
+      );
       setIsModerating(false);
     }
   };
