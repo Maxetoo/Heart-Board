@@ -37,8 +37,8 @@ import {
   Send
 } from 'lucide-react';
 import { refineText } from '../services/geminiService';
-import { createBoard } from '../services/board.api';
-import { postMessage } from '../services/message.api';
+import { createBoard, updateBoard } from '../services/board.api';
+import { postMessage, editMessage } from '../services/message.api';
 import { uploadFile, validateFile } from '../services/upload.api';
 import { toApiError } from '../lib/api';
 import {
@@ -87,6 +87,7 @@ export interface CanvasElement {
   cornerRadius?: number;
   vectorId?: string;
   vectorName?: string;
+  vectorColor?: string;
   emoji?: string;
   label?: string;
   bubbleColor?: string;
@@ -1116,7 +1117,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [selectedSticker, setSelectedSticker] = useState<StickerItem | null>(() => {
     const stickerId = editingContribution?.sticker || editingPost?.sticker;
     if (stickerId) {
-      return STICKERS.find(s => s.id === stickerId) || null;
+      return STICKER_LIST.find((s) => s.id === stickerId) || null;
     }
     return null;
   });
@@ -1538,6 +1539,16 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           canvasElements: canvasElements.filter(hasElementContent),
         };
 
+        // PATCH /message/:id — the contribution is a board message.
+        await editMessage(editingContribution.id, {
+          content: {
+            text: safeTextCheck,
+            imageUrls: updatedContrib.imageUrl ? [updatedContrib.imageUrl] : [],
+            audioUrl: pendingAudioUrl ?? null,
+          },
+          canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
+        });
+
         onUpdateContribution(parentBoard.id, updatedContrib);
         setIsModerating(false);
         setIsPreviewOpen(false);
@@ -1582,6 +1593,26 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         if (selectedHearts.length > 0) {
           updatedPost.selectedHearts = [...selectedHearts];
         }
+
+        // PATCH /board/:id — boards are updated by id, not slug.
+        const editPrimaryRecipient = recipients.find((r) => r !== '@you');
+        await updateBoard(editingPost.id, {
+          title: (caption.trim() || safeTextCheck).slice(0, 80),
+          description: (content.trim() || safeTextCheck).slice(0, 300),
+          visibility: fromPostVisibility(effectiveVisibility),
+          event: toBoardEvent(selectedEventType),
+          tags: extractedHashtags.map((t) => t.replace(/^#/, '').toLowerCase()),
+          receipent: editPrimaryRecipient
+            ? editPrimaryRecipient.startsWith('#')
+              ? editPrimaryRecipient
+              : usernameOf(editPrimaryRecipient)
+            : undefined,
+          style: {
+            theme: updatedPost.theme,
+            sticker: updatedPost.sticker,
+            confetti: updatedPost.confetti,
+          },
+        });
 
         onUpdatePost(updatedPost);
         setIsModerating(false);
@@ -1636,6 +1667,36 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           canvasElements: canvasElements.filter(hasElementContent),
           isCreatedByUser: true,
         };
+
+        // Persist the contribution as a board message.
+        const parentSlug = parentBoard.slug || parentBoard.targetId;
+        if (parentSlug) {
+          let contribImage: string | undefined;
+          let contribPublicId: string | undefined;
+          if (pendingCoverFile) {
+            const uploaded = await uploadFile(pendingCoverFile, 'image');
+            contribImage = uploaded.url;
+            contribPublicId = uploaded.publicId;
+            newContrib.imageUrl = uploaded.url;
+            newContrib.mediaUrl = uploaded.url;
+          }
+
+          const saved = await postMessage(parentSlug, {
+            type: fromClientMessageType(activeType === 'video' ? 'image' : activeType),
+            content: {
+              text: safeTextCheck,
+              imageUrls: contribImage ? [contribImage] : [],
+              audioUrl: pendingAudioUrl ?? null,
+            },
+            cloudinaryPublicId: contribPublicId ?? null,
+            fileType: contribImage ? 'image' : null,
+            canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
+          });
+
+          // Use the server's id so later edits and deletes address the real row.
+          newContrib.id = saved._id;
+          newContrib.createdAt = saved.createdAt;
+        }
 
         if (onAddContribution) {
           onAddContribution(parentBoard.id, newContrib);
@@ -2164,7 +2225,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         {/* Full Page Confirmation Screen for Send Heart */}
         {sendHeartConfirmation && (
           <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] flex flex-col items-center justify-between p-4 sm:p-8 overflow-y-auto animate-in fade-in duration-300 min-h-screen">
-            <ConfettiOverlay active={true} type="heart" />
+            <ConfettiOverlay type="heart" />
             
             <div className="w-full max-w-[440px] flex flex-col items-center justify-between min-h-[92vh] sm:min-h-[85vh] my-auto relative z-10 py-2 sm:py-0">
               {/* Close Button Top Right */}
@@ -2399,7 +2460,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   onClick={() => setIsStickerPickerOpen(!isStickerPickerOpen)}
                   className="w-full py-2 bg-gray-50 hover:bg-gray-100 rounded-xl text-xs font-bold transition-all text-[#1A1B25] flex justify-between px-3 items-center"
                 >
-                  <span>{selectedSticker.emoji} {selectedSticker.label}</span>
+                  <span>{selectedSticker?.emoji} {selectedSticker?.label}</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
 
@@ -3848,7 +3909,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       {/* Full Page Confirmation Screen for Published Appreciation Card */}
       {createdPostConfirmation && (
         <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] flex flex-col items-center justify-between p-4 sm:p-8 overflow-y-auto animate-in fade-in duration-300 min-h-screen">
-          <ConfettiOverlay active={true} type={createdPostConfirmation.confetti || "heart"} />
+          <ConfettiOverlay type={createdPostConfirmation.confetti || "heart"} />
           
           <div className="w-full max-w-[440px] flex flex-col items-center justify-between min-h-[92vh] sm:min-h-[85vh] my-auto relative z-10 py-2 sm:py-0">
             {/* Close Button Top Right */}

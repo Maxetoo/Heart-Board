@@ -74,7 +74,15 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onClick, disabled }) =
             authorName={post.authorName}
             recipient={Array.isArray((post as any).recipients) ? (post as any).recipients[0] : (post.recipientName || post.targetId)}
             selectedHearts={(post as any).selectedHearts || []}
-            activeType={post.mediaType || post.type || 'text'}
+            // CanvasReadOnlyCard only understands text | audio | video;
+            // 'image', 'note' and 'heart_token' all render as a text card.
+            activeType={
+              post.mediaType === 'audio' || post.type === 'audio'
+                ? 'audio'
+                : post.mediaType === 'video'
+                  ? 'video'
+                  : 'text'
+            }
             isCollaborative={isCollaborative}
             visibility={post.visibility}
             showMetadata={false}

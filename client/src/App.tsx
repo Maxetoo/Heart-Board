@@ -5,6 +5,7 @@ import { EntityType, Post, PostVisibility, RegisteredUser, Contribution } from '
 import { useAuth } from './contexts/AuthContext';
 import { useSearch } from './hooks/useSearch';
 import { useDiscoverFeed } from './hooks/useBoards';
+import { useBoardMessages } from './hooks/useBoardMessages';
 import { getGlobalStats } from './services/stats.api';
 import * as boardApi from './services/board.api';
 import * as messageApi from './services/message.api';
@@ -1366,6 +1367,11 @@ const App: React.FC = () => {
     goToBoard(post);
     recordBoardViewed();
   };
+
+  // Hydrate the open board with its full document and messages. Feed cards come
+  // from a .select()-ed list query and carry neither.
+  const openPost = selectedPostIndex !== null ? posts[selectedPostIndex] : null;
+  useBoardMessages(openPost, currentUser?.id, patchPost);
 
   return (
     <>

@@ -9,7 +9,8 @@ import {
   UserCheck,
   LayoutGrid,
   Sparkles,
-  Check
+  Check,
+  Plus
 } from 'lucide-react';
 import {
   HandsClapping,
@@ -523,7 +524,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       heartsCount: 1,
       boardsCount: 1,
       bio: 'Heartboard curator',
-      role: 'Board Curator'
+      roleLabel: 'Board Curator',
     };
   }, [post.authorHandle, post.authorName, post.authorId, post.authorAvatar, isViewerCreator, currentUser]);
 
@@ -897,7 +898,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 selectedConfetti={(activeMessage.confetti || post.confetti) as any}
                 authorName={activeMessage.authorName}
                 recipient={Array.isArray(post.recipients) ? post.recipients.filter(r => r !== '@you').join(', ') || post.recipients[0] : (post.recipientName || post.targetId)}
-                selectedHearts={activeMessage.selectedHearts || post.selectedHearts || []}
+                selectedHearts={(activeMessage as Post).selectedHearts || post.selectedHearts || []}
                 activeType={activeMessage.mediaType === 'audio' ? 'audio' : activeMessage.mediaType === 'video' ? 'video' : 'text'}
                 isCollaborative={!isSoloMode}
                 visibility={post.visibility}
@@ -1170,7 +1171,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           shareData={{
             type: 'board',
             boardId: post.id,
-            boardTitle: post.title || (post.content && post.content.length <= 40 ? post.content : undefined) || (post.recipientName ? `Tribute for ${post.recipientName}` : undefined) || `${post.authorName || 'Curator'}'s Board`,
+            boardTitle: post.caption || (post.content && post.content.length <= 40 ? post.content : undefined) || (post.recipientName ? `Tribute for ${post.recipientName}` : undefined) || `${post.authorName || 'Curator'}'s Board`,
             boardThumbnail: post.imageUrl || post.mediaUrl || post.authorAvatar,
             boardTheme: post.theme || '#BEE27C',
             boardAuthorName: post.authorName,

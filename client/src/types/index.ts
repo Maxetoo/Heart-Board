@@ -146,6 +146,8 @@ export interface Post {
   visitCount?: number;
   /** basic | standard | premium — drives the message-limit upsell. */
   tier?: 'basic' | 'standard' | 'premium';
+  /** Feed bucket used by the tears/vouch/hype filter chips. */
+  category?: 'tears' | 'vouch' | 'hype';
 }
 
 export interface AppreciationEntity {

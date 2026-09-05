@@ -3,6 +3,7 @@ import { ShareProfileModal, ShareData } from './ShareProfileModal';
 import { SEMANTIC_HEARTS, HeartBubbleSvg } from './CreateAppreciationModal';
 import { LiveHeartAnimation } from './LiveHeartAnimation';
 import { PostCard } from './PostCard';
+import type { RegisteredUser } from '../types';
 import { 
   Settings, 
   Share2, 
@@ -30,6 +31,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+/**
+ * The subset of a user this view renders.
+ *
+ * Every required field is also required on RegisteredUser, so a RegisteredUser
+ * is always assignable here. Previously the two types diverged (this one had an
+ * extra `role`, and lacked `isVerified`), which made the callback props
+ * contravariant with App's handlers.
+ */
 export interface UserProfileData {
   id: string;
   name: string;
@@ -40,7 +49,26 @@ export interface UserProfileData {
   heartsCount?: number;
   boardsCount?: number;
   bio?: string;
-  role?: string;
+  isVerified?: boolean;
+  /** Display label such as "Verified Curator" — never an authorization role. */
+  roleLabel?: string;
+}
+
+/** Widens the view's looser profile shape into a full RegisteredUser. */
+export function asRegisteredUser(u: UserProfileData): RegisteredUser {
+  return {
+    id: u.id,
+    name: u.name,
+    handle: u.handle,
+    avatar: u.avatar,
+    isVerified: u.isVerified ?? false,
+    heartsCount: u.heartsCount ?? 0,
+    boardsCount: u.boardsCount ?? 0,
+    messagesCount: u.messagesCount,
+    taggedCount: u.taggedCount,
+    bio: u.bio ?? '',
+    roleLabel: u.roleLabel,
+  };
 }
 
 export interface HeartboardViewProps {
@@ -50,9 +78,9 @@ export interface HeartboardViewProps {
   profileUser?: UserProfileData | null;
   currentUser?: RegisteredUser | null;
   onBack?: () => void;
-  onGiftHeart?: (user: UserProfileData) => void;
-  onSendMessage?: (user: UserProfileData) => void;
-  onSelectUser?: (user: UserProfileData) => void;
+  onGiftHeart?: (user: RegisteredUser) => void;
+  onSendMessage?: (user: RegisteredUser) => void;
+  onSelectUser?: (user: RegisteredUser) => void;
   selectedFilterId?: string;
   onClearFilter?: () => void;
   defaultTab?: 'board' | 'tagged' | 'collaboration' | 'hearts';
@@ -1256,7 +1284,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             {/* Action buttons: Heart & Message */}
             <div className="flex items-center gap-3 mt-2">
               <button 
-                onClick={() => onGiftHeart && onGiftHeart(profileUser)}
+                onClick={() => onGiftHeart && onGiftHeart(asRegisteredUser(profileUser))}
                 className="bg-[#ffffff] hover:bg-[#F8F9FB] text-[#1A1B25] border-2 border-[#ECEFF3] px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95"
               >
                 <Heart className="w-4 h-4 text-[#1A1B25] fill-none stroke-[2.5]" />
@@ -1264,7 +1292,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
               </button>
 
               <button 
-                onClick={() => onSendMessage && onSendMessage(profileUser)}
+                onClick={() => onSendMessage && onSendMessage(asRegisteredUser(profileUser))}
                 className="bg-[#ffffff] hover:bg-[#F8F9FB] text-[#1A1B25] border-2 border-[#ECEFF3] px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95"
               >
                 <PenLine className="w-4 h-4 text-[#1A1B25] stroke-[2.5]" />
