@@ -2,3 +2,7 @@
 .env
 db.json
 myapp.tar.gz
+
+.DS_Store
+**/.DS_Store
+*.log

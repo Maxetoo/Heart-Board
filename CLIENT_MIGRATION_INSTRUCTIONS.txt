@@ -1,0 +1,1543 @@
+================================================================================
+ CLIENT MIGRATION INSTRUCTIONS
+ Migrating the Heartboard / Goodwall application from `frontend/` to `client/`
+================================================================================
+ Repo:        /Users/mac/Desktop/Work/Seyi
+ Backend:     Express 4 (CommonJS) + MongoDB/Mongoose + Redis + Cloudinary
+ Old FE:      frontend/   (Vite 7, React 19 JSX, Redux Toolkit, axios, wired up)
+ New FE:      client/     (Vite 6, React 19 TSX, Tailwind CDN, 100% mock data)
+ Written:     2026-09-05
+================================================================================
+
+
+--------------------------------------------------------------------------------
+0. READ THIS FIRST — WHAT THIS MIGRATION ACTUALLY IS
+--------------------------------------------------------------------------------
+
+This is NOT a "swap one folder for another" job. Be clear-eyed about it:
+
+  * `frontend/` is a FULLY INTEGRATED application. It has 8 Redux slices with
+    ~45 async thunks covering every backend endpoint, real cookie auth, a
+    profile-setup gate, 16 routes, and a working production build that `app.js`
+    already serves.
+
+  * `client/` is a DESIGN PROTOTYPE exported from Google AI Studio. It makes
+    ZERO network calls to your backend. Verified: the only `fetch()` in the
+    whole codebase is `fetch(dataUrl)` in ShareProfileModal.tsx:414 (a blob
+    conversion). There is no axios, no API base URL, no auth token handling.
+
+  * All `client/` data is hard-coded: `INITIAL_MOCK_POSTS` (App.tsx:51) and
+    `MOCK_REGISTERED_USERS` (types.ts:32). "Login" in AuthModal.tsx:179 does
+    `MOCK_REGISTERED_USERS.find(...) || MOCK_REGISTERED_USERS[2]` — it always
+    "succeeds" and falls back to Micky Mouse.
+
+So the real work is: KEEP the `client/` UI, and REBUILD into it the entire
+integration layer that already exists in `frontend/src/slices/`.
+
+Rough effort split:
+    5%   folder/build/deploy rewiring        (Phases 1-3)
+   15%   API client + type adapters           (Phases 4-5)
+   45%   screen-by-screen data wiring         (Phase 7)
+   20%   auth + profile-setup flow            (Phase 6)
+   15%   backend gaps + bug fixes + QA        (Phases 8-10)
+
+DO NOT delete `frontend/` until Phase 12. It is your only working reference for
+how every endpoint is called, and your rollback path.
+
+
+--------------------------------------------------------------------------------
+1. SYSTEM INVENTORY (AS-IS)
+--------------------------------------------------------------------------------
+
+1.1 BACKEND (repo root)
+    app.js                      Express bootstrap. IMPORTANT LINES:
+                                  - `express.static(path.join(__dirname,'frontend','dist'))`
+                                  - `app.get('*')` SPA fallback -> frontend/dist/index.html
+                                  - CORS: origin [ALLOWED_ORIGIN, cloudinary], credentials:true
+                                  - express-fileupload with tempFileDir '/tmp/'
+                                  - cron self-ping every 5 min to ALLOWED_ORIGIN
+                                  - loads workers/uploadAndPostWorker + emailSendingWorker
+    routes/                     authRoute, userRoute, boardRoute, messageRoute,
+                                subscriptionRoute, boardPaymentRoute, uploadRoute
+    controllers/                one per route file
+    models/                     userModel, boardModel, message, boardLikeModel,
+                                boardPaymentModel, subscription, sponsporship
+    middlewares/                authMiddleware (signed-cookie JWT), cacheMiddleware
+                                (Redis, currently fully commented out at the top —
+                                verify which implementation is live), errorMiddleware,
+                                multer, notFoundRoute
+    helpers/jwtHelper.js        createJwt / signJwt / createCookies
+    services/cloudinaryUpload.js
+    configs/                    passport, cloudinary, redis, bullmq, stripe, revenuecat
+    workers/                    BullMQ workers for upload+post and email
+    package.json scripts:
+        "build": "cd frontend && npm install && npm run build"     <-- MUST CHANGE
+        "start": "NODE_OPTIONS=--openssl-legacy-provider nodemon app.js"
+
+    Auth mechanism: JWT inside a SIGNED cookie named `token`.
+        helpers/jwtHelper.js -> createCookies():
+            httpOnly: false, signed: true, secure: NODE_ENV==='production',
+            expires: now + 5 days,  NO sameSite set.
+        middlewares/authMiddleware.js -> `req.signedCookies.token`.
+        => Frontend must send `withCredentials: true` on EVERY request.
+        => Frontend can never read the JWT payload (it's signed `s:...`);
+           presence of the cookie is the only client-side signal. Source of
+           truth for "am I logged in" is `GET /api/v1/user/me`.
+
+1.2 OLD FRONTEND (frontend/)
+    Stack:      Vite 7, React 19, JSX, Redux Toolkit, axios, styled-components,
+                react-hot-toast, react-router-dom v7 (BrowserRouter),
+                js-cookie, moment, html2canvas, jodit-react, contentful,
+                @revenuecat/purchases-js, react-loading-skeleton, react-markdown
+    Entry:      src/main.jsx -> BrowserRouter > Provider(store) > App
+    API base:   src/paths/url.jsx -> `import.meta.env.VITE_ORIGIN_URL || 'http://localhost:8080'`
+    Env:        frontend/src/.env  (NOTE: unusual location — inside src/)
+                    VITE_ORIGIN_URL=http://localhost:8080
+                    VITE_REVENUECAT_API_KEY=...
+    State:      src/store/store.js — slices: event, auth, user, subscription,
+                board, boardPayment, upload, message
+    Routes (src/App.jsx):
+        /                        MomentPage          (home / "moments")
+        /discover                HomePage
+        /create                  PostMessagePage
+        /profile                 ProfilePage
+        /login /signup           auth
+        /forgot-password         ForgotPasswordPage
+        /confirm-account         ResendVerificationLinkPage
+        /reset-password          ResetPasswordPage
+        /account-setup           AccountSetupPage
+        /verify-email            VerifyEmailPage
+        /board/:slug             SingleBoardPage
+        /profile/:username       UserProfilePage
+        /board/:slug/add-message CreateMessagePage
+        /board/:slug/edit        EditBoardPage
+        /message/:id/edit        EditMessagePage
+        *                        ErrorPage
+    Cross-cutting: ScrollToTop, NavigationHelper, EmailVerificationBanner,
+                RequireProfileSetup, Toaster.
+    Boot sequence in App.jsx: dispatch(getMyProfile()) if no userId; then
+                dispatch(updateProfileStatus()) once a username exists.
+
+1.3 NEW CLIENT (client/)
+    Stack:      Vite 6, React 19, TypeScript, react-router-dom v7 (HashRouter),
+                motion, lucide-react, @phosphor-icons/react, @google/genai
+    Layout:     FLAT — no src/. Files sit at client/ root.
+                tsconfig paths: "@/*" -> "./*"
+                vite alias:     "@"   -> __dirname
+    Files:      App.tsx (88 KB, 2204 lines — contains App + TopNavigation +
+                    HeroPulseFeed + BottomNav + MasonryFeed + EventCategoryView
+                    + INITIAL_MOCK_POSTS)
+                index.tsx (ErrorBoundary + MetaMask error suppression)
+                index.html, index.css, types.ts, metadata.json
+                components/  ActionMenuModal, AuthModal, Button, ColorPicker,
+                             ConfettiOverlay, ConfettiPickerModal,
+                             CreateAppreciationModal (182 KB!), EngagementPromptModal,
+                             FilterModal, HashtagView, HeartboardView (99 KB),
+                             HeroHeartAnimation, LiveHeartAnimation, MediaModal (52 KB),
+                             PostCard, ShareProfileModal, VectorPicker, WelcomeModal
+                hooks/       useEngagementPrompt.ts
+                services/    geminiService.ts
+    Routing:    HashRouter, and ONLY two routes: "/" and "*", both rendering
+                MasonryFeed (App.tsx:1848 and :1867). Every other "screen"
+                (profile, hashtag, board detail) is React state, not a URL.
+    Storage:    localStorage keys `heartboard_current_user`, `heartboard_welcome_dismissed`
+    Build risk: index.html contains BOTH an esm.sh <script type="importmap"> AND
+                the Tailwind Play CDN <script src="https://cdn.tailwindcss.com">.
+    Secret leak: vite.config.ts injects GEMINI_API_KEY into the browser bundle
+                via `define: { 'process.env.API_KEY': ... }`. See 3.4 / 6.5.
+    Missing:    no .gitignore, no .env, no eslint config, no favicon/manifest,
+                no public/ directory, no assets/ directory.
+
+1.4 GIT STATE AT TIME OF WRITING
+    branch main; `client/` is UNTRACKED (`?? client/`) and has no .gitignore,
+    so a naive `git add client` will commit client/node_modules (~86 packages).
+    FIX THAT FIRST — see Phase 0.
+
+
+--------------------------------------------------------------------------------
+2. DECISIONS TO MAKE BEFORE YOU TOUCH CODE
+--------------------------------------------------------------------------------
+
+D1. FOLDER NAME
+    Option A (RECOMMENDED): keep the new app at `client/`, retire `frontend/`
+        to `legacy-frontend/`, and update the 3 backend references.
+        + No huge rename diff, `client/` is the more conventional name.
+        - Must edit app.js and package.json (2 small edits).
+    Option B: `git mv frontend legacy-frontend && git mv client frontend`
+        + Zero backend edits.
+        - Every deploy config / doc / muscle memory that says "frontend" now
+          points at the new app; harder to tell the two apart in history.
+    This document assumes OPTION A. If you take B, invert the paths in Phase 1.
+
+D2. STATE MANAGEMENT
+    Option A (RECOMMENDED): thin service modules + React Context + local state.
+        The `client/` code is already 100% component-state driven. Porting Redux
+        would mean rewriting App.tsx's 30+ useState hooks. Instead add
+        `client/lib/api.ts` + `client/services/*.ts` and an AuthContext.
+    Option B: port the 8 Redux slices from `frontend/src/slices/` to TS.
+        Only worth it if you want the exact same loading/error flags.
+    Option C: TanStack Query on top of the service modules. Best long-term for
+        the feed/pagination/caching, but it's a new dependency and a new mental
+        model. Fine to adopt in Phase 7 for the feed only.
+
+D3. TAILWIND
+    Option A (RECOMMENDED): install Tailwind properly as a PostCSS build step.
+        The Play CDN prints a console warning, blocks first paint, cannot be
+        cached, and will not work offline. There are ~1,342 className usages —
+        they all keep working after a proper install.
+    Option B: ship the CDN. Acceptable ONLY for an internal demo. Do not ship
+        it to production.
+
+D4. FLAT LAYOUT vs src/
+    Option A (RECOMMENDED): move client's app files into `client/src/`.
+        Matches the old app, keeps `client/` root for config, and prevents
+        `dist/`, `node_modules/`, `App.tsx` all living side by side.
+        Requires updating index.html's script src and the `@` alias.
+    Option B: keep it flat. Works, but the root gets noisy fast once you add
+        lib/, services/, contexts/, types/, assets/.
+
+D5. SCOPE OF THE FIRST CUTOVER
+    Option A (RECOMMENDED): ship a "vertical slice" first — auth + feed +
+        board detail + create board — behind the real API, and keep mock data
+        for hearts/contributions until Phase 8 backend work lands.
+    Option B: big-bang cutover. Higher risk; you'll be debugging auth,
+        pagination and the canvas editor simultaneously.
+
+
+--------------------------------------------------------------------------------
+3. PHASE 0 — SAFETY NET (do this before anything else)
+--------------------------------------------------------------------------------
+
+3.1 Create `client/.gitignore` (CRITICAL — client/node_modules is untracked):
+
+    node_modules
+    dist
+    dist-ssr
+    *.local
+    .env
+    .env.*
+    !.env.example
+    .DS_Store
+    *.log
+
+3.2 Also add `.DS_Store` to the ROOT `.gitignore`. Right now the root
+    .gitignore is only 4 lines and `.DS_Store` shows as modified on every
+    `git status`. Then: `git rm --cached .DS_Store frontend/.DS_Store client/.DS_Store`
+
+3.3 Commit the prototype AS-IS on a branch, so you always have the pristine
+    AI-Studio export to diff against:
+
+        git checkout -b migration/client
+        git add client/.gitignore .gitignore
+        git commit -m "chore: gitignore for new client"
+        git add client
+        git commit -m "chore: import AI Studio client prototype as-is"
+
+    Verify nothing huge slipped in:  git show --stat HEAD | tail -5
+
+3.4 ROTATE THE GEMINI KEY. `client/vite.config.ts` bakes `GEMINI_API_KEY` into
+    the browser bundle. If that key has ever been used with a real value and the
+    bundle was shared, treat it as public. Generate a new key, and do NOT put it
+    in any VITE_/client env — it moves to the server in Phase 6.5.
+
+3.5 Snapshot the working production build so you can compare:
+        cp -r frontend/dist /tmp/heartboard-dist-backup
+
+
+--------------------------------------------------------------------------------
+4. PHASE 1 — FOLDER SWAP + BUILD/SERVE WIRING
+--------------------------------------------------------------------------------
+
+4.1 Retire the old app (keep it in git history and on disk for reference):
+
+        git mv frontend legacy-frontend
+
+    (Do NOT delete. Phase 12 handles removal, after the new app is live.)
+
+4.2 Update `package.json` (repo root) build script:
+
+        BEFORE: "build": "cd frontend && npm install && npm run build"
+        AFTER:  "build": "cd client && npm install && npm run build"
+
+    Consider also adding, for local dev convenience:
+        "dev:api":    "nodemon app.js",
+        "dev:client": "cd client && npm run dev",
+        "dev":        "npm-run-all --parallel dev:api dev:client"   (needs npm-run-all)
+
+4.3 Update `app.js` — there are exactly TWO path references:
+
+        // ~line 66
+        app.use(express.static(path.join(__dirname, 'frontend', 'dist')));
+        =>
+        app.use(express.static(path.join(__dirname, 'client', 'dist')));
+
+        // SPA fallback, ~line 96
+        res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+        =>
+        res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
+
+    Leave the `if (req.path.startsWith('/api/')) return next();` guard exactly
+    as-is — it is what keeps API 404s behaving correctly.
+
+4.4 (Recommended, D4) Move app files into `client/src/`:
+
+        cd client
+        mkdir -p src
+        git mv App.tsx index.tsx index.css types.ts components hooks services src/
+
+    Then update:
+      - `client/index.html`:  <script type="module" src="/index.tsx">
+                              ->  <script type="module" src="/src/index.tsx">
+                              <link rel="stylesheet" href="/index.css">
+                              ->  remove it and `import './index.css'` from index.tsx
+      - `client/vite.config.ts`: alias '@' -> path.resolve(__dirname, './src')
+      - `client/tsconfig.json`:  "paths": { "@/*": ["./src/*"] }
+
+4.5 Create `client/public/` and copy the static assets the backend/SEO expect.
+    The old build output (legacy-frontend/dist/) contained:
+        favicon.ico, manifest.json, robots.txt, paper.png
+    Copy them over:
+        mkdir -p client/public
+        cp legacy-frontend/public/* client/public/ 2>/dev/null || true
+        cp legacy-frontend/dist/favicon.ico legacy-frontend/dist/manifest.json \
+           legacy-frontend/dist/robots.txt client/public/
+
+    Also port `legacy-frontend/src/assets/` (logos, SVG frames, confetti,
+    share-profile frames, vectors) — the new client currently references remote
+    Unsplash/DiceBear URLs for everything. Anything the design needs locally
+    goes to `client/src/assets/`.
+
+4.6 Verify the plumbing before writing any feature code:
+
+        cd client && npm install && npm run build
+        ls client/dist/index.html          # must exist
+        cd .. && npm start
+        curl -I http://localhost:8080/                    # 200, HTML
+        curl -I http://localhost:8080/board/anything      # 200, HTML (SPA fallback)
+        curl -i http://localhost:8080/api/v1/nope         # 404 JSON, NOT html
+
+    If the last one returns HTML, the `startsWith('/api/')` guard was broken.
+
+
+--------------------------------------------------------------------------------
+5. PHASE 2 — BUILD HYGIENE (make client/ production-grade)
+--------------------------------------------------------------------------------
+
+5.1 REMOVE THE IMPORTMAP from `client/index.html`.
+    It maps react, react-dom, react-router-dom and @google/genai to esm.sh.
+    Vite bundles those same packages from node_modules at build time. Keeping
+    both risks TWO React copies at runtime (the classic "Invalid hook call" /
+    "hooks can only be called inside a function component" error) and makes the
+    app fail entirely if esm.sh is unreachable. Delete the whole
+    `<script type="importmap">...</script>` block.
+
+5.2 REPLACE THE TAILWIND CDN (decision D3-A):
+
+        cd client
+        npm i -D tailwindcss@3 postcss autoprefixer
+        npx tailwindcss init -p
+
+    tailwind.config.js:
+        content: ['./index.html', './src/**/*.{ts,tsx}'],
+        theme: { extend: {
+          colors: { brand: '#FE6349', ink: '#1A1B25', muted: '#666D80' },
+          fontFamily: { sans: ['Nunito','sans-serif'], hand: ['Caveat','cursive'] },
+        }},
+
+    Top of `src/index.css`:
+        @tailwind base;
+        @tailwind components;
+        @tailwind utilities;
+    ...then keep the existing custom `.bg-gray-0` … `.border-gray-900` token
+    classes and `.handwriting` below it (they are plain CSS, they still work).
+    Move the `.app-container` and `.cta-button` rules out of index.html's inline
+    <style> into index.css too.
+
+    IMPORTANT: the Play CDN supports arbitrary values like `bg-[#FE6349]` and
+    `shadow-xs`. Tailwind v3 supports arbitrary values too, but `shadow-xs` is a
+    v4 name — in v3 it is `shadow-sm`. Grep for `shadow-xs` after the switch and
+    fix, or define it in the config. Do a full visual pass after this step.
+
+5.3 Fonts: index.html loads Nunito + Caveat from Google Fonts AND index.css
+    @imports the same two families. Keep exactly one (prefer the <link> with
+    `preconnect`, and drop the @import — @import blocks CSS parsing).
+
+5.4 Delete `client/metadata.json`. It is AI Studio scaffolding
+    ("MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API", requestFramePermissions) and has
+    no meaning in your deployment. If you want camera/mic, use the browser
+    Permissions API at the point of use.
+
+5.5 `client/bun.lock` AND `client/package-lock.json` both exist. Pick ONE
+    package manager (npm, to match the root build script) and
+    `git rm client/bun.lock`.
+
+5.6 `client/index.html` and `client/src/index.tsx` both install a MetaMask /
+    window.ethereum error suppressor. That was for the AI Studio iframe sandbox.
+    On your own domain it silently swallows genuine errors — including any
+    error whose message happens to contain "ethereum". Remove the duplicate in
+    index.html at minimum; strongly consider removing both.
+
+5.7 Port the <head> SEO block from `legacy-frontend/index.html` into
+    `client/index.html` — you will lose it otherwise:
+        <title>Heart Board</title>, description meta, theme-color,
+        og:title / og:description / og:type / og:url / og:image / og:image:alt,
+        <link rel="canonical" href="https://heartboardapp.com/">,
+        favicon + apple-touch-icon + manifest.
+    NOTE: the new client's <title> is currently "Goodwall | Spread Kindness"
+    while the whole product is branded "Heartboard". Pick one name and make it
+    consistent across index.html, metadata, og tags, and the AuthModal copy.
+
+5.8 Add an eslint config (copy `legacy-frontend/eslint.config.js` and add
+    typescript-eslint), plus `"typecheck": "tsc --noEmit"` to client scripts.
+    Run `npm run typecheck` NOW to see the baseline error count before you
+    start editing — you want to know which errors you introduced.
+
+5.9 tsconfig note: `"allowImportingTsExtensions": true` + `"noEmit": true` is
+    fine for Vite, but combined with `"strict"` being ABSENT means you have no
+    strict null checks. Turn on `"strict": true` before writing the API layer,
+    or the adapter functions in Phase 5 will hide a lot of undefined bugs.
+
+
+--------------------------------------------------------------------------------
+6. PHASE 3 — ROUTING (blocking; do before any data wiring)
+--------------------------------------------------------------------------------
+
+This phase is non-negotiable. The backend and your emails generate PATH URLs,
+and the new client uses a HashRouter with two routes.
+
+6.1 SWITCH HashRouter -> BrowserRouter.
+    `client/src/App.tsx:3`:
+        import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+        =>
+        import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+
+    WHY THIS IS MANDATORY:
+      - `app.js` already serves index.html for every non-/api path, so
+        BrowserRouter works with zero server changes.
+      - `controllers/authController.js:203` redirects Google OAuth to
+        `${CLIENT_URL}` and `:187/:206` to `${CLIENT_URL}/login?error=auth_failed`
+        — a path, not a hash.
+      - Email verification / password reset links carry `?verificationToken=` and
+        `?token=` query params on paths. With HashRouter the router never sees
+        them at the right place.
+      - `boardController.shareBoard` returns a `shareUrl` for a board slug.
+        Shared links must be `/board/:slug`, not `/#/board/:slug`.
+
+6.2 BUILD THE REAL ROUTE TABLE. Port these from `legacy-frontend/src/App.jsx`
+    and map them onto the new client's views:
+
+    PATH                        RENDERS (new client)              AUTH
+    ------------------------    ------------------------------    --------
+    /                           MasonryFeed (moments)             public
+    /discover                   MasonryFeed (discover sort)       public
+    /board/:slug                MediaModal / board detail view    public*
+    /profile                    HeartboardView (own profile)      required
+    /profile/:username          HeartboardView (public profile)   required**
+    /hashtag/:tag               HashtagView                       public
+    /create                     CreateAppreciationModal (page)    required
+    /board/:slug/add-message    CreateAppreciationModal (contrib) required
+    /board/:slug/edit           CreateAppreciationModal (edit)    required
+    /message/:id/edit           CreateAppreciationModal (edit)    required
+    /login  /signup             AuthView                          public
+    /forgot-password            AuthView (reset step)             public
+    /reset-password             AuthView (new-password step)      public
+    /confirm-account            AuthView (resend verification)    public
+    /verify-email               verification handler screen       public
+    /account-setup              username/country/accountType      required
+    *                           ErrorPage / 404                   public
+
+      *  private boards return 403 — handle it, don't crash.
+      ** GET /api/v1/user/profile/:username currently requires auth
+         (userRoute.js). Either sign the viewer in first, or relax it to
+         `checkUser` on the backend if public profiles should be public.
+
+6.3 CRITICAL CONSEQUENCE: the new client renders profiles / hashtags / board
+    detail from React state (`viewingProfileUser`, `viewingHashtag`,
+    `selectedPostIndex` in App.tsx:1517-1526), NOT from the URL. You must lift
+    those into route params:
+        setViewingProfileUser(user)  ->  navigate(`/profile/${handle.slice(1)}`)
+        setViewingHashtag(tag)       ->  navigate(`/hashtag/${tag.replace('#','')}`)
+        setSelectedPostIndex(i)      ->  navigate(`/board/${post.slug}`)
+    ...and read them back with `useParams()`. Without this, share links, browser
+    back/forward, refresh, and SEO are all broken.
+
+6.4 Port these cross-cutting pieces from legacy-frontend/src:
+        helpers/ScrollToTop.jsx            -> scroll to top on route change
+        helpers/NavigationHelper.jsx       -> nav chrome wrapper
+        components/RequireProfileSetup.jsx -> gate that forces /account-setup
+                                              when the logged-in user has no
+                                              `username` yet. THE BACKEND
+                                              DEPENDS ON THIS: username is
+                                              optional in userModel but every
+                                              profile URL and @handle needs it.
+        components/auth/EmailVerificationBanner.jsx
+                                           -> persistent banner while
+                                              `user.isEmailVerified === false`
+
+6.5 The new client uses `motion` (framer-motion successor) for transitions.
+    Wrap route changes in `<AnimatePresence mode="wait">` keyed on
+    `useLocation().pathname` so the existing animation language survives the
+    move from state-based to route-based views.
+
+
+--------------------------------------------------------------------------------
+7. PHASE 4 — THE API LAYER
+--------------------------------------------------------------------------------
+
+7.1 Install axios in the client:  `cd client && npm i axios`
+
+7.2 Create `client/.env` and `client/.env.example`:
+
+        VITE_ORIGIN_URL=http://localhost:8080
+        VITE_REVENUECAT_API_KEY=          # only if you keep RevenueCat in-app
+
+    NOTE: the old app kept its .env at `legacy-frontend/src/.env`. Vite only
+    auto-loads from the project ROOT, so that file was likely doing nothing and
+    the code was falling back to the `|| 'http://localhost:8080'` default in
+    paths/url.jsx. Put the new one at `client/.env` (root of the Vite project).
+    NEVER put a secret in a VITE_ var — everything VITE_* is public.
+
+7.3 `client/src/lib/api.ts`:
+
+        import axios from 'axios';
+
+        export const API_ORIGIN =
+          import.meta.env.VITE_ORIGIN_URL || 'http://localhost:8080';
+
+        export const api = axios.create({
+          baseURL: `${API_ORIGIN}/api/v1`,
+          withCredentials: true,               // REQUIRED: signed cookie auth
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        // Normalise the backend's inconsistent error shape.
+        // Controllers return { message } in most places but { msg } in
+        // logout/errorMiddleware. Handle BOTH.
+        export type ApiError = { status: number; message: string };
+
+        export function toApiError(e: unknown): ApiError {
+          const err = e as any;
+          return {
+            status: err?.response?.status ?? 0,
+            message:
+              err?.response?.data?.message ??
+              err?.response?.data?.msg ??
+              err?.message ??
+              'Network error occurred',
+          };
+        }
+
+        api.interceptors.response.use(
+          (r) => r,
+          (error) => {
+            if (error?.response?.status === 401) {
+              // cookie expired or missing -> clear local user, prompt auth
+              window.dispatchEvent(new CustomEvent('heartboard:unauthorized'));
+            }
+            return Promise.reject(error);
+          },
+        );
+
+7.4 Add a Vite dev proxy so dev and prod use the same relative paths and you
+    dodge all cross-origin cookie problems (`client/vite.config.ts`):
+
+        server: {
+          port: 3000,
+          host: '0.0.0.0',
+          proxy: {
+            '/api': { target: 'http://localhost:8080', changeOrigin: true },
+          },
+        },
+
+    With the proxy in place you can set `baseURL: '/api/v1'` and drop
+    VITE_ORIGIN_URL entirely. RECOMMENDED — it also means production (where the
+    API and the SPA are the same origin) behaves identically to dev.
+
+7.5 Write one service module per backend resource, mirroring
+    `legacy-frontend/src/slices/`. Suggested files under `client/src/services/`:
+
+        auth.api.ts          register, verifyEmail, resendVerification, login,
+                             logout, forgotPassword, resetPassword, googleLogin
+        user.api.ts          checkUsername, getMyProfile, updateProfile,
+                             getPublicProfile, changePassword, deleteAccount,
+                             likeProfile, getLikedProfiles, listUsers, updateRole
+        board.api.ts         createBoard, getMyBoards, getBoardBySlug, updateBoard,
+                             deleteBoard, likeBoard, getMyReaction, patchReaction,
+                             shareBoard, discoverBoards, getBoardsByHashtag,
+                             getBoardLikes, flagBoard, unflagBoard
+        message.api.ts       postMessage, getBoardMessages, getMessage, editMessage,
+                             deleteMessage, getMyMessages, moderateBoardMessage,
+                             postDirectMessage, getUserWallMessages,
+                             moderateDirectMessage
+        upload.api.ts        uploadFile (multipart)
+        subscription.api.ts  getMySubscription, verifyPurchase, cancelSubscription
+        boardPayment.api.ts  createBoardUpgrade, getBoardPayments
+
+    Copy the URLs and payload keys EXACTLY from the old slices — they are your
+    ground truth. Appendix A has the full list.
+
+7.6 Upload must NOT set a JSON content-type:
+
+        export async function uploadFile(file: File, type?: 'image'|'video'|'audio') {
+          const fd = new FormData();
+          fd.append('file', file);
+          if (type) fd.append('type', type);
+          const { data } = await api.post('/upload', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          return data; // { message, type, url, publicId, format, bytes, duration, width, height }
+        }
+
+    Backend limits (controllers/uploadController.js): image 10 MB, video 100 MB,
+    audio 20 MB. Enforce these client-side BEFORE upload and show a real message
+    — the server error is a generic 400.
+    Allowed MIME types are whitelisted server-side; `image/svg+xml` is NOT
+    allowed, and the new client's VectorPicker deals in SVGs. Check that path.
+
+7.7 Two-step media flow. The backend expects you to upload FIRST and then send
+    the returned URL/publicId in the board/message payload:
+        1) POST /upload            -> { url, publicId, ... }
+        2) POST /board             with { coverImage: url, coverImagePublicId: publicId }
+           or POST /message/:slug  with { content: { imageUrls:[url], audioUrl, duration },
+                                          cloudinaryPublicId: publicId, fileType }
+    boardController compensates by deleting the Cloudinary asset if step 2 fails
+    — so always pass the publicId, or you will leak orphaned uploads.
+
+
+--------------------------------------------------------------------------------
+8. PHASE 5 — DATA MODEL MAPPING (the heart of the migration)
+--------------------------------------------------------------------------------
+
+The client's types and the backend's schemas describe the same product with
+different words. Do NOT rename the client's types — write ADAPTERS. Put them in
+`client/src/lib/adapters.ts` and convert at the API boundary only.
+
+8.1 BOARD  <->  client `Post`
+
+    client Post field        backend Board field / source
+    ---------------------    --------------------------------------------------
+    id                       board._id
+    (route key)              board.slug            <-- ADD `slug` TO Post. The
+                                                      client has no slug concept
+                                                      but every board endpoint
+                                                      is keyed by slug.
+    authorName               board.owner.username
+    authorHandle             '@' + board.owner.username
+    authorAvatar             board.owner.profileImage
+    authorId                 board.owner._id
+    recipientName            board.receipent?.username   (NOTE the backend
+                                                      misspells it "receipent")
+    recipientHandle          '@' + board.receipent?.username
+                             or board.receipentHashtag
+    content                  board.description
+    caption                  board.title           <-- or map title->content,
+                                                      description->caption; pick
+                                                      one and be consistent
+    imageUrl / mediaUrl      board.coverImage
+    visibility               board.visibility      'public'|'private'|'anonymous'
+                                                   -> PostVisibility.PUBLIC /
+                                                      PRIVATE / ANONYMOUS
+                                                      (case conversion required)
+    createdAt                board.createdAt
+    reactions                board.stats.likes
+    eventType                board.event           enum: birthday|wedding|
+                                                   anniversary|graduation|sport|
+                                                   retirement|promotion|other
+    hashtags                 board.tags[]  (+ board.receipentHashtag)
+    targetType               EntityType.BOARD, or WALL when receipentHashtag set
+    targetId                 board.slug
+    contributions[]          separate call: GET /message/:slug/board
+    statusBadge              board.tier            basic|standard|premium
+    isCreatedByUser          board.owner._id === me._id
+    theme, sticker, confetti NO BACKEND FIELD  -> see 9.1
+    boardCapacity/maxCapacity NO BACKEND FIELD  -> see 9.2
+    collaborators[]          NO BACKEND FIELD  -> see 9.2
+    isHeartToken/selectedHearts/heartDetails  NO BACKEND FIELD -> see 9.3
+
+    Also available and currently unused by the client:
+        board.stats.shares, .visits, .messages
+        board.lastReaction, board.onlyMe, board.isActive
+        board.receipentFlagged, board.receiprentFlagReason  (sic)
+
+    LIST-vs-DETAIL WARNING: the list endpoints use `.select(...)`, so
+    GET /board and GET /board/discover return ONLY:
+        title description slug stats tier owner coverImage event createdAt
+        (+ visibility tags isActive receipentFlagged receiprentFlagReason on /board)
+    They do NOT include `receipent`, `description` details, or messages. Your
+    card component must tolerate missing fields; only GET /board/:slug is full.
+
+8.2 MESSAGE  <->  client `Contribution`
+
+    client Contribution      backend Message field
+    ---------------------    --------------------------------------------------
+    id                       message._id
+    authorName               message.sender.username
+    authorHandle             '@' + message.sender.username
+    authorAvatar             message.sender.profileImage
+    authorId                 message.sender._id
+    content                  message.content.text
+    type                     message.type          'text'|'audio'|'emblem'
+                                                   (client uses 'text'|'image'|
+                                                    'audio' — 'image' maps to
+                                                    'emblem' + content.imageUrls,
+                                                    THERE IS NO 'image' TYPE
+                                                    SERVER-SIDE)
+    imageUrl / mediaUrl      message.content.imageUrls[0] or content.audioUrl
+    canvasElements           message.canvasData    (Mixed — free-form JSON, this
+                                                   is where the whole canvas
+                                                   editor state lives; the old
+                                                   app already used it)
+    createdAt                message.createdAt
+    reactions/reactionCounts NO BACKEND FIELD  -> see 9.4
+    sticker / confetti       fold into content.vectorKey / canvasData
+
+    Backend `content` sub-document (models/message.js) — use ALL of it, the new
+    client's frame/color/font pickers map straight onto these:
+        text, font, color, background, frame, imageUrls[], vectorKey,
+        audioUrl, duration
+    Other fields: context ('board'|'direct'), status ('pending'|'approved'|
+    'rejected'), isRead, board, recipient, sender.
+
+8.3 USER  <->  client `RegisteredUser`
+
+    client RegisteredUser    backend User field
+    ---------------------    --------------------------------------------------
+    id                       user._id
+    name                     user.username         (no separate display name!)
+    handle                   '@' + user.username
+    avatar                   user.profileImage
+    heartsCount              user.stats.profileLikes  (closest analogue)
+    boardsCount              user.stats.totalBoards
+    messagesCount            user.stats.totalMessages
+    taggedCount              NO DIRECT FIELD (derive from /board?view=tagged total)
+    isVerified               NO BACKEND FIELD  -> see 9.5
+    bio                      NO BACKEND FIELD  -> see 9.5
+    role                     user.role  ('user'|'admin'|'super_admin') — note the
+                             client uses `role` for a DISPLAY label
+                             ("Verified Curator"), the backend for AUTHORIZATION.
+                             RENAME the client's to `roleLabel` to avoid a
+                             privilege-display bug.
+
+    Backend-only, currently unused by the client but needed by flows:
+        email, isEmailVerified, country, accountType ('personal'|'enterprise'),
+        oauthProvider, lastLoginMethod, likedProfiles[],
+        stats.totalLikes, stats.totalCurators, stats.totalBoardsUpgraded
+
+8.4 Write the adapters as pure functions and unit-test the enum conversions:
+
+        export const toPostVisibility = (v: string): PostVisibility =>
+          v === 'private'   ? PostVisibility.PRIVATE
+          : v === 'anonymous' ? PostVisibility.ANONYMOUS
+          : PostVisibility.PUBLIC;
+
+        export const fromPostVisibility = (v: PostVisibility) =>
+          v === PostVisibility.PRIVATE ? 'private'
+          : v === PostVisibility.ANONYMOUS ? 'anonymous'
+          : 'public';
+
+        export function boardToPost(b: any, meId?: string): Post { ... }
+        export function messageToContribution(m: any, meId?: string): Contribution { ... }
+        export function userToRegisteredUser(u: any): RegisteredUser { ... }
+
+8.5 DELETE THE MOCKS once each screen is wired:
+        types.ts:32          MOCK_REGISTERED_USERS   (14 fake users)
+        App.tsx:51           INITIAL_MOCK_POSTS
+        AuthModal.tsx:20     the MOCK_REGISTERED_USERS import
+    Keep them temporarily in a `__mocks__/` folder if you want a storybook /
+    offline mode, but they must not be importable from production code — a
+    leftover `|| MOCK_REGISTERED_USERS[2]` fallback is exactly how a "logged in
+    as Micky Mouse" bug reaches production.
+
+8.6 Kill the fake counters in App.tsx:1590-1598. `realtimeStats` is currently
+    `8300 + ...`, `245 + ...`, `7600000 + random ticks on a 2.8s interval`.
+    Replace with real aggregates. There is no stats endpoint today — either add
+    one (see 9.6) or derive from `pagination.total` on the discover call and
+    `user.stats` on /user/me.
+
+
+--------------------------------------------------------------------------------
+9. PHASE 6 — AUTHENTICATION (replace the mock entirely)
+--------------------------------------------------------------------------------
+
+9.1 Current mock behaviour to REMOVE from `components/AuthModal.tsx`:
+      - line ~115: username availability checked against MOCK_REGISTERED_USERS
+                   -> replace with GET /user/check-username/:username (debounced)
+      - line ~179: `MOCK_REGISTERED_USERS.find(...) || MOCK_REGISTERED_USERS[2]`
+                   -> replace with POST /auth/login
+      - line ~197: `password.length < 6` client-only rule
+                   -> the backend enforces validator.isStrongPassword with
+                      { minLength:5, minLowercase:1, minUppercase:1,
+                        minNumbers:1, minSymbols:1 }.
+                      MIRROR THAT EXACTLY or users will pass the client check
+                      and get a 400 from the server.
+      - PRESET_AVATARS (line 32): keep as a convenience, but real avatars go
+        through POST /upload -> PATCH /user/profile { profileImage: url }.
+
+9.2 Create `client/src/contexts/AuthContext.tsx`:
+
+        - state: user (RegisteredUser|null), loading, isEmailVerified, rawUser
+        - on mount: GET /user/me
+              200 -> setUser(userToRegisteredUser(data.user))
+              401 -> setUser(null)   [this is normal, not an error — do not toast]
+        - login(email,password):   POST /auth/login, then GET /user/me
+        - register(email,password):POST /auth/register  (NOTE: returns only a
+              message; NO user, NO cookie. The user must verify their email
+              before they can log in. The old app set
+              localStorage 'profileSetupData' = true here.)
+        - logout(): POST /auth/logout, clear state, navigate('/')
+        - refresh(): GET /user/me
+        - listen for the 'heartboard:unauthorized' event from the interceptor
+
+    REPLACE the localStorage-as-source-of-truth in App.tsx:1413-1485
+    (`heartboard_current_user`). Never trust localStorage for identity — the
+    server cookie is the only authority. You may keep localStorage as a
+    render-optimisation cache, but always re-validate with /user/me on mount.
+
+9.3 THE FULL AUTH FLOW — port each screen from legacy-frontend/src/pages/auth/
+    and components/account/:
+
+    Sign up     POST /auth/register {email,password}
+                -> 201 {message}. Show "check your email". NO auto-login.
+    Verify      Email links to  ${CLIENT_URL}/verify-email?verificationToken=XXX
+                -> route reads the query param, POSTs
+                   /auth/verify-email?verificationToken=XXX  (query, not body!)
+                -> 200 {message} -> send to /login
+    Resend      /confirm-account -> POST /auth/resend-verification-email {email}
+    Login       POST /auth/login {email,password}
+                -> 200 {message, user:{id,email,...}} + signed cookie set
+                -> then GET /user/me for the full profile
+                -> if !user.username  ->  navigate('/account-setup')
+    Google      window.location.href = `${API_ORIGIN}/api/v1/auth/google`
+                (full page redirect — NOT an axios call)
+                Backend redirects back to `${CLIENT_URL}` on success or
+                `${CLIENT_URL}/login?error=auth_failed` on failure. Handle that
+                query param and show an error. On success the app boots, calls
+                /user/me, sees no username, and routes to /account-setup.
+    Forgot      POST /auth/forgot-password {email}
+    Reset       Email links to ${CLIENT_URL}/reset-password?token=XXX
+                PATCH /auth/reset-password {token,newPassword,confirmPassword}
+                (PATCH, not POST)
+    Logout      POST /auth/logout
+    Change pw   PATCH /user/change-password {currentPassword,newPassword}
+                (logged-in flow — different endpoint from the reset flow)
+    Delete acct DELETE /user/delete-account
+
+9.4 ACCOUNT SETUP (`/account-setup`) — this screen does not exist in the new
+    client and MUST be built. Port the 4 steps from
+    legacy-frontend/src/components/account/:
+        SelectAccountType.jsx   -> accountType: 'personal' | 'enterprise'
+        SelectCountry.jsx       -> country
+        CreateUsername.jsx      -> username (3-14 chars; live availability via
+                                   GET /user/check-username/:username)
+        SelectAccountTier.jsx   -> subscription plan selection
+    Submit with PATCH /user/profile {username, profileImage, country, accountType}
+    Gate the app with RequireProfileSetup until `username` exists.
+
+9.5 GUEST MODE. The client currently lets guests "contribute" with
+    `authorId: 'guest'` (CreateAppreciationModal.tsx:1573). The backend does
+    NOT support this — POST /message/:slug requires `authentication` and sets
+    `sender` from the JWT. Either:
+        (a) require sign-in before contributing (matches App.tsx's existing
+            handleOpenAuth prompts — RECOMMENDED, smallest change), or
+        (b) add a guest-token flow server-side (real work, see 9.7).
+    Anonymous posting IS supported via board.visibility='anonymous' — that's a
+    display concern, not an identity one. Map the client's
+    PostVisibility.ANONYMOUS to that, and stop inventing a fake '@anon' author
+    client-side.
+
+9.6 MOVE GEMINI TO THE SERVER.
+    `client/services/geminiService.ts` calls the Gemini API directly from the
+    browser with a build-time-injected key. Three functions: moderateContent,
+    refineText, transcribeAudio.
+
+    Do this instead:
+      1. `npm i @google/genai` at the REPO ROOT (server side).
+      2. Add `routes/aiRoute.js` + `controllers/aiController.js`:
+             POST /api/v1/ai/moderate   { text }   -> { isSafe, reason, sentiment }
+             POST /api/v1/ai/refine     { text }   -> { text }
+             POST /api/v1/ai/transcribe { audio }  -> { text }
+         All three behind `authentication`, and behind a tighter rate limit than
+         the global 100/15min (these cost money per call).
+      3. Register in app.js:  app.use('/api/v1/ai', AiRouter);
+      4. Add GEMINI_API_KEY to the ROOT .env only.
+      5. Rewrite client/src/services/geminiService.ts to call those endpoints
+         via `api`, keeping the exact same function signatures so the call sites
+         in CreateAppreciationModal don't change.
+      6. Delete the `define: { 'process.env.API_KEY' ... }` block from
+         client/vite.config.ts.
+
+    Also: server-side moderation is the only kind that means anything. Right now
+    a user can bypass it with devtools. Once it's on the server, ALSO call
+    moderateContent inside messageController.postMessage / boardController
+    .createBoard so the "positive-only" guarantee is actually enforced.
+
+9.7 SESSION EDGE CASES to handle explicitly:
+      - Cookie has no `sameSite` and `httpOnly:false` (helpers/jwtHelper.js).
+        Same-origin production (API + SPA on one host) is fine. If you ever
+        split the SPA onto a different domain (Vercel/Netlify + API elsewhere)
+        you MUST set `sameSite:'none'; secure:true` or auth silently breaks in
+        Chrome/Safari. Decide your topology BEFORE cutover.
+      - Cookie lifetime is 5 days. Expiry mid-session yields a 401 from any
+        endpoint — the interceptor must surface the auth modal, not a crash.
+      - `checkUser` routes (GET /board/discover, /board/:slug, /board/hashtag/:tag,
+        GET /message/:slug/board) work signed-out. Make sure the feed renders
+        for logged-out visitors — that's your acquisition funnel.
+
+
+--------------------------------------------------------------------------------
+10. PHASE 7 — SCREEN-BY-SCREEN WIRING
+--------------------------------------------------------------------------------
+
+Work in this order. Each item lists the client file and the endpoints it needs.
+
+10.1 FEED / MOMENTS  (App.tsx MasonryFeed + HeroPulseFeed)
+     GET /board/discover?page&limit&sort&event         sort: latest | ...
+       -> { boards, pagination:{total,page,limit,pages} }
+     Replace `useState(INITIAL_MOCK_POSTS)` with a fetch + infinite scroll or
+     pagination. Map with boardToPost(). Keep `filteredPosts` derivation but
+     move server-supported filters (event, sort) into query params instead of
+     client-side .filter() — the client currently filters an in-memory array,
+     which will only ever show page 1.
+     FilterModal's FILTER_OPTIONS must be reconciled with the backend's `event`
+     enum: birthday, wedding, anniversary, graduation, sport, retirement,
+     promotion, other. Anything else in the picker needs a schema change.
+
+10.2 BOARD DETAIL  (MediaModal.tsx, route /board/:slug)
+     GET /board/:slug                    -> { board, sponsors }
+     GET /message/:slug/board?page&limit&type&status -> { messages, pagination }
+     GET /board/:id/reaction/me          -> { reaction }
+     POST /board/:id/like                -> { liked, likeCount }
+     PATCH /board/:id/reaction {reaction}-> { reaction, lastReaction }
+     POST /board/:id/share               -> { shareUrl, shares }
+     Handle 403 "This board is private." and 404 explicitly.
+     `sponsors` (from Sponsorship) is returned and completely unused by the new
+     client — the old design had sponsor display. Decide whether to keep it.
+
+10.3 CREATE BOARD  (CreateAppreciationModal.tsx, ~line 1599 `newPost`)
+     Optional first:  POST /upload (cover image)
+     POST /board {title, description, visibility, receipent, event,
+                  coverImage, coverImagePublicId, tags}
+       -> 201 { message, board }
+     Then navigate to `/board/${board.slug}`.
+     `receipent` must be a USER _id (ObjectId) or null. The modal collects
+     `recipients: string[]` of @handles. You need a resolve step:
+        GET /user/check-username/:username tells you if it exists, but does NOT
+        return the id. You need either the public-profile call
+        (GET /user/profile/:username -> user._id) or a new lookup endpoint.
+     For hashtag recipients, send `tags: [...]`; the backend also has
+     `receipentHashtag` — check boardController.createBoard for which it reads.
+     `maxCapacity`/`boardCapacity`/`collaborators` have nowhere to go — see 11.2.
+
+10.4 ADD MESSAGE / CONTRIBUTION  (CreateAppreciationModal, isContribution branch)
+     Optional first: POST /upload (image or audio)
+     POST /message/:slug {type, content:{text,font,color,background,frame,
+                          imageUrls,vectorKey,audioUrl,duration},
+                          cloudinaryPublicId, fileType, canvasData}
+       -> 201 { message, data }
+     type must be 'text' | 'audio' | 'emblem'. Map the client's 'image' -> 'emblem'.
+     canvasData carries the full canvas editor state — send the modal's
+     `canvasElements` array here. The backend stores it as Mixed, so the shape
+     is entirely yours; keep it stable and versioned (`{v:1, elements:[...]}`)
+     because you will change the editor later.
+     BOARD TIER LIMITS ARE ENFORCED: models/boardModel.js
+       basic 30 messages, standard 50, premium unlimited.
+     `canAcceptMessage()` will reject beyond that. Surface a real "board is
+     full, upgrade" state — this is the upsell hook into board payments.
+
+10.5 EDIT / DELETE
+     PATCH  /board/:id      (board fields)        -> { message, board }
+     DELETE /board/:id                            -> { message }
+     PATCH  /message/:id    {content, cloudinaryPublicId, fileType, canvasData}
+     DELETE /message/:id                          -> { message, boardDeleted }
+     NOTE `boardDeleted` — deleting the last message can delete the board. The
+     UI must handle being navigated away.
+     Wire these into ActionMenuModal.tsx's onEditBoard / onDeleteBoard /
+     onEditContribution / onDeleteContribution, which are currently local-state
+     only. Add optimistic update + rollback on failure.
+
+10.6 PROFILE  (HeartboardView.tsx — 99 KB, the biggest wiring job)
+     Own profile   GET /user/me                    -> { user }
+                   GET /board?view=owned|tagged&page&limit&tier&visibility&status&event
+                                                   -> { view, boards, pagination }
+                   GET /message/mine?page&limit&context -> { messages, pagination }
+                   GET /board/likes/me             -> { likedBoardIds }
+                   GET /user/likes/me              -> { likedProfileIds }
+     Other profile GET /user/profile/:username?view -> { user, boards, view,
+                                                        summary:{mostLikedBoard,
+                                                        activeBoard, topCurator} }
+                   POST /user/:id/like             -> { likeCount }
+     The view's four tabs are `'board' | 'tagged' | 'collaboration' | 'hearts'`:
+        board         -> GET /board?view=owned
+        tagged        -> GET /board?view=tagged
+        collaboration -> NO BACKEND SUPPORT (see 11.2)
+        hearts        -> NO BACKEND SUPPORT (see 11.3)
+     `heartFilter: 'received' | 'sent'` similarly has no server concept.
+
+10.7 HASHTAG PAGE  (HashtagView.tsx, route /hashtag/:tag)
+     GET /board/hashtag/:tag?page&limit -> { boards, total, page, pages }
+     (Note this endpoint returns a FLAT total/page/pages, not a `pagination`
+     object like the others. Inconsistent — normalise in the adapter.)
+     Currently HashtagView filters an in-memory `posts` array. Replace with the
+     endpoint; it uses `checkUser`, so it works signed-out.
+
+10.8 SEARCH  (TopNavigation.tsx:523, tabs all|users|boards|hashtags)
+     THERE IS NO SEARCH ENDPOINT for boards or hashtags. Today it filters
+     MOCK_REGISTERED_USERS in memory (App.tsx:540, :1692). Options:
+       (a) users only: GET /user?search=  — but that route is ADMIN-ONLY
+           (adminAuthorization). Not usable for public search as-is.
+       (b) Build a real search endpoint (see 11.6). RECOMMENDED.
+       (c) Ship without search in v1 and hide the UI.
+     Do not leave the mock-backed search visible — it will show fake celebrities
+     (Beyoncé, Messi, Ronaldo) that don't exist in your database.
+
+10.9 SHARE  (ShareProfileModal.tsx)
+     POST /board/:id/share -> { shareUrl, shares }
+     Use the server's shareUrl rather than constructing one client-side, so the
+     share counter increments and the URL stays canonical.
+     html2canvas was used by the old app for share images; the new modal uses
+     `fetch(dataUrl)` + blob. Verify the download path works on iOS Safari.
+
+10.10 SUBSCRIPTIONS / BOARD UPGRADES (port from legacy-frontend when you get here)
+     GET  /subscription/mine                 -> current plan
+     POST /subscription/verify {appUserId, plan}
+     POST /subscription/cancel
+     POST /board/payments/:id/upgrade {toTier, appUserId}
+     GET  /board/payments/:id/payments
+     Plan limits (models/subscription.js): free = 20 boards / 30 messages;
+     pro & enterprise = unlimited. Board tiers: basic 30 / standard 50 /
+     premium unlimited messages.
+     Requires @revenuecat/purchases-js in the client + VITE_REVENUECAT_API_KEY.
+     Lowest priority — do it after the core loop works.
+
+
+--------------------------------------------------------------------------------
+11. PHASE 8 — FEATURE GAPS THAT NEED BACKEND WORK
+--------------------------------------------------------------------------------
+
+These exist in the `client/` design and have NO server-side representation.
+For each: either build the backend, or explicitly cut the feature from v1.
+Do not ship them running on mock data — that is the single biggest risk in
+this migration, because they will look like they work.
+
+11.1 BOARD THEMING (theme, sticker, confetti, secondaryImage, isBlurred)
+     The modal picks frames/colors/stickers/confetti and stores hex themes.
+     Board has no such fields. FIX: add to BoardSchema
+         style: { theme: String, sticker: String, confetti: String }
+     ...or fold them into a Mixed `styleData` field, mirroring canvasData.
+     LOW effort, HIGH visual impact. Do this one.
+
+11.2 COLLABORATIVE BOARDS (boardCapacity 'solo'|'collaborative', maxCapacity,
+     collaborators[], collaboratorHandles[], collaboratorIds[])
+     No `collaborators` array on Board, no capacity concept beyond tier message
+     limits, and the profile has a whole "collaboration" tab depending on it.
+     FIX: add `collaborators: [{ type: ObjectId, ref:'User' }]` and
+     `capacity: { type:String, enum:['solo','collaborative'], default:'solo' }`
+     to BoardSchema, plus authorization in messageController so collaborators
+     can post to a board they don't own, plus a `view=collaboration` branch in
+     boardController.getMyBoards.
+     MEDIUM-HIGH effort. Decide early — it changes the permission model.
+
+11.3 HEART TOKENS ("gift a heart", heart_token post type, selectedHearts,
+     heartDetails{id,label,emoji,bubbleColor}, heartsCount, 'hearts' profile
+     tab, heartFilter received|sent, HeroHeartAnimation, LiveHeartAnimation)
+     This is a whole product feature with zero backend. The closest existing
+     thing is `user.stats.profileLikes` (a single integer) and BoardLike's
+     reaction enum.
+     FIX: new `HeartToken` model { from, to, type/label, emoji, color, message,
+     createdAt } + endpoints POST /heart, GET /heart?direction=sent|received.
+     HIGH effort. Strong candidate to CUT from the first cutover — keep the
+     animations as decoration and hide the gifting CTA until the model exists.
+
+11.4 PER-TYPE REACTION COUNTS (reactionCounts{clap,heart,smiley,fire},
+     userReactions[], onUpdateReactions, onReactionBlown)
+     Backend BoardLike enforces ONE reaction per user per board
+     (`LikeSchema.index({board:1,user:1},{unique:true})`) with the enum
+     ['clap','heart','thumbs','smile','fire']. The client wants MULTIPLE
+     reactions per user AND per-type totals. Also note the name mismatch:
+     client 'smiley' vs backend 'smile', and the backend has 'thumbs' which the
+     client doesn't offer.
+     FIX (minimum): align the enum names, and aggregate counts per reaction in
+     boardController (a $group on BoardLike) returned with the board.
+     FIX (full): drop the unique index, allow one row per (board,user,reaction).
+     MEDIUM effort. At minimum, fix the enum mismatch before launch or reactions
+     will silently 400.
+
+11.5 USER BIO + VERIFIED BADGE (bio, isVerified)
+     Neither exists on UserSchema. The design shows both prominently on every
+     profile and post card.
+     FIX: add `bio: {type:String, maxLength:160}` and
+     `isVerified: {type:Boolean, default:false}` to UserSchema; expose bio in
+     PATCH /user/profile's allowed fields (userController.updateProfile
+     currently destructures only {username, profileImage, country, accountType}).
+     LOW effort. Do this one.
+
+11.6 SEARCH
+     No public search endpoint. See 10.8.
+     FIX: GET /api/v1/search?q=&type=all|users|boards|hashtags returning
+     { users, boards, hashtags }. Text-index `username` on User and
+     `title description tags` on Board. MEDIUM effort.
+
+11.7 GLOBAL REALTIME STATS (App.tsx realtimeStats)
+     FIX: GET /api/v1/stats -> { totalMessages, totalCurators, totalReactions },
+     cached in Redis for 60s (cacheMiddleware already exists for this).
+     LOW effort.
+
+11.8 SEPARATE DISPLAY NAME
+     The client shows `name` ("Cristiano Ronaldo") and `handle` ("@cristiano")
+     as distinct values. The backend has ONE `username` field, 3-14 chars.
+     Every profile in the design breaks this.
+     FIX: add `displayName: {type:String, maxLength:50}` to UserSchema, or
+     accept that name === username everywhere and update the designs.
+     LOW effort, but it affects every screen — decide before you build adapters.
+
+11.9 GUEST CONTRIBUTIONS — see 9.5.
+
+11.10 DIRECT / WALL MESSAGES
+     postDirectMessage and getUserWallMessages exist server-side but are
+     currently UNREACHABLE (see 12.2). The client's "send message to user" flow
+     (handleSendMessageForUser, App.tsx:1544) needs them. Fix the routing bug
+     first, then wire.
+
+
+--------------------------------------------------------------------------------
+12. PHASE 9 — EXISTING BACKEND BUGS TO FIX DURING THE MIGRATION
+--------------------------------------------------------------------------------
+
+Found while auditing. Fix these while you're in here; the new client will hit
+all of them.
+
+12.1 UNREACHABLE ROUTE — POST /message/:username  (routes/messageRoute.js)
+     `MessageRoute.post('/:slug', ...postMessage)` is registered BEFORE
+     `MessageRoute.post('/:username', ...postDirectMessage)`. Express matches
+     in order, and both are single-segment patterns, so `/:slug` always wins.
+     postDirectMessage is DEAD CODE — direct/wall messages cannot be created.
+     FIX: give them distinct prefixes, e.g.
+         POST /message/board/:slug     -> postMessage
+         POST /message/direct/:username -> postDirectMessage
+
+12.2 UNREACHABLE ROUTE — GET /message/:username  (same file)
+     `MessageRoute.get('/:id', ...getMessage)` shadows
+     `MessageRoute.get('/:username', ...getUserWallMessages)` for the same
+     reason. getUserWallMessages is DEAD CODE.
+     FIX: GET /message/wall/:username.
+
+12.3 CLIENT/SERVER URL MISMATCH — moderateBoardMessage
+     legacy-frontend/src/slices/messageSlice.js calls
+         PATCH /api/v1/message/board/${id}/moderate
+     but routes/messageRoute.js defines
+         PATCH /api/v1/message/:id/board/moderate
+     These do not match — the call 404s today. Pick one (the route's shape is
+     odd; `PATCH /message/:id/moderate?context=board` would be cleaner) and make
+     the new client match it.
+
+12.4 SPELLING — `receipent` (should be "recipient") appears in BoardSchema as
+     `receipent`, `receipentOriginal`, `receipentHashtag`, `receipentFlagged`,
+     and — differently misspelled — `receiprentFlagReason`. The client uses
+     `recipientName` / `recipientHandle`.
+     You have two choices, and BOTH are fine, but choose deliberately:
+       (a) Leave the DB alone; absorb the spelling in the adapter layer only.
+           Zero migration risk. RECOMMENDED for this cutover.
+       (b) Rename the schema fields + write a MongoDB migration script.
+           Cleaner long-term; do it as a separate, isolated change AFTER the
+           frontend cutover is stable. Never bundle a data migration with a
+           frontend migration.
+
+12.5 REDIS CACHE MIDDLEWARE — `middlewares/cacheMiddleware.js` opens with a
+     large commented-out block. Confirm which implementation is actually
+     exported and live. If caching IS live, note that board/message caches are
+     invalidated inside controllers; any new endpoint you add (stats, search,
+     hearts) needs matching invalidation or you will serve stale data.
+
+12.6 RATE LIMIT — global 100 requests / 15 min / IP (app.js). The new client is
+     much chattier than the old one (feed + profile + reactions + moderation).
+     A single active session can exhaust that. Raise it, or scope it: keep a
+     tight limit on /auth/* and /ai/*, and a looser one on GETs.
+
+12.7 CORS — `origin: [origin, 'https://res.cloudinary.com']` where
+     `origin = process.env.ALLOWED_ORIGIN` (a single value). If you serve the
+     SPA from the same Express app this is moot, but the dev setup
+     (client:3000 -> api:8080) needs http://localhost:3000 in the list, or use
+     the Vite proxy from 7.4 and sidestep CORS entirely. RECOMMENDED: the proxy.
+
+12.8 Two Mongo connections are opened in app.js (a raw MongoClient AND
+     mongoose). The MongoClient is only used for a ping. Harmless but wasteful —
+     drop it while you're cleaning up.
+
+
+--------------------------------------------------------------------------------
+13. PHASE 10 — VERIFICATION CHECKLIST
+--------------------------------------------------------------------------------
+
+Run this end-to-end before cutover. Every line must pass against a REAL backend
+with an EMPTY database — a fresh account catches every "works because mock data
+was there" bug.
+
+BUILD & SERVE
+  [ ] cd client && npm ci && npm run build   (no errors, no warnings you can't explain)
+  [ ] npm run typecheck                       (0 errors)
+  [ ] client/dist/index.html exists and contains NO esm.sh importmap
+  [ ] client/dist has no cdn.tailwindcss.com script tag
+  [ ] grep -r "GEMINI\|API_KEY" client/dist   -> NO MATCHES  (secret not leaked)
+  [ ] grep -rn "MOCK_REGISTERED_USERS\|INITIAL_MOCK_POSTS" client/src -> no
+      matches in production code paths
+  [ ] npm start; GET / returns the new UI
+  [ ] GET /board/some-slug returns HTML (SPA fallback works)
+  [ ] GET /api/v1/nope returns JSON 404 (not HTML)
+
+AUTH
+  [ ] Register with a new email -> 201, "check your email" shown
+  [ ] Weak password (e.g. "abcdef") is rejected client-side with the SAME rule
+      the server uses (5+ chars, upper, lower, number, symbol)
+  [ ] Verification email arrives; link lands on /verify-email?verificationToken=
+      and verifies
+  [ ] Login sets the cookie; devtools shows `token` cookie on the API origin
+  [ ] Refresh the page -> still logged in (via /user/me, not localStorage)
+  [ ] No username yet -> forced to /account-setup, cannot navigate away
+  [ ] Username availability check hits the API (network tab), debounced
+  [ ] Complete setup -> PATCH /user/profile succeeds, @handle appears in the UI
+  [ ] Google OAuth: full redirect out and back, lands logged in
+  [ ] Google failure path shows the /login?error=auth_failed message
+  [ ] Forgot password -> email -> /reset-password?token= -> PATCH succeeds
+  [ ] Logout clears the cookie and the UI returns to the signed-out feed
+  [ ] Delete a cookie manually mid-session -> next action shows the auth modal,
+      does not white-screen
+
+CORE LOOP
+  [ ] Signed-out visitor sees the discover feed (checkUser routes)
+  [ ] Feed paginates past page 1 (server-side, not an in-memory slice)
+  [ ] Event filter changes the QUERY PARAM, not just a client filter
+  [ ] Create a board with a cover image: upload -> create -> redirected to
+      /board/:slug -> board renders
+  [ ] Cancel a create AFTER upload -> orphaned Cloudinary asset is deleted
+      (check the Cloudinary media library)
+  [ ] Add a text message to a board; it appears for another user
+  [ ] Add an audio message; duration + playback work
+  [ ] Add a canvas message; canvasData round-trips (reload the page and the
+      canvas renders identically)
+  [ ] Edit a message; changes persist after reload
+  [ ] Delete the last message on a board -> handle `boardDeleted:true` gracefully
+  [ ] Like a board; reload; the like state persists (via /board/likes/me)
+  [ ] React with each reaction type; no 400s (enum names aligned — see 11.4)
+  [ ] Share a board -> the returned shareUrl opens the board in a fresh browser
+  [ ] Basic-tier board rejects the 31st message with a clear upgrade message
+
+ROUTING & LINKS
+  [ ] /board/:slug loads directly from a cold browser (paste the URL)
+  [ ] /profile/:username loads directly
+  [ ] /hashtag/:tag loads directly
+  [ ] Browser back/forward moves between board detail and feed correctly
+  [ ] No URL anywhere contains a `#/` fragment route
+
+PERMISSIONS
+  [ ] A private board 403s for a non-owner and shows a friendly message
+  [ ] A non-owner cannot see edit/delete controls
+  [ ] A non-owner's delete attempt is rejected server-side too (test with curl)
+  [ ] Admin-only routes 401 for a normal user
+
+MEDIA
+  [ ] 11 MB image is rejected client-side with a clear message
+  [ ] 21 MB audio is rejected client-side
+  [ ] Unsupported type (e.g. .svg, .heic) fails gracefully
+  [ ] Temp files in /tmp are cleaned up after upload (uploadController's finally)
+
+RESPONSIVE / BROWSER
+  [ ] Mobile Safari: the whole create flow, including audio recording
+  [ ] Mobile Chrome (Android)
+  [ ] Desktop 1440px+ (the .app-container 288px padding rule)
+  [ ] The MetaMask suppressor removal did not surface a real, unhandled error
+
+PERFORMANCE
+  [ ] Bundle size is sane. App.tsx is 88 KB and CreateAppreciationModal 182 KB
+      of SOURCE — lazy-load the heavy modals with React.lazy + Suspense:
+        CreateAppreciationModal, HeartboardView, MediaModal.
+      These three are ~330 KB of source and are not needed for first paint.
+  [ ] Lighthouse: FCP and LCP no worse than the old app's
+
+
+--------------------------------------------------------------------------------
+14. PHASE 11 — DEPLOY & CUTOVER
+--------------------------------------------------------------------------------
+
+14.1 Environment variables — ROOT .env (server). Existing keys, unchanged:
+        ALLOWED_ORIGIN, MONGO_URL, COOKIE, JWT_TOKEN, JWT_LIFESPAN,
+        SESSION_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+        STRIPE_SECRET_KEY, STRIPE_PRICE_PRO, STRIPE_PRICE_ENTERPRISE,
+        CLIENT_URL, CLOUDINARY_URL, CLOUDINARY_CLOUD_NAME,
+        CLOUDINARY_API_SECRET, CLOUDINARY_API_KEY,
+        REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, NODE_OPTIONS,
+        REVENUECAT_API_KEY, ZOHO_API_KEY
+    ADD:
+        GEMINI_API_KEY            (server-side only — see 9.6)
+        NODE_ENV=production       (REQUIRED IN PROD: helpers/jwtHelper.js gates
+                                   `secure: process.env.NODE_ENV === 'production'`.
+                                   Without it your auth cookie ships without the
+                                   Secure flag. Verify this is set on your host.)
+    VERIFY: ALLOWED_ORIGIN and CLIENT_URL must both point at the deployed SPA
+    origin. They are used for CORS, the OAuth redirect, email links, and the
+    5-minute self-ping cron.
+
+14.2 Client environment — `client/.env.production`:
+        (nothing, if you use same-origin `/api/v1` — RECOMMENDED)
+        VITE_REVENUECAT_API_KEY=...   (only if RevenueCat stays in the client)
+    Confirm your host's build step runs the ROOT `npm run build`, which now
+    cds into client/.
+
+14.3 Deployment order (single-service deploy, API + SPA together):
+        1. Merge backend changes FIRST (new /ai routes, schema additions,
+           route-conflict fixes) and deploy. They are backward-compatible with
+           the OLD frontend — verify the old app still works.
+        2. Then deploy the app.js path change + build script change + client/.
+        3. Watch logs for `express.static` 404s on assets.
+
+14.4 Rollback plan — keep it to one commit revert:
+        - Keep `legacy-frontend/` in the tree AND keep a built
+          `legacy-frontend/dist/` for the duration of the cutover.
+        - Rollback = revert the app.js path change + the package.json build
+          script, redeploy. Two lines. Test that this actually works on staging
+          BEFORE you cut over in production.
+        - Keep the /tmp/heartboard-dist-backup copy from Phase 0.5.
+
+14.5 Post-deploy smoke test (production, 5 minutes):
+        - Load /, log in with a real account
+        - Open an existing board created by the OLD frontend and confirm it
+          renders in the NEW client (this is the real compatibility test —
+          old data, new adapters)
+        - Create one board, one message, one reaction
+        - Check Cloudinary for the new upload
+        - Check server logs for 4xx/5xx spikes
+        - Confirm the 5-min self-ping cron is still hitting a 200
+
+14.6 DATA COMPATIBILITY IS THE BIGGEST PRODUCTION RISK. Boards and messages
+     already in MongoDB were written by the old frontend. They will have:
+        - canvasData in the OLD canvas format (from legacy-frontend/src/canvas/
+          CanvasRenderer.jsx + DraggableCanvasItem.jsx)
+        - content.frame / vectorKey values referencing the OLD asset names in
+          legacy-frontend/src/assets/
+        - no theme/sticker/confetti (added in 11.1)
+     Before cutover, run a read-only script over production data and render a
+     sample of the OLDEST, NEWEST and WEIRDEST boards through the new adapters.
+     If the new canvas renderer can't read old canvasData, you need either a
+     backfill migration or a version-tolerant renderer. FIND THIS OUT EARLY —
+     it can be the longest pole in the whole migration.
+
+
+--------------------------------------------------------------------------------
+15. PHASE 12 — DECOMMISSION THE OLD FRONTEND
+--------------------------------------------------------------------------------
+
+Only after the new client has been live and stable for at least one full week.
+
+  [ ] Confirm nothing references `frontend/` or `legacy-frontend/`:
+          grep -rn "frontend" --include="*.js" --include="*.json" \
+            --exclude-dir=node_modules .
+  [ ] Confirm no deploy config, Dockerfile, CI workflow, or host build command
+      mentions it
+  [ ] Port anything still only in the old app:
+          src/assets/                      (logos, SVGs, frames, confetti)
+          src/styling/variables.css        (design tokens)
+          src/utils/msgCache.js            (message caching helper)
+          src/constants/messageConstant.jsx
+          src/configs/revenueCatConfig.js
+          src/hooks/UseFonts.jsx
+          src/tab/AudioTab.jsx, VideoTab.jsx   (media capture UI)
+          src/canvas/                      (canvas renderer — needed for
+                                            backward-compatible canvasData)
+  [ ] git rm -r legacy-frontend
+  [ ] Commit with a message that names the last commit where it worked, so it
+      is easy to resurrect:
+          "chore: remove legacy frontend (last working at <sha>)"
+
+  Git history keeps it forever — you are never actually losing it.
+
+
+--------------------------------------------------------------------------------
+APPENDIX A — COMPLETE BACKEND API REFERENCE
+--------------------------------------------------------------------------------
+Base: {ORIGIN}/api/v1        All requests: withCredentials: true
+Auth column:  none | cookie | admin | super_admin | optional(checkUser)
+
+AUTH  /auth
+  POST   /register                   none    {email,password}
+                                             -> 201 {message}  (no cookie, no user)
+  POST   /verify-email               none    ?verificationToken=X  (QUERY param)
+                                             -> 200 {message}
+  POST   /resend-verification-email  none    {email} -> 200 {message}
+  POST   /login                      none    {email,password}
+                                             -> 200 {message, user:{id,email,...}}
+                                                + sets signed cookie `token`
+  POST   /logout                     none    -> 200 {success, msg}
+  POST   /forgot-password            none    {email} -> 200 {message}
+  PATCH  /reset-password             none    {token,newPassword,confirmPassword}
+                                             -> 200 {message}
+  GET    /google                     none    302 to Google
+  GET    /google/callback            none    302 to CLIENT_URL (or
+                                             CLIENT_URL/login?error=auth_failed)
+
+USER  /user
+  GET    /check-username/:username   none    -> {available:boolean, message}
+  GET    /me                         cookie  -> {user}  (with live stats)
+  GET    /likes/me                   cookie  -> {likedProfileIds:[]}
+  PATCH  /profile                    cookie  {username,profileImage,country,accountType}
+                                             -> {message, user}
+  PATCH  /change-password            cookie  {currentPassword,newPassword} -> {message}
+  DELETE /delete-account             cookie  -> {message}
+  GET    /                           admin   ?page&limit&search -> {users, pagination}
+  PATCH  /:id/role                   super   {role} -> {message, user}
+  POST   /:id/like                   cookie  -> {likeCount}
+  GET    /profile/:username          cookie  ?view -> {user, boards, view,
+                                             summary:{mostLikedBoard,activeBoard,
+                                             topCurator}}
+                                             404 -> {message:'...'}
+
+BOARD  /board
+  POST   /                           cookie  {title,description,visibility,receipent,
+                                              event,coverImage,coverImagePublicId,tags}
+                                             -> 201 {message, board}
+  GET    /                           cookie  ?page&limit&view&tier&visibility&status&event
+                                             view: owned|tagged
+                                             -> {view, boards, pagination:{total,page,
+                                                 limit,pages}}
+                                             boards SELECT: title description slug
+                                             stats tier tags visibility event isActive
+                                             receipentFlagged receiprentFlagReason
+                                             owner coverImage createdAt
+  GET    /discover                   optional ?page&limit&sort&event
+                                             -> {boards, pagination}
+                                             boards SELECT: title description slug
+                                             stats tier owner coverImage event createdAt
+  GET    /likes/me                   cookie  -> {likedBoardIds:[]}
+  GET    /hashtag/:tag               optional ?page&limit
+                                             -> {boards, total, page, pages}  (FLAT)
+  PATCH  /:id                        cookie  {…fields} -> {message, board}
+  DELETE /:id                        cookie  -> {message}
+  PATCH  /:slug/flag                 cookie  -> {message}
+  PATCH  /:slug/unflag               cookie  -> {message}
+  POST   /:id/like                   cookie  -> {liked:boolean, likeCount}
+  GET    /:id/reaction/me            cookie  -> {reaction: string|null}
+  PATCH  /:id/reaction               cookie  {reaction} -> {reaction, lastReaction}
+                                             enum: clap|heart|thumbs|smile|fire
+  POST   /:id/share                  cookie  -> {shareUrl, shares}
+  GET    /:slug                      optional -> {board, sponsors}
+                                             403 if private & not owner
+                                             owner + receipent are POPULATED here
+
+MESSAGE  /message
+  GET    /mine                       cookie  ?page&limit&context
+                                             -> {messages, pagination}
+  GET    /:slug/board                optional ?page&limit&type&status
+                                             -> {messages, pagination}
+  POST   /:slug                      cookie  {type,content,cloudinaryPublicId,
+                                              fileType,canvasData}
+                                             -> 201 {message, data}
+                                             type: text|audio|emblem
+  PATCH  /:id/board/moderate         cookie  {status} -> {message, data}
+  PATCH  /:id/direct/moderate        cookie  {status} -> {message, data}
+  GET    /:id                        cookie  -> {message}
+  DELETE /:id                        cookie  -> {message, boardDeleted:boolean}
+  PATCH  /:id                        cookie  {content,cloudinaryPublicId,fileType,
+                                              canvasData}
+  POST   /:username                  cookie  UNREACHABLE — see 12.1
+  GET    /:username                  cookie  UNREACHABLE — see 12.2
+
+SUBSCRIPTION  /subscription
+  POST   /webhook                    none    (RevenueCat)
+  GET    /mine                       cookie  -> current subscription
+  POST   /verify                     cookie  {appUserId, plan}
+  POST   /cancel                     cookie
+  GET    /                           super   ?plan&status&page&limit
+
+BOARD PAYMENTS  /board/payments
+  POST   /:id/upgrade                cookie  {toTier, appUserId}
+  POST   /webhook                    none
+  GET    /:id/payments               cookie
+  GET    /all                        super   ?page&limit&status
+
+UPLOAD  /upload
+  POST   /                           cookie  multipart: file, type?
+                                             -> {message, type, url, publicId,
+                                                 format, bytes, duration, width, height}
+                                             limits: image 10MB, video 100MB, audio 20MB
+
+ERROR SHAPES — inconsistent, handle both:
+  most controllers:  { message: "..." }
+  logout/some paths: { msg: "..." }
+  Always read `data.message ?? data.msg`.
+
+
+--------------------------------------------------------------------------------
+APPENDIX B — RECOMMENDED TARGET STRUCTURE FOR client/
+--------------------------------------------------------------------------------
+
+client/
+  .env                      VITE_ORIGIN_URL (or nothing, with the proxy)
+  .env.example
+  .gitignore
+  index.html                no importmap, no Tailwind CDN, full SEO head
+  package.json
+  tsconfig.json             strict: true, paths @/* -> ./src/*
+  vite.config.ts            react plugin, @ alias, /api dev proxy
+  tailwind.config.js
+  postcss.config.js
+  public/                   favicon.ico, manifest.json, robots.txt, paper.png
+  src/
+    index.tsx               entry: BrowserRouter > AuthProvider > App
+    index.css               @tailwind + gray tokens + .handwriting + .app-container
+    App.tsx                 SLIM IT DOWN — currently 2204 lines. Extract:
+    routes/                   AppRoutes.tsx
+    layouts/                  TopNavigation.tsx, BottomNav.tsx
+    pages/                    FeedPage, DiscoverPage, BoardPage, ProfilePage,
+                              HashtagPage, CreatePage, AccountSetupPage,
+                              auth/{Login,Signup,ForgotPassword,ResetPassword,
+                              VerifyEmail,ResendVerification}, ErrorPage
+    components/               (existing 18 components, unchanged where possible)
+    contexts/                 AuthContext.tsx
+    hooks/                    useEngagementPrompt.ts, useBoards.ts, useMessages.ts
+    services/                 auth.api.ts, user.api.ts, board.api.ts,
+                              message.api.ts, upload.api.ts, subscription.api.ts,
+                              boardPayment.api.ts, ai.api.ts (was geminiService)
+    lib/                      api.ts, adapters.ts, format.ts, validation.ts
+    types/                    index.ts (client view models — the current types.ts,
+                              minus MOCK_REGISTERED_USERS)
+                              api.ts   (backend DTOs: BoardDTO, MessageDTO, UserDTO)
+    assets/                   ported from legacy-frontend/src/assets/
+
+
+--------------------------------------------------------------------------------
+APPENDIX C — SUGGESTED SEQUENCING
+--------------------------------------------------------------------------------
+
+Do these in order. Each block should end with a working, committable app.
+
+  1. Phase 0 (gitignore, commit prototype, rotate key)          — 30 min
+  2. Phase 1 (folder swap, build/serve wiring, verify)          — 1-2 h
+  3. Phase 2 (importmap, Tailwind, SEO head, lockfile)          — 2-4 h
+  4. Phase 3 (BrowserRouter + real route table)                 — 4-8 h
+  5. Phase 4 (api.ts + service modules, no UI changes yet)      — 4-6 h
+  6. Phase 5 (adapters + types/api.ts)                          — 3-5 h
+  7. Phase 6 (AuthContext + all auth screens + account setup)   — 1-2 days
+  8. Phase 9 backend bug fixes (12.1-12.3, 12.6, 12.7)          — 2-4 h
+  9. Phase 8 quick wins (11.1 theming, 11.5 bio/verified,
+     11.7 stats, 11.4 reaction enum alignment)                  — 1 day
+ 10. Phase 7 vertical slice: feed -> board detail -> create      — 2-3 days
+ 11. Phase 7 remainder: profile, hashtag, edit/delete, share     — 2-4 days
+ 12. Phase 8 big items (11.2 collaboration, 11.3 hearts, 11.6
+     search) OR an explicit decision to cut them from v1         — variable
+ 13. Phase 10 verification                                       — 1 day
+ 14. Phase 11 staging deploy + 14.6 old-data compatibility test  — 1 day
+ 15. Production cutover                                          — 1 h + watch
+ 16. Phase 12 decommission (after 1 week stable)                 — 1 h
+
+  BIGGEST RISKS, RANKED:
+    1. Old canvasData not rendering in the new client (14.6) — validate FIRST,
+       before writing any UI code, by dumping a few real documents and trying
+       to render them.
+    2. Heart tokens / collaboration being shipped on mock data because they
+       "already look done" (11.2, 11.3).
+    3. Auth cookie configuration if the SPA and API end up on different
+       origins (9.7).
+    4. Silent regressions from deleting the mocks — the fallbacks are written
+       so that missing data looks like real data.
+
+================================================================================
+ END
+================================================================================
