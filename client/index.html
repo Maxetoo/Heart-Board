@@ -1,0 +1,109 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goodwall | Spread Kindness</title>
+    <script>
+      // Early protection against injected browser extension errors (MetaMask / Web3 wallets in iframe)
+      (function() {
+        var isExt = function(str) {
+          if (!str) return false;
+          var s = String(str).toLowerCase();
+          return s.indexOf('metamask') !== -1 || 
+                 s.indexOf('ethereum') !== -1 || 
+                 s.indexOf('failed to connect to metamask') !== -1 ||
+                 s.indexOf('chrome-extension://') !== -1 ||
+                 s.indexOf('moz-extension://') !== -1;
+        };
+
+        window.addEventListener('error', function(e) {
+          if (isExt(e.message) || isExt(e.filename) || (e.error && isExt(e.error.message))) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e.reason;
+          var msg = (reason && reason.message) ? reason.message : String(reason || '');
+          if (isExt(msg)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        }, true);
+
+        // Define a passive, safe stub if window.ethereum doesn't exist or is requested by extensions
+        if (typeof window !== 'undefined') {
+          try {
+            if (!window.ethereum) {
+              var stubEthereum = {
+                isMetaMask: false,
+                request: function() { return Promise.resolve(null); },
+                sendAsync: function(payload, cb) { if (cb) cb(null, { result: null }); },
+                send: function(payload, cb) { if (cb) cb(null, { result: null }); },
+                on: function() {},
+                removeListener: function() {},
+                autoRefreshOnNetworkChange: false,
+              };
+              Object.defineProperty(window, 'ethereum', {
+                get: function() { return stubEthereum; },
+                set: function() {},
+                configurable: true,
+              });
+            }
+          } catch (err) {}
+        }
+      })();
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #F8F9FB;
+            margin: 0;
+            padding: 0;
+        }
+        .cta-button {
+            background-color: #FE6349 !important;
+            color: #FFFFFF !important;
+        }
+        /* Layout constraint: Max margin 288px on both sides */
+        .app-container {
+            width: 100%;
+            margin-left: auto;
+            margin-right: auto;
+            padding-left: 1.5rem;
+            padding-right: 1.5rem;
+        }
+        @media (min-width: 1440px) {
+            .app-container {
+                padding-left: 288px;
+                padding-right: 288px;
+            }
+        }
+        .handwriting {
+            font-family: 'Caveat', cursive;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "Goodwall - Digital Appreciation Platform",
+  "description": "A positive-only digital appreciation system for writing goodwill messages, tributes, and appreciation notes to individuals and groups.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

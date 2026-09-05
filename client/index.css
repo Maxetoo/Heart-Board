@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300;0,400;0,600;0,700;0,800;1,400&family=Caveat:wght@400;700&display=swap');
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background-color: #F8F9FB; /* Gray 0 */
+  color: #1A1B25; /* Gray 900 */
+}
+
+.handwriting {
+  font-family: 'Caveat', cursive;
+}
+
+/* Custom Gray Color Classes */
+.bg-gray-0 { background-color: #F8F9FB; }
+.bg-gray-25 { background-color: #F6F8FA; }
+.bg-gray-50 { background-color: #ECEFF3; }
+.bg-gray-100 { background-color: #DFE1E6; }
+.bg-gray-200 { background-color: #C1C7CF; }
+.bg-gray-300 { background-color: #A4ABB8; }
+.bg-gray-400 { background-color: #808897; }
+.bg-gray-500 { background-color: #666D80; }
+.bg-gray-600 { background-color: #353849; }
+.bg-gray-800 { background-color: #272835; }
+.bg-gray-900 { background-color: #1A1B25; }
+
+.text-gray-0 { color: #F8F9FB; }
+.text-gray-25 { color: #F6F8FA; }
+.text-gray-50 { color: #ECEFF3; }
+.text-gray-100 { color: #DFE1E6; }
+.text-gray-200 { color: #C1C7CF; }
+.text-gray-300 { color: #A4ABB8; }
+.text-gray-400 { color: #808897; }
+.text-gray-500 { color: #666D80; }
+.text-gray-600 { color: #353849; }
+.text-gray-800 { color: #272835; }
+.text-gray-900 { color: #1A1B25; }
+
+.border-gray-0 { border-color: #F8F9FB; }
+.border-gray-25 { border-color: #F6F8FA; }
+.border-gray-50 { border-color: #ECEFF3; }
+.border-gray-100 { border-color: #DFE1E6; }
+.border-gray-200 { border-color: #C1C7CF; }
+.border-gray-300 { border-color: #A4ABB8; }
+.border-gray-400 { border-color: #808897; }
+.border-gray-500 { border-color: #666D80; }
+.border-gray-600 { border-color: #353849; }
+.border-gray-800 { border-color: #272835; }
+.border-gray-900 { border-color: #1A1B25; }
