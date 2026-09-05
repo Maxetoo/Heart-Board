@@ -233,32 +233,195 @@ export function messageToContribution(m: MessageDTO, currentUserId?: string): Co
 }
 
 // ── Canvas data ──────────────────────────────────────────────────────────────
+//
 // Message.canvasData is a Mixed field, so the shape is entirely ours. We write
-// a versioned envelope so the renderer can evolve, but we must keep reading the
-// bare array written by the previous frontend.
+// a versioned envelope going forward, but messages already in the database were
+// written by the old frontend in a completely different shape and must keep
+// rendering. This is the single biggest data-compatibility risk in the
+// migration — see CLIENT_MIGRATION_INSTRUCTIONS.txt §14.6.
+//
+// LEGACY SHAPE (old frontend, src/canvas/CanvasRenderer.jsx):
+//   {
+//     canvasTexts:   [{ id, content, font:{label,family,style}, color,
+//                       fontSize, textAlign, position:{x,y} }],
+//     canvasBg:      { id, label, value }              // CSS background value
+//     canvasFrame:   { style, thickness, radius, color, border, borderRadius }
+//     canvasVectors: [{ id, label, icon, color, opacity, vectorId, size,
+//                       position:{x,y} }],
+//     canvasImages:  [{ id, src, position?, size?, rotation? }],
+//     aspectRatio:   string
+//   }
+//
+// NEW SHAPE: a flat CanvasElement[] with { id, type, x, y, scale, rotation, … }.
+// Positions are percentages in both, so they carry over directly.
 
-export const CANVAS_DATA_VERSION = 1;
+export const CANVAS_DATA_VERSION = 2;
 
 export interface CanvasEnvelope {
   v: number;
   elements: unknown[];
+  /** Preserved so a round-trip through this client does not lose the ratio. */
+  aspectRatio?: string;
 }
 
-export function wrapCanvasData(elements: unknown[] | undefined | null): CanvasEnvelope | null {
+interface LegacyPos {
+  x?: number;
+  y?: number;
+}
+
+interface LegacyCanvas {
+  canvasTexts?: {
+    id?: number | string;
+    content?: string;
+    font?: { label?: string; family?: string; style?: Record<string, unknown> };
+    color?: string;
+    fontSize?: number;
+    textAlign?: string;
+    position?: LegacyPos;
+  }[];
+  canvasBg?: { id?: string; label?: string; value?: string } | null;
+  canvasFrame?: {
+    style?: string;
+    thickness?: number;
+    radius?: number;
+    color?: string;
+    border?: string;
+    borderRadius?: string;
+  } | null;
+  canvasVectors?: {
+    id?: number | string;
+    label?: string;
+    icon?: string;
+    color?: string;
+    opacity?: number;
+    vectorId?: string;
+    size?: number;
+    position?: LegacyPos;
+  }[];
+  canvasImages?: {
+    id?: number | string;
+    src?: string;
+    position?: LegacyPos;
+    size?: number;
+    scale?: number;
+    rotation?: number;
+  }[];
+  aspectRatio?: string;
+}
+
+function isLegacyCanvas(data: unknown): data is LegacyCanvas {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const d = data as Record<string, unknown>;
+  return (
+    'canvasTexts' in d || 'canvasVectors' in d || 'canvasImages' in d || 'canvasBg' in d
+  );
+}
+
+/** Converts one legacy canvasData document into the flat element list. */
+export function convertLegacyCanvas(data: LegacyCanvas): unknown[] {
+  const elements: Record<string, unknown>[] = [];
+
+  // Background first, so it renders behind everything else.
+  if (data.canvasBg?.value) {
+    elements.push({
+      id: `bg-${data.canvasBg.id ?? 'legacy'}`,
+      type: 'bg',
+      bgHex: data.canvasBg.value,
+      frameName: data.canvasBg.label,
+    });
+  }
+
+  if (data.canvasFrame?.color) {
+    elements.push({
+      id: 'frame-legacy',
+      type: 'bg',
+      frameName: data.canvasFrame.style,
+      strokeEnabled: true,
+      strokeColor: data.canvasFrame.color,
+      strokeWidth: data.canvasFrame.thickness,
+      cornerRadius: data.canvasFrame.radius,
+    });
+  }
+
+  for (const img of data.canvasImages ?? []) {
+    if (!img.src) continue;
+    elements.push({
+      id: `img-${img.id ?? Math.random().toString(36).slice(2)}`,
+      type: 'image',
+      imageUrl: img.src,
+      x: img.position?.x ?? 50,
+      y: img.position?.y ?? 50,
+      scale: img.scale ?? 1,
+      rotation: img.rotation ?? 0,
+    });
+  }
+
+  for (const t of data.canvasTexts ?? []) {
+    elements.push({
+      id: `text-${t.id ?? Math.random().toString(36).slice(2)}`,
+      type: 'text',
+      text: t.content ?? '',
+      fontFamily: t.font?.family,
+      color: t.color,
+      align: (t.textAlign as 'left' | 'center' | 'right') ?? 'left',
+      x: t.position?.x ?? 50,
+      y: t.position?.y ?? 50,
+      // The old renderer sized text in px against a fixed canvas; the new one
+      // scales relative to a 16px base.
+      scale: t.fontSize ? t.fontSize / 16 : 1,
+      rotation: 0,
+    });
+  }
+
+  for (const v of data.canvasVectors ?? []) {
+    elements.push({
+      id: `vec-${v.id ?? Math.random().toString(36).slice(2)}`,
+      type: 'vector',
+      vectorId: v.vectorId ?? v.icon,
+      vectorName: v.label,
+      color: v.color,
+      bubbleColor: v.color,
+      x: v.position?.x ?? 50,
+      y: v.position?.y ?? 50,
+      scale: v.size ? v.size / 48 : 1,
+      rotation: 0,
+    });
+  }
+
+  return elements;
+}
+
+export function wrapCanvasData(
+  elements: unknown[] | undefined | null,
+  aspectRatio?: string,
+): CanvasEnvelope | null {
   if (!elements || !elements.length) return null;
-  return { v: CANVAS_DATA_VERSION, elements };
+  return { v: CANVAS_DATA_VERSION, elements, aspectRatio };
 }
 
 /**
- * Reads both the new envelope and the legacy bare-array format written by the
- * old frontend, so boards created before this migration still render.
+ * Reads every canvasData format we have ever written:
+ *   - v2 envelope   { v, elements, aspectRatio }   (current)
+ *   - bare array    [...]                          (transitional)
+ *   - legacy object { canvasTexts, canvasBg, … }   (old frontend, in production)
  */
 export function unwrapCanvasData(data: unknown): unknown[] | undefined {
   if (!data) return undefined;
-  if (Array.isArray(data)) return data; // legacy format
+
+  if (Array.isArray(data)) return data;
+
   const env = data as Partial<CanvasEnvelope>;
   if (Array.isArray(env.elements)) return env.elements;
+
+  if (isLegacyCanvas(data)) return convertLegacyCanvas(data);
+
   return undefined;
+}
+
+/** Reads the aspect ratio from either format. */
+export function canvasAspectRatio(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  return (data as { aspectRatio?: string }).aspectRatio;
 }
 
 // ── Board payload out ────────────────────────────────────────────────────────

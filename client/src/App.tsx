@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { EntityType, Post, PostVisibility, RegisteredUser, Contribution } from './types';
 import { useAuth } from './contexts/AuthContext';
 import { useSearch } from './hooks/useSearch';
@@ -9,7 +9,7 @@ import { getGlobalStats } from './services/stats.api';
 import * as boardApi from './services/board.api';
 import * as messageApi from './services/message.api';
 import { toApiError } from './lib/api';
-import { usernameOf } from './lib/adapters';
+import { usernameOf, userFromHandle } from './lib/adapters';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
 import { CreateAppreciationModal } from './components/CreateAppreciationModal';
@@ -21,6 +21,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { EngagementPromptModal } from './components/EngagementPromptModal';
 import { useEngagementPrompt } from './hooks/useEngagementPrompt';
 import { HeroHeartAnimation } from './components/HeroHeartAnimation';
+import { EmailVerificationBanner } from './components/EmailVerificationBanner';
 import { 
   SlidersHorizontal, 
   Search, 
@@ -1067,6 +1068,90 @@ const App: React.FC = () => {
   const [editingContribution, setEditingContribution] = useState<Contribution | null>(null);
   const [editMode, setEditMode] = useState<'board' | 'message' | 'contribution' | null>(null);
 
+  // ── URL <-> view state sync ────────────────────────────────────────────────
+  //
+  // The prototype drove profile / hashtag / board views purely from React
+  // state, so none of them had a URL: share links, refresh and browser
+  // back/forward all failed. These two effects make the URL authoritative.
+
+  // URL -> state. Runs on every navigation, including a cold load of a
+  // pasted link.
+  useEffect(() => {
+    const path = location.pathname;
+
+    const profileMatch = path.match(/^\/profile\/([^/]+)$/);
+    const hashtagMatch = path.match(/^\/hashtag\/([^/]+)$/);
+    const boardMatch = path.match(/^\/board\/([^/]+)$/);
+
+    if (profileMatch) {
+      const handle = decodeURIComponent(profileMatch[1]);
+      // Only replace when the target actually changed, or we fight the user.
+      if (usernameOf(viewingProfileUser?.handle) !== handle.toLowerCase()) {
+        setViewingProfileUser(userFromHandle(handle));
+      }
+      setViewingHashtag(null);
+      return;
+    }
+
+    if (hashtagMatch) {
+      const tag = decodeURIComponent(hashtagMatch[1]);
+      setViewingHashtag(tag);
+      setViewingProfileUser(null);
+      return;
+    }
+
+    if (boardMatch) {
+      const slug = decodeURIComponent(boardMatch[1]);
+      const idx = posts.findIndex((p) => p.slug === slug || p.id === slug);
+      if (idx !== -1) setSelectedPostIndex(idx);
+      setViewingProfileUser(null);
+      setViewingHashtag(null);
+      return;
+    }
+
+    if (path === '/profile') {
+      // Own profile.
+      setViewingProfileUser(null);
+      setViewingHashtag(null);
+      setActiveNavTab('hearts');
+      return;
+    }
+
+    if (path === '/login' || path === '/signup') {
+      setAuthModalMode(path === '/signup' ? 'signup' : 'login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    if (path === '/create') {
+      setIsCreateModalOpen(true);
+      return;
+    }
+
+    // Feed
+    setViewingProfileUser(null);
+    setViewingHashtag(null);
+    setSelectedPostIndex(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, posts.length]);
+
+  /**
+   * State -> URL. Called by the handlers below instead of setting state
+   * directly, so navigating always leaves an address behind.
+   */
+  const goToProfile = (user: RegisteredUser) => {
+    const handle = usernameOf(user.handle);
+    navigate(handle ? `/profile/${encodeURIComponent(handle)}` : '/profile');
+  };
+
+  const goToHashtag = (tag: string) => {
+    navigate(`/hashtag/${encodeURIComponent(tag.replace(/^#/, ''))}`);
+  };
+
+  const goToBoard = (post: Post) => {
+    navigate(`/board/${encodeURIComponent(post.slug || post.id)}`);
+  };
+
   const handleGiftHeartForUser = (user: RegisteredUser) => {
     if (!currentUser) {
       handleOpenAuth('login', `Please sign in or create an account to gift a heart token to ${user.name}.`);
@@ -1099,15 +1184,11 @@ const App: React.FC = () => {
     setIsCreateModalOpen(true);
   };
 
-  const handleSelectUser = (user: RegisteredUser) => {
-    setViewingProfileUser(user);
-    setViewingHashtag(null);
-  };
+  // Navigate by URL; the sync effect above applies the resulting view state,
+  // so these views are shareable and survive a refresh.
+  const handleSelectUser = (user: RegisteredUser) => goToProfile(user);
 
-  const handleSelectHashtag = (tag: string) => {
-    setViewingHashtag(tag);
-    setViewingProfileUser(null);
-  };
+  const handleSelectHashtag = (tag: string) => goToHashtag(tag);
 
   const handleCreateBoardForHashtag = (tag: string) => {
     if (!currentUser) {
@@ -1282,22 +1363,14 @@ const App: React.FC = () => {
   });
 
   const handleSelectBoardFromSearch = (post: any) => {
-    const idx = filteredPosts.findIndex(p => p.id === post.id);
-    if (idx !== -1) {
-      setSelectedPostIndex(idx);
-      recordBoardViewed();
-    } else {
-      const globalIdx = posts.findIndex(p => p.id === post.id);
-      if (globalIdx !== -1) {
-        setSelectedPostIndex(globalIdx);
-        recordBoardViewed();
-      }
-    }
+    goToBoard(post);
+    recordBoardViewed();
   };
 
   return (
     <>
       <div className="min-h-screen flex flex-col bg-white font-sans selection:bg-orange-100">
+        <EmailVerificationBanner />
         {isAuthModalOpen ? (
           <main className="flex-grow bg-[#F8F9FB] min-h-screen">
             <AuthView
@@ -1316,16 +1389,11 @@ const App: React.FC = () => {
             <HashtagView 
               hashtag={viewingHashtag}
               posts={posts}
-              onBack={() => setViewingHashtag(null)}
+              onBack={() => navigate("/")}
               onCreateBoard={handleCreateBoardForHashtag}
               onSelectUser={handleSelectUser}
               onPostClick={(post) => {
-                const foundIndex = posts.findIndex(p => p.id === post.id);
-                if (foundIndex !== -1) {
-                  setSelectedPostIndex(foundIndex);
-                } else {
-                  setSelectedPostIndex(0);
-                }
+                goToBoard(post);
                 recordBoardViewed();
               }}
             />
@@ -1336,7 +1404,7 @@ const App: React.FC = () => {
               profileUser={viewingProfileUser}
               currentUser={currentUser}
               onSignOut={handleSignOut}
-              onBack={() => setViewingProfileUser(null)}
+              onBack={() => navigate("/")}
               onGiftHeart={handleGiftHeartForUser}
               onSendMessage={handleSendMessageForUser}
               onSelectUser={handleSelectUser}
@@ -1348,12 +1416,7 @@ const App: React.FC = () => {
                 setIsFilterModalOpen(true);
               }}
               onPostClick={(post) => {
-                const foundIndex = posts.findIndex(p => p.id === post.id);
-                if (foundIndex !== -1) {
-                  setSelectedPostIndex(foundIndex);
-                } else {
-                  setSelectedPostIndex(0);
-                }
+                goToBoard(post);
                 recordBoardViewed();
               }}
             />
@@ -1398,46 +1461,23 @@ const App: React.FC = () => {
                 />
 
                 <main className="flex-grow bg-white">
-                  <Routes>
-                    <Route path="/" element={
-                      <MasonryFeed 
-                        posts={filteredPosts} 
-                        onPostClick={(index) => {
-                          const target = filteredPosts[index];
-                          if (target) {
-                            const globalIndex = posts.findIndex(p => p.id === target.id);
-                            setSelectedPostIndex(globalIndex !== -1 ? globalIndex : 0);
-                            recordBoardViewed();
-                          }
-                        }} 
-                        activeFilter={activeFilter}
-                        setActiveFilter={setActiveFilter}
-                        realtimeStats={realtimeStats}
-                        searchQuery={searchQuery}
-                        setSearchQuery={setSearchQuery}
-                        matchingUsersCount={matchingUsersCount}
-                      />
-                    } />
-                    <Route path="*" element={
-                      <MasonryFeed 
-                        posts={filteredPosts} 
-                        onPostClick={(index) => {
-                          const target = filteredPosts[index];
-                          if (target) {
-                            const globalIndex = posts.findIndex(p => p.id === target.id);
-                            setSelectedPostIndex(globalIndex !== -1 ? globalIndex : 0);
-                            recordBoardViewed();
-                          }
-                        }} 
-                        activeFilter={activeFilter}
-                        setActiveFilter={setActiveFilter}
-                        realtimeStats={realtimeStats}
-                        searchQuery={searchQuery}
-                        setSearchQuery={setSearchQuery}
-                        matchingUsersCount={matchingUsersCount}
-                      />
-                    } />
-                  </Routes>
+                  <MasonryFeed
+                    posts={filteredPosts}
+                    onPostClick={(index) => {
+                      const target = filteredPosts[index];
+                      if (target) {
+                        // Navigate so the board gets a real, shareable URL.
+                        goToBoard(target);
+                        recordBoardViewed();
+                      }
+                    }}
+                    activeFilter={activeFilter}
+                    setActiveFilter={setActiveFilter}
+                    realtimeStats={realtimeStats}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    matchingUsersCount={matchingUsersCount}
+                  />
                 </main>
               </>
             ) : (
@@ -1486,12 +1526,7 @@ const App: React.FC = () => {
                 setIsFilterModalOpen(true);
               }}
               onPostClick={(post) => {
-                const foundIndex = posts.findIndex(p => p.id === post.id);
-                if (foundIndex !== -1) {
-                  setSelectedPostIndex(foundIndex);
-                } else {
-                  setSelectedPostIndex(0);
-                }
+                goToBoard(post);
                 recordBoardViewed();
               }}
             />

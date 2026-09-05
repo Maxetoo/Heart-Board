@@ -1,7 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import App from './App';
+import { AppRoutes } from './routes/AppRoutes';
 import { AuthProvider } from './contexts/AuthContext';
 import './index.css';
 
@@ -104,7 +104,7 @@ root.render(
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <AppRoutes />
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>
