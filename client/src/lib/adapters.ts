@@ -317,6 +317,31 @@ function isLegacyCanvas(data: unknown): data is LegacyCanvas {
   );
 }
 
+/**
+ * Reference canvas size used to convert legacy percentage positions into the
+ * pixel offsets the current renderer expects.
+ *
+ * The two formats position elements completely differently:
+ *   legacy  -> position.x / position.y are PERCENTAGES (0-100) of the card,
+ *              where 50/50 is the centre
+ *   current -> x / y are PIXEL offsets from the centre of the card
+ *              (the container is `flex items-center justify-center`, and each
+ *               element is `translate3d(${x}px, ${y}px, 0)`)
+ *
+ * So a legacy element at 50/50 must become 0/0, and one at 80/60 must become
+ * roughly +30% / +10% of the card size in pixels. These dimensions match the
+ * board frame in MediaModal (max-w-[320..380px], h-[400..474px]); the midpoint
+ * keeps legacy art close to where it was authored at any breakpoint.
+ */
+const LEGACY_CANVAS_W = 340;
+const LEGACY_CANVAS_H = 430;
+
+/** percent (0-100, 50 = centre) -> pixel offset from centre */
+function pctToOffset(pct: number | undefined, extent: number): number {
+  if (pct == null || Number.isNaN(pct)) return 0;
+  return Math.round(((pct - 50) / 100) * extent);
+}
+
 /** Converts one legacy canvasData document into the flat element list. */
 export function convertLegacyCanvas(data: LegacyCanvas): unknown[] {
   const elements: Record<string, unknown>[] = [];
@@ -349,9 +374,9 @@ export function convertLegacyCanvas(data: LegacyCanvas): unknown[] {
       id: `img-${img.id ?? Math.random().toString(36).slice(2)}`,
       type: 'image',
       imageUrl: img.src,
-      x: img.position?.x ?? 50,
-      y: img.position?.y ?? 50,
-      scale: img.scale ?? 1,
+      x: pctToOffset(img.position?.x, LEGACY_CANVAS_W),
+      y: pctToOffset(img.position?.y, LEGACY_CANVAS_H),
+      scale: img.scale ?? (img.size ? img.size / 220 : 1),
       rotation: img.rotation ?? 0,
     });
   }
@@ -364,8 +389,8 @@ export function convertLegacyCanvas(data: LegacyCanvas): unknown[] {
       fontFamily: t.font?.family,
       color: t.color,
       align: (t.textAlign as 'left' | 'center' | 'right') ?? 'left',
-      x: t.position?.x ?? 50,
-      y: t.position?.y ?? 50,
+      x: pctToOffset(t.position?.x, LEGACY_CANVAS_W),
+      y: pctToOffset(t.position?.y, LEGACY_CANVAS_H),
       // The old renderer sized text in px against a fixed canvas; the new one
       // scales relative to a 16px base.
       scale: t.fontSize ? t.fontSize / 16 : 1,
@@ -379,10 +404,13 @@ export function convertLegacyCanvas(data: LegacyCanvas): unknown[] {
       type: 'vector',
       vectorId: v.vectorId ?? v.icon,
       vectorName: v.label,
+      // RenderCanvasElementReadOnly reads `vectorColor`; `color` is the text
+      // colour field and is ignored for vectors.
+      vectorColor: v.color,
       color: v.color,
       bubbleColor: v.color,
-      x: v.position?.x ?? 50,
-      y: v.position?.y ?? 50,
+      x: pctToOffset(v.position?.x, LEGACY_CANVAS_W),
+      y: pctToOffset(v.position?.y, LEGACY_CANVAS_H),
       scale: v.size ? v.size / 48 : 1,
       rotation: 0,
     });
@@ -391,12 +419,35 @@ export function convertLegacyCanvas(data: LegacyCanvas): unknown[] {
   return elements;
 }
 
+/**
+ * Single choke point for saving canvas state.
+ *
+ * Strips any element whose image is still an inline data: URL. Images must be
+ * uploaded to Cloudinary and referenced by URL — the old frontend embedded
+ * base64 straight into canvasData and produced message documents over 3MB
+ * (MongoDB's hard limit is 16MB per document, and every reader pays the cost
+ * on every fetch). Dropping the image is better than writing a document that
+ * may be rejected or that makes the board unusably slow to load.
+ */
 export function wrapCanvasData(
   elements: unknown[] | undefined | null,
   aspectRatio?: string,
 ): CanvasEnvelope | null {
   if (!elements || !elements.length) return null;
-  return { v: CANVAS_DATA_VERSION, elements, aspectRatio };
+
+  const safe = elements.map((el) => {
+    const e = el as Record<string, unknown>;
+    const url = e?.imageUrl;
+    if (typeof url === 'string' && url.startsWith('data:')) {
+      console.warn(
+        '[canvas] dropping an un-uploaded inline image; it must be uploaded first',
+      );
+      return { ...e, imageUrl: '' };
+    }
+    return el;
+  });
+
+  return { v: CANVAS_DATA_VERSION, elements: safe, aspectRatio };
 }
 
 /**

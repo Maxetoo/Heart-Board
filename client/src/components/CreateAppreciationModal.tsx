@@ -1199,6 +1199,51 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     setEditingElementId(newEl.id);
   };
 
+  /** True while a canvas image is uploading to Cloudinary. */
+  const [canvasImageUploading, setCanvasImageUploading] = useState(false);
+
+  /**
+   * Picks an image for a canvas element.
+   *
+   * Shows the local data URL immediately for responsiveness, then uploads and
+   * swaps in the Cloudinary URL. The data URL is NEVER what gets saved: the old
+   * frontend embedded base64 directly in canvasData, which produced message
+   * documents of 3MB+ (one board's messages alone were 3.2MB over the wire, and
+   * MongoDB caps a document at 16MB).
+   */
+  const handleCanvasImagePick = async (file: File | undefined) => {
+    if (!file) return;
+
+    const problem = validateFile(file, 'image');
+    if (problem) {
+      setModerationError(problem);
+      return;
+    }
+    setModerationError(null);
+
+    // Optimistic local preview.
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const previewUrl = reader.result as string;
+      updateEditingElement({ imageUrl: previewUrl });
+      setUploadedImage(previewUrl);
+    };
+    reader.readAsDataURL(file);
+
+    try {
+      setCanvasImageUploading(true);
+      const uploaded = await uploadFile(file, 'image');
+      updateEditingElement({ imageUrl: uploaded.url });
+      setUploadedImage(uploaded.url);
+    } catch (err) {
+      setModerationError(
+        err instanceof Error ? err.message : 'That image could not be uploaded.',
+      );
+    } finally {
+      setCanvasImageUploading(false);
+    }
+  };
+
   const handleAddImageElement = () => {
     const newEl: CanvasElement = {
       id: 'image-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -1494,6 +1539,13 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   };
 
   const handleFinalSubmitMessage = async () => {
+    // A canvas image that has not finished uploading is still a data: URL, and
+    // wrapCanvasData strips those on save. Wait rather than silently lose it.
+    if (canvasImageUploading) {
+      setModerationError('Your image is still uploading — one moment.');
+      return;
+    }
+
     const textToWrite = caption.trim() || content.trim() || (canvasElements.find(el => el.type === 'text')?.text) || '';
     setIsModerating(true);
     setModerationError(null);
@@ -3356,16 +3408,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                         type="file" 
                         accept="image/*" 
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              const imgUrl = reader.result as string;
-                              updateEditingElement({ imageUrl: imgUrl });
-                              setUploadedImage(imgUrl);
-                            };
-                            reader.readAsDataURL(file);
-                          }
+                          void handleCanvasImagePick(e.target.files?.[0]);
                         }} 
                         className="hidden" 
                       />
@@ -3430,16 +3473,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         type="file" 
         accept="image/*" 
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const imgUrl = reader.result as string;
-              updateEditingElement({ imageUrl: imgUrl });
-              setUploadedImage(imgUrl);
-            };
-            reader.readAsDataURL(file);
-          }
+          void handleCanvasImagePick(e.target.files?.[0]);
         }} 
         className="hidden" 
       />

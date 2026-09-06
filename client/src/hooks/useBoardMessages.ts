@@ -3,6 +3,14 @@ import * as messageApi from '../services/message.api';
 import * as boardApi from '../services/board.api';
 import { messageToContribution, boardToPost } from '../lib/adapters';
 import type { Post } from '../types';
+import type { BoardDTO, UserRefDTO } from '../types/api';
+
+/** Board.owner is either a populated ref or a bare id string. */
+function refOwnerId(board: BoardDTO): string | undefined {
+  const owner = board.owner as UserRefDTO | string | undefined;
+  if (!owner) return undefined;
+  return typeof owner === 'string' ? owner : owner._id;
+}
 
 /**
  * Loads the full board (owner, recipient, style) and its messages whenever a
@@ -57,11 +65,35 @@ export function useBoardMessages(
         }
 
         if (messages?.messages) {
-          const contributions = messages.messages.map((m) =>
-            messageToContribution(m, currentUserId),
-          );
+          const all = messages.messages.map((m) => messageToContribution(m, currentUserId));
+
+          // A Board has no canvas of its own — the artwork lives on its
+          // messages. MediaModal's "main" tab renders `post.canvasElements`,
+          // so without this the board view showed only the cover image and
+          // fallback text: no canvas images, vectors or styled text.
+          //
+          // The board's own message is the first one written by the board
+          // owner; treat that as the board face and the rest as contributions.
+          const ownerId = detail?.board ? refOwnerId(detail.board) : post?.authorId;
+          const faceIndex = ownerId
+            ? all.findIndex((c) => c.authorId === ownerId)
+            : 0;
+          const face = faceIndex >= 0 ? all[faceIndex] : undefined;
+
+          if (face) {
+            patch.canvasElements = face.canvasElements;
+            patch.imageUrl = face.imageUrl ?? patch.imageUrl;
+            patch.mediaUrl = face.mediaUrl ?? patch.mediaUrl;
+            patch.mediaType = face.mediaType;
+            if (face.content) patch.content = face.content;
+          }
+
+          const contributions = faceIndex >= 0
+            ? all.filter((_, i) => i !== faceIndex)
+            : all;
+
           patch.contributions = contributions;
-          patch.hasUserContributed = contributions.some((c) => c.isCreatedByUser);
+          patch.hasUserContributed = all.some((c) => c.isCreatedByUser);
         }
 
         if (Object.keys(patch).length) onLoaded(postId, patch);
