@@ -43,11 +43,14 @@ import { postMessage, editMessage } from '../services/message.api';
 import { uploadFile, validateFile } from '../services/upload.api';
 import { toApiError } from '../lib/api';
 import {
+  avatarFromParts,
+  userFromHandle,
   fromClientMessageType,
   fromPostVisibility,
   usernameOf,
   wrapCanvasData,
 } from '../lib/adapters';
+import { useSearch } from '../hooks/useSearch';
 import type { BoardEvent } from '../types/api';
 
 /**
@@ -72,6 +75,15 @@ import { VectorPicker, PHOSPHOR_VECTORS } from './VectorPicker';
 import { ChooseColor } from './ColorPicker';
 import { ConfettiOverlay, ConfettiType } from './ConfettiOverlay';
 import { ConfettiPickerModal } from './ConfettiPickerModal';
+
+/**
+ * Defaults every text element starts from, and the fallback wherever an older
+ * element was saved without these fields. Keep the three call sites (editor
+ * textarea, canvas renderer, saved-element renderer) reading from here so the
+ * composer preview and the published board agree.
+ */
+const DEFAULT_TEXT_FONT = 'Nunito, sans-serif';
+const DEFAULT_TEXT_ALIGN = 'center' as const;
 
 export interface CanvasElement {
   id: string;
@@ -303,8 +315,8 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
           <p 
             style={{ 
               color: el.color || '#1A1B25',
-              fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : 'Nunito, sans-serif'),
-              textAlign: el.align || 'left',
+              fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
+              textAlign: el.align || DEFAULT_TEXT_ALIGN,
               whiteSpace: 'pre-wrap',
             }}
             className={`font-bold leading-snug break-words whitespace-pre-wrap ${
@@ -417,8 +429,8 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
           <p 
             style={{ 
               color: el.color || '#1A1B25',
-              fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : 'Nunito, sans-serif'),
-              textAlign: el.align || 'left',
+              fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
+              textAlign: el.align || DEFAULT_TEXT_ALIGN,
               whiteSpace: 'pre-wrap',
             }}
             className={`font-bold leading-snug break-words whitespace-pre-wrap ${
@@ -590,8 +602,8 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
                   <p 
                     className="text-base sm:text-lg font-bold leading-snug break-words whitespace-pre-wrap text-[#1A1B25]" 
                     style={{ 
-                      fontFamily: 'Nunito, sans-serif',
-                      textAlign: 'left',
+                      fontFamily: DEFAULT_TEXT_FONT,
+                      textAlign: DEFAULT_TEXT_ALIGN,
                       whiteSpace: 'pre-wrap'
                     }}
                   >
@@ -682,7 +694,15 @@ const GRAYS = {
   gray900: '#1A1B25',
 };
 
-// Registered Users Dataset for Send Heart Selection
+/**
+ * A registered user, as shown in the recipient / send-heart pickers.
+ *
+ * Real accounts come from GET /search via useSearch (../hooks/useSearch),
+ * which returns the richer app-wide RegisteredUser (types/index.ts) — a
+ * structural superset of this, so it assigns here without changes. This
+ * local, narrower shape is kept because it's what this file's picker UI
+ * actually reads.
+ */
 export interface RegisteredUser {
   id: string;
   name: string;
@@ -690,103 +710,6 @@ export interface RegisteredUser {
   avatar: string;
   isVerified?: boolean;
 }
-
-export const REGISTERED_USERS: RegisteredUser[] = [
-  { 
-    id: 'u-ronaldo', 
-    name: 'Ronaldo', 
-    handle: '@ronaldo', 
-    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=150', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-ronike', 
-    name: 'Ronike', 
-    handle: '@ronike', 
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-ronny', 
-    name: 'Ronny', 
-    handle: '@ronny', 
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150', 
-    isVerified: false 
-  },
-  { 
-    id: 'u-mercy24', 
-    name: 'Mercy24', 
-    handle: '@mercy24', 
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mercy24', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-messi', 
-    name: 'Leo Messi', 
-    handle: '@messi', 
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-beyonce', 
-    name: 'Beyoncé', 
-    handle: '@beyonce', 
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=150', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-amino', 
-    name: 'Amino', 
-    handle: '@amino', 
-    avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=150', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-tyler', 
-    name: 'Tyler', 
-    handle: '@tyler_grandson', 
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150', 
-    isVerified: false 
-  },
-  { 
-    id: 'u-davido', 
-    name: 'Davido Fans', 
-    handle: '@davido_30bg', 
-    avatar: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?auto=format&fit=crop&q=80&w=150', 
-    isVerified: true 
-  },
-  { 
-    id: 'u-sarah', 
-    name: 'Sarah Connor', 
-    handle: '@sarah', 
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=150', 
-    isVerified: false 
-  },
-  { 
-    id: 'u-alex', 
-    name: 'Alex Johnson', 
-    handle: '@alexj', 
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150', 
-    isVerified: false 
-  },
-];
-
-export const KNOWN_HASHTAGS = [
-  '#loveRonaldo',
-  '#ronaldo13',
-  '#cr7',
-  '#messi',
-  '#birthday',
-  '#appreciation',
-  '#goodwill',
-  '#graduation',
-  '#wedding',
-  '#anniversary',
-  '#retirement',
-  '#promotion',
-  '#mom',
-  '#legend',
-];
 
 // Semantic Heart Spectrum matching the 6 screenshot items
 export interface SemanticHeart {
@@ -1140,9 +1063,12 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   });
   const [isConfettiPickerOpen, setIsConfettiPickerOpen] = useState(false);
   const [selectedHearts, setSelectedHearts] = useState<string[]>(() => {
-    return editingPost?.selectedHearts || [];
+    // Contributions carry their own hearts (message content.hearts); only fall
+    // back to the board's when editing the board itself.
+    return editingContribution?.selectedHearts || editingPost?.selectedHearts || [];
   });
-  const [isCursive, setIsCursive] = useState(true);
+  // Nunito is the default typeface; handwriting is opt-in via the toggle.
+  const [isCursive, setIsCursive] = useState(false);
   const [canvasAspectRatio] = useState<'portrait'>('portrait');
   const [uploadedImage, setUploadedImage] = useState<string | null>(() => {
     return editingContribution?.imageUrl || editingContribution?.mediaUrl || editingPost?.imageUrl || editingPost?.mediaUrl || null;
@@ -1171,8 +1097,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           id: 'text-initial-' + Date.now(),
           type: 'text',
           text: initialText,
-          isCursive: true,
-          fontFamily: 'Caveat, cursive',
+          isCursive: false,
+          fontFamily: DEFAULT_TEXT_FONT,
+          align: DEFAULT_TEXT_ALIGN,
           color: '#1A1B25',
           fontSize: 28,
         }
@@ -1187,6 +1114,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [activeAccordion, setActiveAccordion] = useState<'font' | 'color' | 'template' | null>(null);
   const [selectedTemplateCategoryId, setSelectedTemplateCategoryId] = useState<string | null>(null);
   const [isRefining, setIsRefining] = useState(false);
+  const [refineError, setRefineError] = useState<string | null>(null);
+  // A refine failure belongs to the element it happened on, not the panel.
+  useEffect(() => { setRefineError(null); }, [editingElementId]);
 
   const toggleAccordion = (section: 'font' | 'color' | 'template') => {
     setActiveAccordion(prev => {
@@ -1207,6 +1137,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       type: 'text',
       text: '',
       isCursive: isCursive,
+      fontFamily: isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT,
+      align: DEFAULT_TEXT_ALIGN,
     };
     setCanvasElements(prev => [...prev, newEl]);
     setSelectedElementId(newEl.id);
@@ -1389,42 +1321,79 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   });
   const [newRecipientInput, setNewRecipientInput] = useState('');
   const [isRecipientSuggestionsOpen, setIsRecipientSuggestionsOpen] = useState(false);
+  const [recipientError, setRecipientError] = useState<string | null>(null);
+
+  /**
+   * The accounts behind the chips, keyed by the '@username' stored in
+   * `recipients`.
+   *
+   * `recipients` used to hold DISPLAY NAMES. Two problems followed from that:
+   * submit ran usernameOf('Ms Lawson') -> 'Ms Lawson' and asked the server to
+   * find a user with that username, and two different accounts both displaying
+   * "Ms Lawson" were indistinguishable in the list — pick one, address the
+   * other. Chips now carry the handle, which is unique, and this map supplies
+   * the display name and face beside it.
+   */
+  const [resolvedRecipients, setResolvedRecipients] = useState<Record<string, RegisteredUser>>(() => {
+    const seed: Record<string, RegisteredUser> = {};
+
+    // Recipients already on a saved board were resolved by the server when it
+    // was created, so they are trusted as-is — an edit must never be blocked by
+    // this session's validation.
+    for (const r of (editingPost?.recipients ?? [])) {
+      if (r === '@you' || r.startsWith('#')) continue;
+      seed[r.toLowerCase()] = userFromHandle(r, {
+        id: editingPost?.recipientId ?? '',
+        name: editingPost?.recipientName || r,
+        handle: r,
+      });
+    }
+
+    if (initialRecipient?.handle) {
+      const handle = initialRecipient.handle.startsWith('@') ? initialRecipient.handle : `@${initialRecipient.handle}`;
+      seed[handle.toLowerCase()] = initialRecipient as RegisteredUser;
+    }
+    return seed;
+  });
 
   const cleanRecipientQuery = newRecipientInput.trim().replace(/^[@#]/, '').toLowerCase();
   const isHashtagSearch = newRecipientInput.trim().startsWith('#');
 
-  const matchingRegisteredUsers = React.useMemo(() => {
-    if (isHashtagSearch) return [];
-    if (!cleanRecipientQuery) {
-      return REGISTERED_USERS.slice(0, 5);
-    }
-    return REGISTERED_USERS.filter(u => 
-      u.name.toLowerCase().includes(cleanRecipientQuery) || 
-      u.handle.toLowerCase().includes(cleanRecipientQuery)
-    );
-  }, [cleanRecipientQuery, isHashtagSearch]);
+  // GET /search — real accounts and real board hashtags, replacing the
+  // hard-coded celebrity list and static tag list this used to filter
+  // client-side. The server requires 2+ characters; shorter queries just
+  // return empty rather than a "browse everyone" list (there's no endpoint
+  // for that, by design — the platform doesn't expose a full user directory).
+  const recipientSearch = useSearch(cleanRecipientQuery);
+
+  const matchingRegisteredUsers = isHashtagSearch ? [] : recipientSearch.users;
 
   const matchingHashtagsList = React.useMemo(() => {
     const queryTag = cleanRecipientQuery;
-    let list = KNOWN_HASHTAGS.filter(tag => 
-      !queryTag || tag.toLowerCase().includes(queryTag)
-    );
+    const list = recipientSearch.hashtags.map((h) => (h.tag.startsWith('#') ? h.tag : `#${h.tag}`));
     if (queryTag) {
       const customTag = `#${queryTag}`;
       if (!list.some(t => t.toLowerCase() === customTag.toLowerCase())) {
-        list = [...list, customTag];
+        return [...list, customTag];
       }
     }
     return list;
-  }, [cleanRecipientQuery]);
+  }, [recipientSearch.hashtags, cleanRecipientQuery]);
 
+  /**
+   * Adds a recipient by HANDLE, never by display name — the handle is what the
+   * server resolves (User.findOne({ username })), and it is unique where a
+   * display name is not.
+   */
   const handleSelectRegisteredUser = (user: RegisteredUser) => {
-    const tagName = user.name;
-    if (!recipients.includes(tagName)) {
-      setRecipients(prev => [...prev, tagName]);
-    }
-    setRecipient(user.name);
+    const handle = user.handle?.startsWith('@') ? user.handle : `@${usernameOf(user.handle || user.name)}`;
+    const key = handle.toLowerCase();
+
+    setResolvedRecipients(prev => ({ ...prev, [key]: user }));
+    setRecipients(prev => (prev.some(r => r.toLowerCase() === key) ? prev : [...prev, handle]));
+    setRecipient(handle);
     setNewRecipientInput('');
+    setRecipientError(null);
     setIsRecipientSuggestionsOpen(false);
   };
 
@@ -1444,21 +1413,34 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       if (!val) return;
       if (val.startsWith('#')) {
         handleSelectHashtag(val);
+        return;
+      }
+      // Only ever accept an account the search actually returned. Typing a name
+      // and pressing Enter used to add it as-is, which produced a board
+      // addressed to a username that does not exist.
+      const typed = usernameOf(val).toLowerCase();
+      const exact = matchingRegisteredUsers.find(u => usernameOf(u.handle).toLowerCase() === typed);
+      if (exact) {
+        handleSelectRegisteredUser(exact);
+      } else if (matchingRegisteredUsers.length === 1) {
+        handleSelectRegisteredUser(matchingRegisteredUsers[0]);
+      } else if (matchingRegisteredUsers.length > 1) {
+        setRecipientError(`More than one account matches "${val}". Pick the right @handle from the list.`);
       } else {
-        const clean = val.replace(/^@/, '').toLowerCase();
-        const found = REGISTERED_USERS.find(u => 
-          u.name.toLowerCase() === clean || 
-          u.handle.toLowerCase() === `@${clean}` || 
-          u.name.toLowerCase().includes(clean)
-        );
-        if (found) {
-          handleSelectRegisteredUser(found);
-        } else if (matchingRegisteredUsers.length > 0) {
-          handleSelectRegisteredUser(matchingRegisteredUsers[0]);
-        }
+        setRecipientError(`No registered user matches "${val}". Pick someone from the list, or use a #hashtag.`);
       }
     }
   };
+
+  /**
+   * Recipients that are neither '@you', a #hashtag, nor a resolved account.
+   *
+   * Anything in here means the board would be addressed to a username the
+   * server cannot find, so creation is blocked rather than attempted.
+   */
+  const unresolvedRecipients = recipients.filter(
+    r => r !== '@you' && !r.startsWith('#') && !resolvedRecipients[r.toLowerCase()],
+  );
 
   const [boardCapacity, setBoardCapacity] = useState<'collaborative' | 'solo'>(() => {
     return (editingPost?.boardCapacity as any) || 'collaborative';
@@ -1485,11 +1467,20 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       id: initialRecipient.id || 'u-' + initialRecipient.name.toLowerCase().replace(/\s+/g, ''),
       name: initialRecipient.name,
       handle: initialRecipient.handle || `@${initialRecipient.name.toLowerCase().replace(/\s+/g, '')}`,
-      avatar: initialRecipient.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-      isVerified: true,
-      heartsCount: 100,
-      boardsCount: 5,
-      bio: ''
+      // Falls back to the same generated placeholder used everywhere else in
+      // the app for a missing avatar, not a specific stock photo of an
+      // unrelated real person standing in as "this account's photo".
+      avatar: avatarFromParts({
+        id: initialRecipient.id,
+        username: usernameOf(initialRecipient.handle),
+        name: initialRecipient.name,
+        profileImage: initialRecipient.avatar,
+      }),
+      // isVerified/heartsCount/boardsCount are not known for a deep-linked
+      // recipient at this point — they used to be fabricated (isVerified:
+      // true, heartsCount: 100, boardsCount: 5) as if real. Left unset; the
+      // picker only ever reads id/name/handle/avatar/isVerified, and this
+      // entry is replaced the moment a real search result is selected.
     }];
   });
   const [sendHeartNote, setSendHeartNote] = useState('');
@@ -1500,15 +1491,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   } | null>(null);
   const [createdPostConfirmation, setCreatedPostConfirmation] = useState<any | null>(null);
 
-  // Filter registered users based on search query
-  const filteredSendHeartUsers = REGISTERED_USERS.filter((u) => {
-    if (!sendHeartSearchQuery.trim()) return true;
-    const q = sendHeartSearchQuery.toLowerCase().trim();
-    return (
-      u.name.toLowerCase().includes(q) ||
-      u.handle.toLowerCase().includes(q)
-    );
-  });
+  // Real accounts from GET /search. There is no "browse all users" state —
+  // the empty-query case is handled explicitly in the empty-state UI below.
+  const sendHeartSearch = useSearch(sendHeartSearchQuery);
+  const filteredSendHeartUsers = sendHeartSearch.users;
   
   // Moderation variables
   const [isModerating, setIsModerating] = useState(false);
@@ -1549,6 +1535,15 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   };
 
   const handlePublish = async () => {
+    // Catch a bad recipient here rather than at the API: the server rejects an
+    // unknown username with a 400 the composer used to swallow, leaving a board
+    // addressed to nobody.
+    if (unresolvedRecipients.length > 0) {
+      setRecipientError(
+        `${unresolvedRecipients.join(', ')} ${unresolvedRecipients.length === 1 ? 'is not a registered user' : 'are not registered users'}. Remove ${unresolvedRecipients.length === 1 ? 'it' : 'them'}, pick someone from the list, or use a #hashtag.`,
+      );
+      return;
+    }
     setIsPreviewOpen(true);
   };
 
@@ -1557,6 +1552,14 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     // wrapCanvasData strips those on save. Wait rather than silently lose it.
     if (canvasImageUploading) {
       setModerationError('Your image is still uploading — one moment.');
+      return;
+    }
+
+    // Second gate: handlePublish is the only path here today, but this must
+    // never reach createBoard/updateBoard with an unresolvable username.
+    if (unresolvedRecipients.length > 0) {
+      setModerationError(`${unresolvedRecipients.join(', ')} is not a registered user.`);
+      setIsPreviewOpen(false);
       return;
     }
 
@@ -1602,6 +1605,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           mediaUrl: uploadedImage || undefined,
           sticker: selectedSticker ? selectedSticker.id : undefined,
           confetti: selectedConfetti || undefined,
+          selectedHearts: [...selectedHearts],
           canvasElements: canvasElements.filter(hasElementContent),
         };
 
@@ -1611,6 +1615,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             text: safeTextCheck,
             imageUrls: updatedContrib.imageUrl ? [updatedContrib.imageUrl] : [],
             audioUrl: pendingAudioUrl ?? null,
+            hearts: selectedHearts,
           },
           canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
         });
@@ -1656,9 +1661,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           canvasElements: canvasElements.filter(hasElementContent),
         };
 
-        if (selectedHearts.length > 0) {
-          updatedPost.selectedHearts = [...selectedHearts];
-        }
+        // Always assign, including the empty case: deselecting every heart has
+        // to clear them, not silently keep the old set.
+        updatedPost.selectedHearts = [...selectedHearts];
 
         // PATCH /board/:id — boards are updated by id, not slug.
         const editPrimaryRecipient = recipients.find((r) => r !== '@you');
@@ -1677,8 +1682,30 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             theme: updatedPost.theme,
             sticker: updatedPost.sticker,
             confetti: updatedPost.confetti,
+            hearts: selectedHearts,
           },
         });
+
+        // The board document carries no canvas — the background, images,
+        // vectors and styled text all live on the board's face message. Editing
+        // the board only ever called PATCH /board, so every canvas change,
+        // background included, was thrown away the moment the board reloaded.
+        if (editingPost.faceMessageId) {
+          try {
+            await editMessage(editingPost.faceMessageId, {
+              content: {
+                text: safeTextCheck,
+                imageUrls: uploadedImage ? [uploadedImage] : [],
+                audioUrl: pendingAudioUrl ?? null,
+                hearts: selectedHearts,
+              },
+              canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
+            });
+          } catch {
+            // The board's own fields already saved; do not lose those because
+            // the artwork write failed.
+          }
+        }
 
         onUpdatePost(updatedPost);
         setIsModerating(false);
@@ -1710,9 +1737,15 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
         const finalAuthorAvatar = isAnon
           ? undefined
-          : isRegistered
-            ? (currentUser!.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(finalAuthorName)}`)
-            : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(finalAuthorName || 'Guest')}`;
+          : avatarFromParts({
+              // Seeded on the signed-in account, not on whatever name was typed
+              // into the composer, so this contribution shows the same face the
+              // author has everywhere else.
+              id: isRegistered ? currentUser!.id : undefined,
+              username: usernameOf(isRegistered ? currentUser!.handle : finalAuthorHandle),
+              name: finalAuthorName,
+              profileImage: isRegistered ? currentUser!.avatar : undefined,
+            });
 
         const newContrib: any = {
           id: 'contrib-' + Math.random().toString(36).substring(2, 11),
@@ -1729,6 +1762,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           createdAt: new Date().toISOString(),
           sticker: selectedSticker ? selectedSticker.id : undefined,
           confetti: selectedConfetti || undefined,
+          selectedHearts: [...selectedHearts],
           reactions: 0,
           canvasElements: canvasElements.filter(hasElementContent),
           isCreatedByUser: true,
@@ -1753,6 +1787,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               text: safeTextCheck,
               imageUrls: contribImage ? [contribImage] : [],
               audioUrl: pendingAudioUrl ?? null,
+              hearts: selectedHearts,
             },
             cloudinaryPublicId: contribPublicId ?? null,
             fileType: contribImage ? 'image' : null,
@@ -1780,7 +1815,14 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         visibility: effectiveVisibility,
         authorName: effectiveVisibility === PostVisibility.ANONYMOUS ? 'Anon' : (authorName.trim() || defaultPostAuthor),
         authorHandle: authorName.trim() ? (authorName.startsWith('@') ? authorName.trim() : `@${authorName.trim().toLowerCase().replace(/\s+/g, '')}`) : defaultPostHandle,
-        authorAvatar: effectiveVisibility === PostVisibility.ANONYMOUS ? undefined : (currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(authorName.trim() || defaultPostAuthor)}`),
+        authorAvatar: effectiveVisibility === PostVisibility.ANONYMOUS
+          ? undefined
+          : avatarFromParts({
+              id: currentUser?.id,
+              username: usernameOf(currentUser?.handle),
+              name: authorName.trim() || defaultPostAuthor,
+              profileImage: currentUser?.avatar,
+            }),
         authorId: currentUser?.id,
         content: safeTextCheck,
         caption: caption.trim() || undefined,
@@ -1816,12 +1858,11 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         canvasElements: canvasElements.filter(hasElementContent),
       };
 
-      // Enrich content with semantic hearts if set
-      if (selectedHearts.length > 0) {
-        newPost.selectedHearts = [...selectedHearts];
-        const heartLabels = selectedHearts.map(id => SEMANTIC_HEARTS.find(h => h.id === id)?.label).filter(Boolean);
-        newPost.content = `${newPost.content} (${heartLabels.join(', ')})`;
-      }
+      // The hearts themselves are persisted on style.hearts below. Their labels
+      // were previously appended to newPost.content here, but that only mutated
+      // the optimistic object — safeTextCheck was already fixed by then, so the
+      // suffix never reached the server and vanished on the next load.
+      newPost.selectedHearts = [...selectedHearts];
 
       // ── Persist to the API ──────────────────────────────────────────────
       // Two-step media flow: upload first, then reference the returned
@@ -1859,6 +1900,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           theme: newPost.theme,
           sticker: newPost.sticker,
           confetti: newPost.confetti,
+          hearts: selectedHearts,
         },
       });
 
@@ -1872,6 +1914,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             text: safeTextCheck,
             imageUrls: coverImage ? [coverImage] : [],
             audioUrl: pendingAudioUrl ?? null,
+            hearts: selectedHearts,
           },
           cloudinaryPublicId: coverImagePublicId ?? null,
           fileType: coverImage ? 'image' : null,
@@ -2098,7 +2141,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 
                 <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border-0 shadow-none space-y-3">
                   {/* Search bar input with search icon */}
-                  <div className="relative flex items-center bg-[#F8F9FB] rounded-2xl px-3.5 py-3 border border-gray-100 focus-within:border-[#FE6349] transition-all">
+                  {/* No border at rest — the coral one appears on focus. The
+                      ring stays reserved (border-transparent, not border-0) so
+                      focusing cannot shift the layout by a pixel. */}
+                  <div className="relative flex items-center bg-[#F8F9FB] rounded-2xl px-3.5 h-10 border border-transparent focus-within:border-[#FE6349] transition-colors">
                     <Search className="w-4.5 h-4.5 text-gray-400 mr-2 shrink-0" />
                     <input
                       type="text"
@@ -2198,14 +2244,24 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                         })}
                       </div>
                     ) : (
-                      /* Empty State */
+                      /* Empty State — distinguishes "haven't searched yet" from
+                         "searched, nothing matched"; there is no directory to
+                         browse, so an empty query can't show a real list. */
                       <div className="text-center py-6 px-4 bg-gray-50/50 rounded-2xl border border-gray-100">
                         <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-2 text-gray-400">
-                          <UserX className="w-5 h-5" />
+                          {sendHeartSearchQuery.trim() ? (
+                            <UserX className="w-5 h-5" />
+                          ) : (
+                            <Search className="w-5 h-5" />
+                          )}
                         </div>
-                        <p className="text-sm font-bold text-[#1A1B25]">No users found</p>
+                        <p className="text-sm font-bold text-[#1A1B25]">
+                          {sendHeartSearchQuery.trim() ? 'No users found' : 'Search for a registered user'}
+                        </p>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          Only registered users can receive a Send Heart.
+                          {sendHeartSearchQuery.trim()
+                            ? 'Only registered users can receive a Send Heart.'
+                            : 'Type a name or @username to find someone.'}
                         </p>
                       </div>
                     )}
@@ -2288,12 +2344,20 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           )}
         </div>
 
-        {/* Full Page Confirmation Screen for Send Heart */}
+        {/* Full Page Confirmation Screen for Send Heart.
+
+            The backdrop scrolls, and the column inside it centres itself. It
+            used to be the other way round — the scroll container was also the
+            centring context, and the column claimed min-h-[92vh] with
+            `my-auto` — so once the card grew past the viewport (a long
+            recipient list, a short laptop screen) the action buttons sat below
+            the fold with no way to reach them. `min-h-full` tracks the
+            content instead of claiming a fixed slice of the viewport. */}
         {sendHeartConfirmation && (
-          <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] flex flex-col items-center justify-between p-4 sm:p-8 overflow-y-auto animate-in fade-in duration-300 min-h-screen">
+          <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] overflow-y-auto animate-in fade-in duration-300">
             <ConfettiOverlay type="heart" />
-            
-            <div className="w-full max-w-[440px] flex flex-col items-center justify-between min-h-[92vh] sm:min-h-[85vh] my-auto relative z-10 py-2 sm:py-0">
+
+            <div className="relative z-10 w-full max-w-[440px] mx-auto min-h-full flex flex-col items-center justify-center p-4 sm:p-8">
               {/* Close Button Top Right */}
               <div className="w-full flex justify-end mb-3 sm:mb-4">
                 <button
@@ -2372,7 +2436,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               </div>
 
               {/* Action Buttons Below Card */}
-              <div className="w-full space-y-3 pt-6 sm:pt-6">
+              <div className="w-full space-y-3 pt-6 sm:pt-6 mb-6 sm:mb-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -2942,8 +3006,11 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   <span className="text-[11px] font-medium text-gray-700">Vector</span>
                 </button>
 
-                {/* 4. BG (Only for main board, hidden for contributions to ensure visual consistency) */}
-                {!isContributorFlow && (
+                {/* 4. BG — the board's own setting, so it belongs to board
+                       creation and board editing only. A message written onto
+                       someone's board does not get to repaint it, whether it is
+                       a new contribution or an edit of an existing message. */}
+                {!isContributorFlow && editMode !== 'message' && (
                   <button
                     type="button"
                     onClick={handleAddBgElement}
@@ -3038,19 +3105,20 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   {editingElement.type === 'text' && (
                     <div className="flex flex-col gap-3.5">
                       {/* Main Text Input Box with internal Template & Refine toolbar */}
-                      <div className={`bg-[#F6F8FA] rounded-2xl p-4 flex flex-col justify-between relative border border-transparent focus-within:border-gray-200/80 transition-all ${activeAccordion === 'template' ? 'min-h-[330px]' : 'min-h-[210px]'}`}>
+                      <div className={`bg-[#F6F8FA] rounded-2xl p-4 flex flex-col justify-between relative border border-transparent focus-within:border-gray-200/80 transition-colors ${activeAccordion === 'template' ? 'min-h-[330px]' : 'min-h-[210px]'}`}>
                         <textarea
                           value={editingElement.text || ''}
                           onChange={(e) => {
                             const txt = e.target.value.slice(0, 250);
                             updateEditingElement({ text: txt });
                             setContent(txt);
+                            if (refineError) setRefineError(null);
                           }}
                           placeholder="Type here......"
                           style={{
-                            fontFamily: editingElement.fontFamily || (editingElement.isCursive ? 'Playfair Display, cursive' : 'Nunito, sans-serif'),
+                            fontFamily: editingElement.fontFamily || (editingElement.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
                             color: editingElement.color || '#1A1B25',
-                            textAlign: editingElement.align || 'left',
+                            textAlign: editingElement.align || DEFAULT_TEXT_ALIGN,
                           }}
                           className="w-full h-28 bg-transparent text-[#1A1B25] text-base font-medium placeholder:text-gray-400 placeholder:font-normal focus:outline-none resize-none border-none p-0"
                         />
@@ -3194,14 +3262,17 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             onClick={async () => {
                               if (!editingElement.text?.trim()) return;
                               setIsRefining(true);
+                              setRefineError(null);
                               try {
-                                const refined = await refineText(editingElement.text);
+                                // Same 250 cap the textarea enforces, so the model
+                                // writes to fit instead of being cut off.
+                                const refined = (await refineText(editingElement.text, 250)).slice(0, 250);
                                 if (refined) {
                                   updateEditingElement({ text: refined });
                                   setContent(refined);
                                 }
                               } catch (err) {
-                                console.error("Refine error:", err);
+                                setRefineError(toApiError(err).message || "Couldn't refine that. Please try again.");
                               } finally {
                                 setIsRefining(false);
                               }
@@ -3216,6 +3287,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             <span>{isRefining ? 'Refining...' : 'Refine'}</span>
                           </button>
                         </div>
+
+                        {refineError && (
+                          <p className="text-[11px] font-semibold text-rose-600 pt-1.5">{refineError}</p>
+                        )}
                       </div>
 
                       {/* Select Font Accordion Card */}
@@ -3267,7 +3342,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             type="button"
                             onClick={() => updateEditingElement({ align: 'left' })}
                             className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                              (editingElement.align || 'left') === 'left' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-gray-400 hover:text-gray-700'
+                              editingElement.align === 'left' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-gray-400 hover:text-gray-700'
                             }`}
                             title="Left Align"
                           >
@@ -3277,7 +3352,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             type="button"
                             onClick={() => updateEditingElement({ align: 'center' })}
                             className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                              editingElement.align === 'center' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-gray-400 hover:text-gray-700'
+                              (editingElement.align || DEFAULT_TEXT_ALIGN) === 'center' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-gray-400 hover:text-gray-700'
                             }`}
                             title="Center Align"
                           >
@@ -3547,7 +3622,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 </div>
 
                 {/* 1. Caption Input */}
-                <div className="bg-[#F6F8FA] rounded-2xl px-4 py-3 flex items-center border border-transparent focus-within:border-gray-200 transition-all">
+                <div className="bg-[#F6F8FA] rounded-2xl px-4 py-3 flex items-center border border-transparent focus-within:border-gray-200 transition-colors">
                   <input
                     type="text"
                     value={caption}
@@ -3629,12 +3704,25 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                                       <User className="w-4 h-4 text-gray-500" />
                                     )}
                                   </div>
-                                  <span className="text-sm font-bold text-[#1A1B25] group-hover:text-[#FE6349] transition-colors truncate">
-                                    {user.name}
+                                  {/* The handle is shown because the name is not
+                                      unique — two accounts can both be called
+                                      "Ms Lawson", and picking the wrong one is
+                                      invisible without it. */}
+                                  <span className="flex flex-col min-w-0 text-left">
+                                    <span className="text-sm font-bold text-[#1A1B25] group-hover:text-[#FE6349] transition-colors truncate">
+                                      {user.name}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-[#A4ABB8] truncate">
+                                      {user.handle}
+                                    </span>
                                   </span>
                                 </button>
                               ))}
                             </div>
+                          ) : cleanRecipientQuery.length > 0 && cleanRecipientQuery.length < 2 ? (
+                            <div className="text-xs text-gray-400 px-2 py-1">Type at least 2 characters to search</div>
+                          ) : recipientSearch.loading ? (
+                            <div className="text-xs text-gray-400 px-2 py-1">Searching…</div>
                           ) : (
                             <div className="text-xs text-gray-400 px-2 py-1">No matching registered user</div>
                           )}
@@ -3671,7 +3759,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
                   {/* Input Box and Chips */}
                   <div 
-                    className="bg-[#F6F8FA] rounded-2xl p-2.5 sm:p-3 flex flex-wrap items-center gap-1.5 sm:gap-2 border border-transparent focus-within:border-gray-200 transition-all min-h-[48px] h-auto overflow-hidden cursor-text"
+                    className="bg-[#F6F8FA] rounded-2xl p-2.5 sm:p-3 flex flex-wrap items-center gap-1.5 sm:gap-2 border border-transparent focus-within:border-gray-200 transition-colors min-h-[48px] h-auto overflow-hidden cursor-text"
                     onClick={(e) => {
                       const input = e.currentTarget.querySelector('input');
                       if (input && e.target !== input) {
@@ -3679,12 +3767,25 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                       }
                     }}
                   >
-                    {recipients.map((rec) => (
+                    {recipients.map((rec) => {
+                      const resolved = resolvedRecipients[rec.toLowerCase()];
+                      const isUnresolved = rec !== '@you' && !rec.startsWith('#') && !resolved;
+                      return (
                       <span
                         key={rec}
-                        className="bg-white text-xs font-medium text-[#1A1B25] px-2.5 py-1 rounded-full border border-gray-200/60 flex items-center gap-1 shadow-2xs shrink-0 max-w-full truncate animate-in fade-in duration-150"
+                        title={resolved ? `${resolved.name} (${rec})` : undefined}
+                        className={`text-xs font-medium px-2.5 py-1 rounded-full border flex items-center gap-1 shadow-2xs shrink-0 max-w-full truncate animate-in fade-in duration-150 ${
+                          isUnresolved
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-white text-[#1A1B25] border-gray-200/60'
+                        }`}
                       >
-                        <span className="truncate max-w-[160px]">{rec}</span>
+                        {/* The name reads naturally, the handle disambiguates:
+                            two accounts can share "Ms Lawson", only one owns
+                            a given @handle. */}
+                        <span className="truncate max-w-[180px]">
+                          {resolved ? `${resolved.name} ${rec}` : rec}
+                        </span>
                         {rec !== '@you' && (
                           <button
                             type="button"
@@ -3692,6 +3793,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                               e.stopPropagation();
                               const remaining = recipients.filter(r => r !== rec);
                               setRecipients(remaining);
+                              setRecipientError(null);
                               if (recipient === rec) {
                                 const nextRec = remaining.find(r => r !== '@you' && !r.startsWith('#')) || '';
                                 setRecipient(nextRec);
@@ -3703,7 +3805,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                           </button>
                         )}
                       </span>
-                    ))}
+                      );
+                    })}
                     <input
                       type="text"
                       value={newRecipientInput}
@@ -3720,6 +3823,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                       className="flex-1 min-w-[120px] bg-transparent text-sm text-[#1A1B25] placeholder:text-gray-400 focus:outline-none border-none p-1 font-normal"
                     />
                   </div>
+                  {recipientError && (
+                    <p className="text-[11px] font-semibold text-rose-600 mt-1.5 px-1">{recipientError}</p>
+                  )}
                 </div>
 
                 {/* 4. Select Board Capacity Accordion */}
@@ -3954,12 +4060,14 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         </div>
       )}
 
-      {/* Full Page Confirmation Screen for Published Appreciation Card */}
+      {/* Full Page Confirmation Screen for Published Appreciation Card.
+          Same scroll/centre structure as the Send Heart confirmation above —
+          see the note there for what the fixed-vh version broke. */}
       {createdPostConfirmation && (
-        <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] flex flex-col items-center justify-between p-4 sm:p-8 overflow-y-auto animate-in fade-in duration-300 min-h-screen">
+        <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] overflow-y-auto animate-in fade-in duration-300">
           <ConfettiOverlay type={createdPostConfirmation.confetti || "heart"} />
-          
-          <div className="w-full max-w-[440px] flex flex-col items-center justify-between min-h-[92vh] sm:min-h-[85vh] my-auto relative z-10 py-2 sm:py-0">
+
+          <div className="relative z-10 w-full max-w-[440px] mx-auto min-h-full flex flex-col items-center justify-center p-4 sm:p-8">
             {/* Close Button Top Right */}
             <div className="w-full flex justify-end mb-3 sm:mb-4">
               <button

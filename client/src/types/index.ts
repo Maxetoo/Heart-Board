@@ -84,6 +84,8 @@ export interface Contribution {
   mediaType?: 'audio' | 'video' | 'image' | 'text' | 'note';
   sticker?: string;
   confetti?: string;
+  /** Semantic Heart Spectrum ids, persisted on the message's content.hearts. */
+  selectedHearts?: string[];
   reactions?: number;
   reactionCounts?: ReactionCounts;
   userReactions?: ('clap' | 'heart' | 'smiley' | 'fire')[];
@@ -103,6 +105,9 @@ export interface Post {
   authorId?: string;
   recipientName?: string;
   recipientHandle?: string;
+  /** Resolved through avatarFor(), so it matches the recipient's profile page. */
+  recipientAvatar?: string;
+  recipientId?: string;
   content: string;
   caption?: string;
   type: 'text' | 'image' | 'audio' | 'heart_token';
@@ -116,6 +121,15 @@ export interface Post {
   reactionCounts?: ReactionCounts;
   userReactions?: ('clap' | 'heart' | 'smiley' | 'fire')[];
   canvasElements?: any[];
+  /**
+   * The message row holding this board's artwork.
+   *
+   * A board document has no canvas of its own — `canvasElements` above is
+   * copied off its first owner-written message (see useBoardMessages). Editing
+   * the board's background therefore has to write back to THAT row, so its id
+   * has to survive the hydration.
+   */
+  faceMessageId?: string;
   eventType?: string;
   recipients?: string[];
   hashtags?: string[];

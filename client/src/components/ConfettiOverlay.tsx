@@ -1,11 +1,15 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export type ConfettiType = 'clap' | 'ribbons' | 'simple' | 'celebration' | string | null | undefined;
 
 interface ConfettiOverlayProps {
   type: ConfettiType;
   className?: string;
-  loopCycle?: boolean; // Default true: 5s animation -> 15s pause loop
+  /**
+   * @deprecated No longer read. Confetti fires ONCE when the element first
+   * comes into view; it no longer loops. Kept so existing call sites compile.
+   */
+  loopCycle?: boolean;
 }
 
 interface Particle {
@@ -47,8 +51,48 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  /**
+   * Set once, when the element first scrolls into view — which is what fires
+   * the burst.
+   *
+   * Every feed and profile card mounts one of these. Each used to run its own
+   * uncapped requestAnimationFrame loop redrawing 40-55 recycled particles on a
+   * 5s-on/15s-off cycle for as long as the card existed, on screen or not, so
+   * scrolling accumulated dozens of concurrent canvas animations and the page
+   * stuttered. Now a card animates once, briefly, and only if it is actually
+   * seen; off-screen cards cost nothing and finished ones cost nothing.
+   */
+  const [onScreen, setOnScreen] = useState(false);
+
   useEffect(() => {
     if (!type) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Without IntersectionObserver, fall back to always-on rather than never.
+    if (typeof IntersectionObserver === 'undefined') {
+      setOnScreen(true);
+      return;
+    }
+
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        // Latch: the burst plays once, on first sight. Toggling this back off
+        // when the card scrolls away would replay it on every pass.
+        setOnScreen(true);
+        io.disconnect();
+      },
+      // A small margin starts the burst just before the card scrolls in, so it
+      // does not visibly pop on.
+      { rootMargin: '100px' },
+    );
+    io.observe(canvas);
+    return () => io.disconnect();
+  }, [type]);
+
+  useEffect(() => {
+    if (!type || !onScreen) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -58,8 +102,7 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
 
     let animId: number;
     let particles: Particle[] = [];
-    let startTime = Date.now();
-    let wasActive = false;
+    const startTime = Date.now();
 
     const resize = () => {
       const parent = canvas.parentElement;
@@ -175,64 +218,71 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
       ctx.restore();
     };
 
-    const render = () => {
+    // 30fps is indistinguishable for confetti and halves the draw cost when
+    // several cards are visible at once.
+    const FRAME_MS = 1000 / 30;
+    /** How long the single burst lasts before the canvas is cleared for good. */
+    const BURST_MS = 4000;
+    /** Particles fade out over the tail of the burst rather than vanishing. */
+    const FADE_MS = 900;
+    let lastFrame = 0;
+
+    const render = (now = 0) => {
       const width = canvas.width;
       const height = canvas.height;
+      const elapsed = Date.now() - startTime;
 
-      // Check loop timer: 5s (5000ms) active, 15s (15000ms) pause => 20s (20000ms) total cycle
-      if (loopCycle) {
-        const elapsed = Date.now() - startTime;
-        const cycleTime = elapsed % 20000;
-        const isActive = cycleTime < 5000;
-
-        if (!isActive) {
-          if (wasActive) {
-            ctx.clearRect(0, 0, width, height);
-            wasActive = false;
-          }
-          animId = requestAnimationFrame(render);
-          return;
-        }
-
-        // Just transitioned from paused to active phase
-        if (!wasActive) {
-          initBurst();
-          wasActive = true;
-        }
+      // ONE burst, then stop. This used to run a 5s-on / 15s-off cycle forever,
+      // so every card on the page kept a canvas animating for as long as it was
+      // mounted. Nothing reschedules after this point — the effect's cleanup is
+      // the only thing left to run.
+      if (elapsed >= BURST_MS) {
+        ctx.clearRect(0, 0, width, height);
+        particles = [];
+        return;
       }
+
+      // Frame-rate cap. rAF still drives the loop, so a background tab is
+      // throttled by the browser as usual; we just skip draws between slots.
+      if (now && now - lastFrame < FRAME_MS) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      lastFrame = now;
 
       ctx.clearRect(0, 0, width, height);
 
-      // Determine fade multiplier near the end of 5s window (last 600ms)
-      let cycleFade = 1;
-      if (loopCycle) {
-        const elapsed = Date.now() - startTime;
-        const cycleTime = elapsed % 20000;
-        if (cycleTime > 4400) {
-          cycleFade = Math.max(0, (5000 - cycleTime) / 600);
-        }
-      }
+      // Fade out over the tail of the burst.
+      const cycleFade = elapsed > BURST_MS - FADE_MS
+        ? Math.max(0, (BURST_MS - elapsed) / FADE_MS)
+        : 1;
 
-      particles.forEach((p, idx) => {
+      // A particle that leaves the frame is DROPPED, not respawned. Recycling
+      // them is what made a "burst" run forever — the population never fell.
+      particles = particles.filter((p) => {
         p.age += 1;
         p.rotation += p.rotSpeed;
 
         if (type === 'clap') {
           p.x += p.vx + Math.sin(p.age * p.swayFreq) * p.swayAmp * 0.5;
           p.y += p.vy;
-          if (p.y < -30 || p.x < -30 || p.x > width + 30 || p.age > p.maxAge) {
-            particles[idx] = createParticle(false);
-          }
-        } else {
-          p.x += p.vx + Math.sin(p.age * p.swayFreq) * p.swayAmp;
-          p.y += p.vy;
-          p.vy += 0.02;
-
-          if (p.y > height + 30 || p.x < -30 || p.x > width + 30 || p.age > p.maxAge) {
-            particles[idx] = createParticle(false);
-          }
+          return !(p.y < -30 || p.x < -30 || p.x > width + 30 || p.age > p.maxAge);
         }
 
+        p.x += p.vx + Math.sin(p.age * p.swayFreq) * p.swayAmp;
+        p.y += p.vy;
+        p.vy += 0.02;
+        return !(p.y > height + 30 || p.x < -30 || p.x > width + 30 || p.age > p.maxAge);
+      });
+
+      // Every particle has left the frame — stop early rather than burn the
+      // remainder of the burst window drawing nothing.
+      if (particles.length === 0) {
+        ctx.clearRect(0, 0, width, height);
+        return;
+      }
+
+      particles.forEach((p) => {
         ctx.save();
         ctx.globalAlpha = Math.max(0, p.opacity * (1 - p.age / p.maxAge) * cycleFade);
 
@@ -265,13 +315,13 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
       animId = requestAnimationFrame(render);
     };
 
-    render();
+    animId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
     };
-  }, [type, loopCycle]);
+  }, [type, loopCycle, onScreen]);
 
   if (!type) return null;
 

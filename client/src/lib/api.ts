@@ -53,10 +53,24 @@ export function toApiError(e: unknown): ApiError {
   };
 }
 
+/**
+ * Endpoints whose 401 is about the request body, not the session.
+ *
+ * The blanket rule below is right for almost everything: a 401 means the cookie
+ * expired. But some endpoints authenticate a *credential in the payload* while
+ * the session itself is perfectly valid. Treating those as an expired session
+ * logs the user out mid-form and unmounts whatever they were filling in, which
+ * looks exactly like the submit button doing nothing.
+ */
+const SELF_AUTHENTICATING_PATHS = ['/user/change-password'];
+
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error?.response?.status === 401 && typeof window !== 'undefined') {
+    const url = error?.config?.url ?? '';
+    const isSelfAuthenticating = SELF_AUTHENTICATING_PATHS.some((p) => url.includes(p));
+
+    if (error?.response?.status === 401 && !isSelfAuthenticating && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
     }
     return Promise.reject(error);

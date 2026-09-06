@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as boardApi from '../services/board.api';
-import { boardToPost } from '../lib/adapters';
+import * as userApi from '../services/user.api';
+import { boardToPost, userToRegisteredUser } from '../lib/adapters';
 import { toApiError } from '../lib/api';
 import type { Post } from '../types';
 import type { BoardEvent, PaginationDTO } from '../types/api';
@@ -123,6 +124,124 @@ export function useDiscoverFeed(options: FeedOptions = {}): FeedState {
     removePost,
     prependPost,
   };
+}
+
+/**
+ * The signed-in user's own boards, scoped by the server's `view`.
+ *
+ *   owned  -> boards this account CREATED        (the Board tab)
+ *   tagged -> boards this account is the RECIPIENT of, created by someone else
+ *             (the Tagged tab)
+ *
+ * The profile page used to filter the public discover feed client-side, matching
+ * author and recipient by display name. That was wrong twice over: a board of
+ * yours outside the feed's first page simply never appeared, and a stranger's
+ * board addressed to someone with your name landed in your Tagged tab. The
+ * server has always drawn this exact line — `owner: userId` versus
+ * `receipent: userId` — so ask it instead of guessing.
+ *
+ * Returns null items while disabled, so callers can distinguish "not asked" from
+ * "asked and empty".
+ */
+export function useMyBoards(
+  view: 'owned' | 'tagged',
+  options: { enabled?: boolean; currentUserId?: string; limit?: number } = {},
+) {
+  const { enabled = true, currentUserId, limit = 50 } = options;
+
+  const [items, setItems] = useState<Post[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!enabled) {
+      setItems(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await boardApi.getMyBoards({ view, limit });
+      setItems(data.boards.map((b) => boardToPost(b, currentUserId)));
+    } catch (e) {
+      setError(toApiError(e).message);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [view, limit, enabled, currentUserId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { items, loading, error, reload: load };
+}
+
+/**
+ * Another account's boards, scoped by the same server `view`.
+ *
+ *   owned  -> boards that account CREATED       (their Board tab)
+ *   tagged -> boards someone else created with them as the recipient
+ *             (their Tagged tab)
+ *
+ * The profile page fetched once with no view, stamped the profile owner onto
+ * every board as its author, and then let the client-side "did they create it"
+ * check decide — which, given that stamp, was always yes. Board showed
+ * everything and Tagged was always empty.
+ */
+export function useProfileBoards(
+  username: string | undefined,
+  view: 'owned' | 'tagged',
+  options: { enabled?: boolean; currentUserId?: string } = {},
+) {
+  const { enabled = true, currentUserId } = options;
+
+  const [items, setItems] = useState<Post[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!enabled || !username) {
+      setItems(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { user, boards } = await userApi.getPublicProfile(username, view);
+      const author = userToRegisteredUser(user);
+      setItems(
+        boards.map((b) => {
+          const post = boardToPost(b, currentUserId);
+          // On the owned view the endpoint omits `owner` (they are this
+          // account's boards by definition), so fill the author in. On the
+          // tagged view `owner` IS populated and is someone else — never
+          // overwrite it, or the card would credit the wrong person.
+          return post.authorId
+            ? post
+            : {
+                ...post,
+                authorId: author.id,
+                authorName: author.name,
+                authorHandle: author.handle,
+                authorAvatar: author.avatar,
+              };
+        }),
+      );
+    } catch (e) {
+      setError(toApiError(e).message);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [username, view, enabled, currentUserId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { items, loading, error, reload: load };
 }
 
 /** A single board plus its sponsors, addressed by slug. */

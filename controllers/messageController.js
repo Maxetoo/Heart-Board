@@ -10,6 +10,14 @@ const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMid
 const { buildBoardPreview } = require('../helpers/boardPreview');
 
 const validateContent = (type, content) => {
+  // Semantic hearts are frontend-owned asset keys, so there is no enum to check
+  // against — just keep the array bounded so a client cannot store an unbounded
+  // list on the document.
+  if (content && content.hearts !== undefined) {
+    content.hearts = Array.isArray(content.hearts)
+      ? content.hearts.map(String).slice(0, 12)
+      : [];
+  }
   if (type === 'text' && !content?.text)
     throw new CustomError.BadRequestError('Text messages require content.text.');
   if (type === 'audio' && !content?.audioUrl)

@@ -121,6 +121,10 @@ const BoardSchema = new Schema({
     theme:    { type: String, default: null },
     sticker:  { type: String, default: null },
     confetti: { type: String, default: null },
+    // Semantic Heart Spectrum ids picked in the composer. The composer has
+    // always collected these; there was nowhere to put them, so every board
+    // lost its hearts on reload.
+    hearts:   { type: [String], default: [] },
   },
 
   stats: {

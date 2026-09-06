@@ -1,5 +1,46 @@
 import React, { useState } from 'react';
 import { Check, X } from 'lucide-react';
+import { HeartboardLogo, heartboardLogoSvg } from './HeartboardLogo';
+
+/** Size, in card pixels, of the mark stamped into the downloaded image. */
+const LOGO_SIZE = 92;
+
+/**
+ * Loads the Heartboard mark as a bitmap the canvas can composite.
+ *
+ * Served through a blob URL, which is same-origin — so the canvas stays
+ * untainted and toDataURL() is still allowed to read it back. Returns null
+ * rather than throwing: a share card missing its logo still beats no card.
+ */
+async function loadHeartboardLogoImage(size: number): Promise<HTMLImageElement | null> {
+  const url = URL.createObjectURL(
+    new Blob([heartboardLogoSvg(size)], { type: 'image/svg+xml' }),
+  );
+
+  try {
+    const img = new Image();
+    img.width = size;
+    img.height = size;
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Heartboard logo failed to rasterise.'));
+      img.src = url;
+    });
+
+    // Fully decoded before the blob URL is revoked, or drawImage can come up
+    // blank in some browsers.
+    if (typeof img.decode === 'function') {
+      await img.decode().catch(() => undefined);
+    }
+
+    return img;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 export type ShareTargetType = 'profile' | 'board';
 
@@ -87,7 +128,28 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const shareUrl = getShareUrl();
 
-  // Copy link handler
+  /** Filename stem for the downloaded card — the SHARED profile, not the viewer. */
+  const cardSlug = isProfile
+    ? (effectiveData.userHandle || 'profile').replace('@', '')
+    : (effectiveData.boardId || 'board');
+
+  /**
+   * Renders the card and saves it. Shared by both buttons so "Copy Link" hands
+   * over the same image "Share & Copy Link" does.
+   */
+  const downloadCardImage = async (): Promise<string | null> => {
+    const dataUrl = await generateCanvasImage();
+    if (!dataUrl) return null;
+    const link = document.createElement('a');
+    link.download = `heartboard-${cardSlug}.png`;
+    link.href = dataUrl;
+    link.click();
+    return dataUrl;
+  };
+
+  // Copies the link and nothing else. Used on its own by the share flow, which
+  // does its own download afterwards — calling the combined handler there would
+  // save the card twice.
   const handleCopyOnlyLink = async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -108,8 +170,28 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
   };
 
+  /** Button 2: copy the link AND save the card, matching Button 1's output. */
+  const handleCopyLinkAndDownload = async () => {
+    setDownloading(true);
+    try {
+      await handleCopyOnlyLink();
+      const saved = await downloadCardImage();
+      onShowToast?.(saved ? 'Link copied & card downloaded!' : 'Link copied!');
+    } catch {
+      // The link is already on the clipboard; a failed render must not read as
+      // a failed copy.
+      onShowToast?.('Link copied!');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // Generate Canvas Card Image matching Images 3 & 4
   const generateCanvasImage = async (): Promise<string | null> => {
+    // Rasterise the mark up front so the card itself can be painted in one
+    // synchronous pass below.
+    const logoImage = await loadHeartboardLogoImage(LOGO_SIZE);
+
     return new Promise((resolve) => {
       try {
         const canvas = document.createElement('canvas');
@@ -141,58 +223,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           ctx.stroke();
         }
 
-        // 3. Top-Left Heart Bubble Logo
-        const drawBubbleLogo = () => {
-          const bx = 40;
-          const by = 40;
-          const bsize = 80;
-
-          ctx.save();
-          // Bubble background (#FE5C3E)
-          ctx.fillStyle = '#FE5C3E';
-          ctx.beginPath();
-          ctx.roundRect(bx, by, bsize, bsize, 24);
-          ctx.fill();
-
-          // Bubble small tail pointing down-left
-          ctx.beginPath();
-          ctx.moveTo(bx + 14, by + bsize - 6);
-          ctx.lineTo(bx - 6, by + bsize + 14);
-          ctx.lineTo(bx + 30, by + bsize);
-          ctx.closePath();
-          ctx.fill();
-
-          // White heart with smiley
-          ctx.fillStyle = '#FFFFFF';
-          ctx.beginPath();
-          const hx = bx + bsize / 2;
-          const hy = by + bsize / 2 - 4;
-          const hr = 18;
-
-          ctx.moveTo(hx, hy + hr * 0.8);
-          ctx.bezierCurveTo(hx - hr * 1.2, hy - hr * 0.4, hx - hr * 1.2, hy - hr * 1.1, hx - hr * 0.5, hy - hr * 1.1);
-          ctx.bezierCurveTo(hx - hr * 0.1, hy - hr * 1.1, hx, hy - hr * 0.7, hx, hy - hr * 0.5);
-          ctx.bezierCurveTo(hx, hy - hr * 0.7, hx + hr * 0.1, hy - hr * 1.1, hx + hr * 0.5, hy - hr * 1.1);
-          ctx.bezierCurveTo(hx + hr * 1.2, hy - hr * 1.1, hx + hr * 1.2, hy - hr * 0.4, hx, hy + hr * 0.8);
-          ctx.fill();
-
-          // Smiley eyes & mouth inside heart
-          ctx.fillStyle = '#FE5C3E';
-          ctx.beginPath();
-          ctx.arc(hx - 5, hy - 4, 1.8, 0, Math.PI * 2);
-          ctx.arc(hx + 5, hy - 4, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.strokeStyle = '#FE5C3E';
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.arc(hx, hy - 2, 4, 0.2 * Math.PI, 0.8 * Math.PI, false);
-          ctx.stroke();
-
-          ctx.restore();
-        };
-
-        drawBubbleLogo();
+        // 3. Top-Left Heartboard Mark.
+        //
+        // Rasterised from the real logo rather than redrawn. This used to be
+        // ~40 lines of bezier curves approximating it — a rounded square with a
+        // triangle for the tail — so the downloaded card carried a logo that
+        // matched nothing else in the product. Awaited before anything is
+        // composited on top, and skipped rather than fatal if it fails: a card
+        // missing its mark still beats no card.
+        if (logoImage) ctx.drawImage(logoImage, 40, 40, LOGO_SIZE, LOGO_SIZE);
 
         // 4. Center Graphic Drawing
         const finalizeAndReturn = () => {
@@ -403,17 +442,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
     // 2. Generate and download card image
     try {
-      const dataUrl = await generateCanvasImage();
+      const dataUrl = await downloadCardImage();
       if (dataUrl) {
-        // Trigger automatic image download
-        const cleanSlug = isProfile 
-          ? (effectiveData.userHandle || 'profile').replace('@', '')
-          : (effectiveData.boardId || 'board');
-
-        const link = document.createElement('a');
-        link.download = `heartboard-${cleanSlug}.png`;
-        link.href = dataUrl;
-        link.click();
+        const cleanSlug = cardSlug;
 
         // 3. Convert DataUrl to File to pass to Web Share API if supported
         let shareFile: File | null = null;
@@ -494,28 +525,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             background: 'repeating-linear-gradient(45deg, #FFF9F6, #FFF9F6 14px, #FAF2ED 14px, #FAF2ED 28px)'
           }}
         >
-          {/* Top-Left Speech Bubble Logo with Heart Smile */}
+          {/* Top-Left Brand Mark */}
           <div className="absolute top-4 left-4 z-10">
-            <div className="relative w-12 h-12 bg-[#FE5C3E] rounded-2xl flex items-center justify-center shadow-xs">
-              {/* Bubble Tail */}
-              <div 
-                className="absolute -bottom-1.5 left-1.5 w-3.5 h-3.5 bg-[#FE5C3E] rotate-45 rounded-xs"
-              />
-              {/* White Heart with Smiley */}
-              <div className="relative z-10 flex flex-col items-center justify-center">
-                <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                </svg>
-                {/* Smiley Face inside Heart */}
-                <div className="absolute top-[42%] left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-                  <div className="flex gap-1">
-                    <span className="w-0.5 h-0.5 rounded-full bg-[#FE5C3E] inline-block" />
-                    <span className="w-0.5 h-0.5 rounded-full bg-[#FE5C3E] inline-block" />
-                  </div>
-                  <div className="w-2 h-1 border-b border-[#FE5C3E] rounded-full -mt-0.5" />
-                </div>
-              </div>
-            </div>
+            <HeartboardLogo className="w-12 h-12 drop-shadow-xs" />
           </div>
 
           {/* 
@@ -552,7 +564,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                     {/* Top Heart Sticker */}
                     <div className="w-7 h-7 -mt-0.5 flex items-center justify-center shrink-0">
                       <svg className="w-6 h-6 text-[#FE5C3E] fill-current" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                        {/* The final curve was missing two of its six numbers
+                            ("...19.58 3 22 8.5"), so browsers dropped the whole
+                            segment and the heart rendered with its right lobe
+                            sheared off. */}
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                       </svg>
                     </div>
 
@@ -615,11 +631,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             )}
           </button>
 
-          {/* Button 2: Copy Link */}
+          {/* Button 2: Copy Link — also saves the card, same as Button 1. */}
           <button
             type="button"
-            onClick={handleCopyOnlyLink}
-            className="w-full py-3.5 rounded-full bg-[#F6F8FA] hover:bg-[#ECEFF3] active:scale-[0.98] text-[#1A1B25] font-black text-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+            onClick={handleCopyLinkAndDownload}
+            disabled={downloading}
+            className="w-full py-3.5 rounded-full bg-[#F6F8FA] hover:bg-[#ECEFF3] active:scale-[0.98] text-[#1A1B25] font-black text-sm transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
           >
             {copiedLink ? (
               <>

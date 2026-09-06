@@ -37,6 +37,8 @@ export interface UserStatsDTO {
   totalBoards: number;
   totalMessages: number;
   totalLikes: number;
+  /** Boards this account is the recipient of — computed live, not cached. */
+  totalTagged: number;
   totalCurators: number;
   totalBoardsUpgraded: number;
   profileLikes: number;
@@ -105,7 +107,7 @@ export interface BoardDTO {
   isActive?: boolean;
   onlyMe?: boolean;
   /** Added by this migration — see §11.1 of the migration doc. */
-  style?: { theme?: string; sticker?: string; confetti?: string } | null;
+  style?: { theme?: string; sticker?: string; confetti?: string; hearts?: string[] } | null;
   /**
    * Denormalised snapshot of the board's face message, so feed cards can show
    * the artwork without fetching messages. Inline data: URLs are stripped
@@ -134,6 +136,8 @@ export interface MessageContentDTO {
   vectorKey?: string | null;
   audioUrl?: string | null;
   duration?: number | null;
+  /** Semantic Heart Spectrum ids chosen in the composer. */
+  hearts?: string[];
 }
 
 export interface MessageDTO {

@@ -55,6 +55,28 @@ const authLimiter = rateLimit({
 // Apply rate limiter
 app.use(limiter);
 
+/**
+ * Helmet, minus the CSP.
+ *
+ * Two of helmet's headers decide whether generated avatars work, so before
+ * changing anything here:
+ *
+ *  - crossOriginEmbedderPolicy MUST stay off. `require-corp` blocks every
+ *    cross-origin image that does not send its own CORP header, which is all of
+ *    them: api.dicebear.com (generated faces) and res.cloudinary.com (uploaded
+ *    ones). Helmet has not enabled it by default since v5 — keep it that way.
+ *
+ *  - contentSecurityPolicy is off. If it is ever switched on, img-src must list
+ *    https://api.dicebear.com and https://res.cloudinary.com, and connect-src
+ *    must list them too, or avatars vanish and the share card renders faceless.
+ *
+ * crossOriginResourcePolicy stays at helmet's `same-origin` default. It governs
+ * who may embed assets THIS server returns, and the SPA is same-origin in
+ * production and behind the Vite proxy in dev, so nothing here is affected.
+ * Both avatar hosts already return `access-control-allow-origin: *`, which is
+ * what lets ShareProfileModal load them with crossOrigin="anonymous" and read
+ * the canvas back without tainting it.
+ */
 app.use(helmet({
   contentSecurityPolicy: false,
 }));

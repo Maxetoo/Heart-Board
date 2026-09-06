@@ -75,8 +75,75 @@ export function toReactionCounts(
 
 // ── Users ────────────────────────────────────────────────────────────────────
 
-const FALLBACK_AVATAR = (seed: string) =>
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed || 'heartboard')}`;
+/**
+ * A generated stand-in face for an account with no uploaded picture.
+ *
+ * DiceBear is deterministic: the same seed always renders the same face. That
+ * makes the SEED the identity of the avatar, so it must be something stable —
+ * see avatarSeedOf. Prefer avatarFor()/avatarFromParts(); call this directly
+ * only when you already hold a stable seed.
+ *
+ * `size` is NOT cosmetic — do not drop it. Without it the API returns an SVG
+ * carrying a viewBox but no width/height, i.e. with no intrinsic dimensions.
+ * Such an image reports naturalWidth 0 (so SmartImage's cached-image check
+ * never fires and the skeleton can stick) and canvas drawImage() renders it as
+ * nothing in Firefox — which is exactly the avatar the share card draws.
+ *
+ * The origin itself is CORS-open (`access-control-allow-origin: *`), so
+ * crossOrigin="anonymous" loads cleanly and does not taint the share canvas.
+ */
+const AVATAR_RENDER_PX = 256;
+
+export const FALLBACK_AVATAR = (seed: string) =>
+  `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed || 'heartboard')}` +
+  `&size=${AVATAR_RENDER_PX}`;
+
+/**
+ * The stable seed for a person's generated avatar.
+ *
+ * Every surface used to seed on whatever label it happened to have — the feed
+ * on `displayName || username || 'Curator'`, contributions on `… || 'Guest'`,
+ * the heart-token lists on a recipient's display name, the composer on the
+ * typed author name. The same person therefore got a different face on the
+ * profile page, in search results and in the heart-token list, because those
+ * surfaces resolve different labels for them.
+ *
+ * The account id is the only identifier that never varies; the username is the
+ * next best (unique, lowercased server-side). A display name is the LAST resort
+ * and only for people who have no account at all — a guest contributor.
+ */
+export function avatarSeedOf(parts: {
+  id?: string | null;
+  username?: string | null;
+  name?: string | null;
+}): string {
+  const id = (parts.id ?? '').trim();
+  if (id) return id;
+  const username = (parts.username ?? '').trim().replace(/^@/, '').toLowerCase();
+  if (username) return username;
+  const name = (parts.name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return name || 'heartboard';
+}
+
+/** Uploaded picture if there is one, otherwise a face seeded on stable identity. */
+export function avatarFromParts(parts: {
+  id?: string | null;
+  username?: string | null;
+  name?: string | null;
+  profileImage?: string | null;
+}): string {
+  return parts.profileImage || FALLBACK_AVATAR(avatarSeedOf(parts));
+}
+
+/** The same resolution for a server user document or populated reference. */
+export function avatarFor(u: Pick<UserRefDTO, '_id' | 'username' | 'profileImage'> & { displayName?: string | null }): string {
+  return avatarFromParts({
+    id: u._id,
+    username: u.username,
+    name: u.displayName,
+    profileImage: u.profileImage,
+  });
+}
 
 export function handleOf(username?: string | null): string {
   return username ? `@${username}` : '@unknown';
@@ -85,6 +152,34 @@ export function handleOf(username?: string | null): string {
 /** Strips a leading @ so a handle can be used as a :username route param. */
 export function usernameOf(handle?: string | null): string {
   return (handle ?? '').trim().replace(/^@/, '');
+}
+
+/**
+ * Characters a Heartboard username may legally contain.
+ *
+ * The server stores usernames lowercased with no character restriction beyond
+ * length, and the settings form accepts [a-z0-9_.-] — so a dot is part of a
+ * real handle, not punctuation to be tidied away.
+ */
+const USERNAME_CHARS = /[^a-z0-9._-]/g;
+
+/**
+ * Normalises text into a route-safe username.
+ *
+ * Invalid characters are DROPPED, never substituted. userFromHandle used to run
+ * `replace(/[^a-z0-9_]/g, '_')`, which rewrote the real handle "ms.lawson" into
+ * "ms_lawson" — a different, usually non-existent account. Clicking a recipient
+ * chip therefore navigated to the wrong profile. Substituting one valid
+ * character for another turns a correct handle into a plausible wrong one,
+ * which is worse than leaving it alone.
+ */
+export function toUsername(input?: string | null): string {
+  return usernameOf(input).toLowerCase().replace(USERNAME_CHARS, '');
+}
+
+/** `toUsername` with the @ back on, for display. */
+export function toHandle(input?: string | null, fallback = 'member'): string {
+  return `@${toUsername(input) || fallback}`;
 }
 
 export function userToRegisteredUser(u: UserDTO | UserRefDTO): RegisteredUser {
@@ -96,11 +191,14 @@ export function userToRegisteredUser(u: UserDTO | UserRefDTO): RegisteredUser {
     id: u._id,
     name,
     handle: handleOf(u.username),
-    avatar: u.profileImage || FALLBACK_AVATAR(name),
+    avatar: avatarFor(u),
     isVerified: Boolean(u.isVerified),
     heartsCount: stats.profileLikes ?? 0,
     boardsCount: stats.totalBoards ?? 0,
     messagesCount: stats.totalMessages != null ? String(stats.totalMessages) : undefined,
+    // Was never mapped, so the profile header always fell through to a
+    // hard-coded "30.6M Tagged".
+    taggedCount: stats.totalTagged != null ? String(stats.totalTagged) : undefined,
     bio: full.bio ?? '',
     // Display label only. The server's authorization role lives on roleName.
     roleLabel: u.isVerified ? 'Verified Curator' : 'Member',
@@ -156,7 +254,7 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
 
     authorName: isAnon ? 'Anon' : ownerName,
     authorHandle: isAnon ? '@anon' : handleOf(owner?.username),
-    authorAvatar: isAnon ? undefined : owner?.profileImage || FALLBACK_AVATAR(ownerName),
+    authorAvatar: isAnon || !owner ? undefined : avatarFor(owner),
     authorId: owner?._id,
 
     recipientName: recipient?.displayName || recipient?.username || b.receipentHashtag || undefined,
@@ -165,6 +263,11 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
       : b.receipentHashtag
         ? `#${b.receipentHashtag}`
         : undefined,
+    // Never mapped before, so every surface that showed a recipient's face
+    // (the heart-token lists on the profile) fell through to a name-seeded
+    // stand-in — a different face from the same person's profile page.
+    recipientAvatar: recipient ? avatarFor(recipient) : undefined,
+    recipientId: recipient?._id,
 
     // Prefer the face message's own words; the board description is a fallback.
     content: b.preview?.text || b.description || '',
@@ -200,6 +303,7 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
     theme: b.style?.theme,
     sticker: b.style?.sticker,
     confetti: b.style?.confetti,
+    selectedHearts: b.style?.hearts ?? [],
 
     contributions: [],
     isCreatedByUser: Boolean(currentUserId && owner?._id === currentUserId),
@@ -237,7 +341,7 @@ export function messageToContribution(m: MessageDTO, currentUserId?: string): Co
     id: m._id,
     authorName: senderName,
     authorHandle: handleOf(sender?.username),
-    authorAvatar: sender?.profileImage || FALLBACK_AVATAR(senderName),
+    authorAvatar: sender ? avatarFor(sender) : FALLBACK_AVATAR(avatarSeedOf({ name: senderName })),
     authorId: sender?._id,
 
     content: m.content?.text ?? '',
@@ -250,6 +354,7 @@ export function messageToContribution(m: MessageDTO, currentUserId?: string): Co
 
     canvasElements: unwrapCanvasData(m.canvasData),
     sticker: m.content?.vectorKey ?? undefined,
+    selectedHearts: m.content?.hearts ?? [],
 
     reactions: 0,
     reactionCounts: {},
@@ -520,13 +625,15 @@ export function userFromHandle(
 ): RegisteredUser {
   const raw = (input ?? '').trim().replace(/^@/, '');
   const name = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Member';
-  const handle = `@${raw.toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'member'}`;
+  const handle = toHandle(raw);
 
   return {
     id: overrides.id ?? '',
     name,
     handle,
-    avatar: FALLBACK_AVATAR(name),
+    // Seeded on the handle, not the prettified name, so this stub resolves to
+    // the same face the real account gets once it has been loaded.
+    avatar: avatarFromParts({ id: overrides.id, username: raw, name }),
     isVerified: false,
     heartsCount: 0,
     boardsCount: 0,
@@ -541,7 +648,12 @@ export function authorOf(post: Pick<Post, 'authorName' | 'authorHandle' | 'autho
     id: post.authorId ?? '',
     name: post.authorName || 'Curator',
     handle: post.authorHandle || handleOf(undefined),
-    avatar: post.authorAvatar || FALLBACK_AVATAR(post.authorName || 'Curator'),
+    avatar: avatarFromParts({
+      id: post.authorId,
+      username: usernameOf(post.authorHandle),
+      name: post.authorName,
+      profileImage: post.authorAvatar,
+    }),
   });
 }
 

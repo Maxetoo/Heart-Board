@@ -80,25 +80,67 @@ const moderate = async (req, res) => {
   }
 };
 
-/** POST /api/v1/ai/refine  { text } -> { text } */
+/**
+ * Trims to a hard character budget without cutting a word in half, preferring
+ * to end on the last complete sentence.
+ */
+function fitToBudget(text, maxChars) {
+  if (text.length <= maxChars) return text;
+  const window = text.slice(0, maxChars);
+  const lastSentence = Math.max(
+    window.lastIndexOf('. '), window.lastIndexOf('! '), window.lastIndexOf('? '),
+  );
+  if (lastSentence > maxChars * 0.5) return window.slice(0, lastSentence + 1).trim();
+  const lastSpace = window.lastIndexOf(' ');
+  return (lastSpace > 0 ? window.slice(0, lastSpace) : window).trim();
+}
+
+/**
+ * POST /api/v1/ai/refine  { text, maxChars? } -> { text }
+ *
+ * Rewrites the user's own words rather than generating a generic message: the
+ * names, the specific thing being thanked for, and the sender's voice all have
+ * to survive, otherwise the "Refine" button reads as replacing what they wrote.
+ *
+ * Unlike moderation, this does NOT fail open. Echoing the input back on an API
+ * error looked to the user like the button did nothing at all.
+ */
 const refine = async (req, res) => {
   const text = requireText(req.body);
+  const maxChars = Math.min(Math.max(Number(req.body?.maxChars) || 250, 40), MAX_TEXT);
+
+  const ai = getClient();
+  let response;
   try {
-    const ai = getClient();
-    const response = await ai.models.generateContent({
+    response = await ai.models.generateContent({
       model: MODEL,
-      contents: `You are an expert editor for a heartfelt appreciation and recognition platform called Heartboard.
-Refine the following text to improve grammar, clarity, readability, and wording while preserving the user's original heartfelt intent and tone. Return ONLY the refined text without markdown quotes or explanation.
+      contents: `You are an expert editor for Heartboard, a positive-only appreciation and recognition platform.
 
-Text to refine: "${text}"`,
+Rewrite the message below so it reads warmly and clearly. Rules:
+- Work from what the writer actually said. Keep every name, role, event, and specific detail they mentioned; never invent facts, achievements, or relationships that are not in their text.
+- Fix grammar, spelling, punctuation and awkward phrasing. Tighten rambling sentences.
+- Keep their voice and level of formality. If they wrote casually, stay casual; if the note is short, keep it short.
+- Keep it heartfelt and specific, not corporate or generic.
+- Hard limit: ${maxChars} characters. Aim for about the same length as the original.
+- Output ONLY the rewritten message. No quotes, no markdown, no preamble, no alternatives.
+
+Message:
+${text}`,
+      config: { temperature: 0.7 },
     });
-
-    const refined = (response.text || '').trim().replace(/^["']|["']$/g, '');
-    res.status(StatusCodes.OK).json({ text: refined || text });
   } catch (error) {
     console.error('Refine text error:', error.message);
-    res.status(StatusCodes.OK).json({ text });
+    throw new CustomError.BadRequestError("Couldn't refine that right now. Please try again.");
   }
+
+  const refined = (response.text || '')
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, '')
+    .trim();
+
+  if (!refined) throw new CustomError.BadRequestError('The refiner returned nothing. Please try again.');
+
+  res.status(StatusCodes.OK).json({ text: fitToBudget(refined, maxChars) });
 };
 
 /** POST /api/v1/ai/transcribe  { audio: base64 } -> { text } */

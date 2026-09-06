@@ -24,15 +24,20 @@ export const moderateContent = async (text: string): Promise<ModerationResult> =
   }
 };
 
-export const refineText = async (text: string): Promise<string> => {
+/**
+ * Rewrites `text` with Gemini, keeping the writer's own details and voice.
+ *
+ * `maxChars` is the composer's own character cap, passed through so the model
+ * writes to fit instead of getting truncated after the fact.
+ *
+ * Throws on failure rather than echoing the input back: silently returning the
+ * unchanged text made the Refine button look broken.
+ */
+export const refineText = async (text: string, maxChars = 250): Promise<string> => {
   if (!text || !text.trim()) return text;
-  try {
-    const { data } = await api.post<{ text: string }>('/ai/refine', { text });
-    return data.text || text;
-  } catch (error) {
-    console.error('Refine text error:', error);
-    return text;
-  }
+  const { data } = await api.post<{ text: string }>('/ai/refine', { text, maxChars });
+  if (!data.text) throw new Error("Couldn't refine that right now. Please try again.");
+  return data.text;
 };
 
 export const transcribeAudio = async (base64Audio: string): Promise<string> => {

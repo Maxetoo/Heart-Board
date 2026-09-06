@@ -91,10 +91,25 @@ UserRoute.post('/:id/like', authentication, likeProfile);
 
 // ── Public profile — cache per username, invalidated on updateProfile ─────────
 // MUST be after all fixed-segment routes (/me, /likes/me, /check-username/:x)
+//
+// The key has to account for ?view: the handler returns a different board list
+// for it (boards the account owns by default, boards it was tagged on for
+// view=tagged). Keyed on the username alone, those two responses shared one
+// entry, so whichever was requested first was served to the other for the whole
+// TTL — a profile showing the wrong set of boards.
+//
+// Only the non-default view is suffixed, deliberately: the plain key stays
+// exactly what every invalidate(keys.publicProfile(username)) call across the
+// controllers already deletes. The trade is that a ?view=tagged entry is not
+// invalidated on write and can be up to TTL stale; switch those calls to
+// invalidatePattern(`${key}*`) if that view ever ships.
 UserRoute.get(
   '/profile/:username',
   authentication,
-  cache(TTL.PUBLIC_PROFILE, req => keys.publicProfile(req.params.username.toLowerCase())),
+  cache(TTL.PUBLIC_PROFILE, req => {
+    const base = keys.publicProfile(req.params.username.toLowerCase());
+    return req.query.view ? `${base}:${req.query.view}` : base;
+  }),
   getPublicProfile
 );
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Post, Contribution, PostVisibility, ReactionCounts, RegisteredUser } from '../types';
-import { userFromHandle } from '../lib/adapters';
+import { userFromHandle, avatarFromParts, usernameOf, toHandle, toUsername } from '../lib/adapters';
 import {
   X,
   ChevronLeft,
@@ -26,6 +26,25 @@ import { CanvasReadOnlyCard } from './CreateAppreciationModal';
 import { ShareProfileModal } from './ShareProfileModal';
 import { SmartImage } from './SmartImage';
 import { ActionMenuModal } from './ActionMenuModal';
+import { motion, AnimatePresence } from 'motion/react';
+
+/**
+ * The message swap inside a board frame.
+ *
+ * Deliberately small and quick: the outgoing message recedes and fades like a
+ * card going to the back of a stack while the next one comes forward. The frame
+ * around it never moves, so the board reads as a fixed object you are dealing
+ * cards into rather than something being dragged around.
+ */
+const MESSAGE_CARD_VARIANTS = {
+  enter: (direction: 1 | -1) => ({ opacity: 0, scale: 0.94, x: direction * 28 }),
+  center: { opacity: 1, scale: 1, x: 0 },
+  exit: (direction: 1 | -1) => ({ opacity: 0, scale: 0.94, x: direction * -28 }),
+};
+
+/** How far the card follows the finger, and the cap that keeps it subtle. */
+const DRAG_FOLLOW_RATIO = 0.22;
+const DRAG_FOLLOW_MAX_PX = 26;
 
 interface MediaModalProps {
   post: Post & {
@@ -128,10 +147,22 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
   // Single Click vs Double Click Disambiguation Ref
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const touchStartRef = useRef<{ x: number; y: number; time: number; isEdgeLeft: boolean; isEdgeRight: boolean } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const gestureDirectionRef = useRef<'horizontal' | 'vertical' | null>(null);
+  /** The pointer currently driving a swipe, so a second finger is ignored. */
+  const activePointerIdRef = useRef<number | null>(null);
+  /**
+   * The live drag distance.
+   *
+   * Kept in a ref as well as state because the release handler has to read the
+   * TRUE final distance. Reading it from state meant reading whatever React had
+   * last committed, which lags the pointer — a quick flick could travel 150px
+   * and still be judged as 30px, so the swipe silently did nothing. Touch drags
+   * are slow enough that state keeps up, which is exactly why this only showed
+   * up with a mouse.
+   */
+  const dragDeltaRef = useRef(0);
   const hasMovedRef = useRef<boolean>(false);
-  const isTransitioningRef = useRef<boolean>(false);
 
   // Swipe gesture tracking for mobile expanded view
   const [dragOffset, setDragOffset] = useState<number>(0);
@@ -188,6 +219,47 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const isCapacityReached = contributions.length >= maxCapacity;
   const canToggleContributions = !isSoloMode && contributions.length > 0;
   const effectiveActiveTab = canToggleContributions ? activeTab : 'main';
+
+  // ── The board's messages, as one flat sequence ──────────────────────────────
+  //
+  // Index 0 is the board's own face; 1..n are the contributed messages. Swiping
+  // walks this list and never leaves the board.
+  const messageCount = canToggleContributions ? contributions.length + 1 : 1;
+  const messageIndex = effectiveActiveTab === 'main' ? 0 : activeContributionIndex + 1;
+
+  /** Which way the last change went: 1 forward, -1 back. Aims the card animation. */
+  const [swipeDirection, setSwipeDirection] = useState<1 | -1>(1);
+
+  /**
+   * How far the message card is nudged while a drag is in progress.
+   *
+   * Damped and clamped, and zero on a board with only one message — there is
+   * nothing to swipe to, so the card should not suggest otherwise.
+   */
+  const dragNudge =
+    messageCount > 1
+      ? Math.max(
+          -DRAG_FOLLOW_MAX_PX,
+          Math.min(DRAG_FOLLOW_MAX_PX, dragOffset * DRAG_FOLLOW_RATIO),
+        )
+      : 0;
+
+  /**
+   * Moves to a message by flat index.
+   *
+   * No wrapping, and no falling through to the next board at the ends — the
+   * last message just holds, the way the top card of a stack does.
+   */
+  const goToMessage = (nextIndex: number) => {
+    if (nextIndex === messageIndex || nextIndex < 0 || nextIndex >= messageCount) return;
+    setSwipeDirection(nextIndex > messageIndex ? 1 : -1);
+    if (nextIndex === 0) {
+      setActiveTab('main');
+    } else {
+      setActiveTab('contributions');
+      setActiveContributionIndex(nextIndex - 1);
+    }
+  };
 
   // Track previous post ID and contribution count to handle smooth contribution addition
   const prevPostIdRef = useRef(post.id);
@@ -252,36 +324,33 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     }
   };
 
-  // Touch Gesture Handling for Mobile Swipe Navigation
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length !== 1 || isTransitioningRef.current) return;
-    const touch = e.touches[0];
-    const clientX = touch.clientX;
-    const clientY = touch.clientY;
-    const screenWidth = window.innerWidth;
+  // Swipe navigation.
+  //
+  // Pointer events rather than touch events: the same handlers then cover
+  // finger, trackpad, mouse and pen. These were touch-only, so the board could
+  // not be swiped at all on a desktop — the gesture logic below was already
+  // written, it just never received an event from anything but a touchscreen.
+  //
+  // The container carries `touch-pan-y`, so the browser keeps vertical
+  // scrolling for itself and hands us the horizontal movement.
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Primary contact only, and never a secondary mouse button.
+    if (!e.isPrimary || e.button !== 0) return;
 
-    // Detect if swipe initiates from screen edge (within 48px of left or right screen border)
-    const isEdgeLeft = clientX <= 48;
-    const isEdgeRight = clientX >= screenWidth - 48;
-
-    touchStartRef.current = {
-      x: clientX,
-      y: clientY,
-      time: Date.now(),
-      isEdgeLeft,
-      isEdgeRight
-    };
+    touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+    activePointerIdRef.current = e.pointerId;
     gestureDirectionRef.current = null;
     hasMovedRef.current = false;
+    dragDeltaRef.current = 0;
     setIsDragging(false);
     setDragOffset(0);
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStartRef.current || e.touches.length !== 1 || isTransitioningRef.current) return;
-    const touch = e.touches[0];
-    const deltaX = touch.clientX - touchStartRef.current.x;
-    const deltaY = touch.clientY - touchStartRef.current.y;
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!touchStartRef.current || e.pointerId !== activePointerIdRef.current) return;
+
+    const deltaX = e.clientX - touchStartRef.current.x;
+    const deltaY = e.clientY - touchStartRef.current.y;
 
     // Lock gesture direction once threshold is crossed
     if (gestureDirectionRef.current === null) {
@@ -290,6 +359,13 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           gestureDirectionRef.current = 'horizontal';
           setIsDragging(true);
           hasMovedRef.current = true;
+          // Capture only now that the gesture is definitely a swipe, so a
+          // plain press still reaches the buttons inside the board.
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // Capture is a nicety; the drag still tracks without it.
+          }
         } else {
           gestureDirectionRef.current = 'vertical';
         }
@@ -299,11 +375,31 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     if (gestureDirectionRef.current === 'horizontal') {
       hasMovedRef.current = true;
       // Damped direct finger following
+      dragDeltaRef.current = deltaX;
       setDragOffset(deltaX);
     }
   };
 
-  const handleTouchEnd = () => {
+  /**
+   * The browser took the gesture over (it became a scroll, or the window lost
+   * focus). Snap back rather than committing whatever the drag had reached.
+   */
+  const handlePointerCancel = () => {
+    activePointerIdRef.current = null;
+    touchStartRef.current = null;
+    gestureDirectionRef.current = null;
+    hasMovedRef.current = false;
+    dragDeltaRef.current = 0;
+    setIsDragging(false);
+    setDragOffset(0);
+  };
+
+  const handlePointerUp = (e?: React.PointerEvent) => {
+    if (e && activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+      return;
+    }
+    activePointerIdRef.current = null;
+
     if (!touchStartRef.current) {
       setDragOffset(0);
       setIsDragging(false);
@@ -311,7 +407,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     }
 
     const startInfo = touchStartRef.current;
-    const deltaX = dragOffset;
+    const deltaX = dragDeltaRef.current;
     const elapsed = Date.now() - startInfo.time;
     const velocity = Math.abs(deltaX) / (elapsed || 1);
     const isHorizontal = gestureDirectionRef.current === 'horizontal';
@@ -329,106 +425,24 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     const isFastSwipe = velocity > 0.35 && Math.abs(deltaX) > 20;
     const hasTriggered = Math.abs(deltaX) > swipeThreshold || isFastSwipe;
 
+    // The drag itself always releases. Whether the message changed or not, the
+    // card returns to rest — the swap is carried by the card transition, not by
+    // flinging anything off screen.
+    dragDeltaRef.current = 0;
+    setDragOffset(0);
+
     if (hasTriggered) {
-      isTransitioningRef.current = true;
-      const isLeftSwipe = deltaX < 0; // Swipe left -> advance forward
-      const isRightSwipe = deltaX > 0; // Swipe right -> go backward
-
-      // 1. Edge Swipe: Swiping from screen edges directly moves to next/previous board
-      if (startInfo.isEdgeLeft && isRightSwipe) {
-        setDragOffset(window.innerWidth * 0.4);
-        setTimeout(() => {
-          onPrev();
-          setDragOffset(0);
-          isTransitioningRef.current = false;
-          hasMovedRef.current = false;
-        }, 160);
-        return;
-      }
-
-      if (startInfo.isEdgeRight && isLeftSwipe) {
-        setDragOffset(-window.innerWidth * 0.4);
-        setTimeout(() => {
-          onNext();
-          setDragOffset(0);
-          isTransitioningRef.current = false;
-          hasMovedRef.current = false;
-        }, 160);
-        return;
-      }
-
-      // 2. Normal Board Swipe: Move between Main Message and Contributed Messages, or between Boards
-      const totalContributions = canToggleContributions ? contributions.length : 0;
-
-      if (isLeftSwipe) {
-        // Advancing forward
-        if (effectiveActiveTab === 'main' && totalContributions > 0) {
-          // Switch to first contribution inside expanded view
-          setDragOffset(-120);
-          setTimeout(() => {
-            setActiveTab('contributions');
-            setActiveContributionIndex(0);
-            setDragOffset(0);
-            isTransitioningRef.current = false;
-            hasMovedRef.current = false;
-          }, 140);
-        } else if (effectiveActiveTab === 'contributions' && activeContributionIndex < totalContributions - 1) {
-          // Advance to next contribution
-          setDragOffset(-120);
-          setTimeout(() => {
-            setActiveContributionIndex((prev) => prev + 1);
-            setDragOffset(0);
-            isTransitioningRef.current = false;
-            hasMovedRef.current = false;
-          }, 140);
-        } else {
-          // Reached end of board sequence -> Advance to next board
-          setDragOffset(-window.innerWidth * 0.4);
-          setTimeout(() => {
-            onNext();
-            setDragOffset(0);
-            isTransitioningRef.current = false;
-            hasMovedRef.current = false;
-          }, 160);
-        }
-      } else if (isRightSwipe) {
-        // Going backward
-        if (effectiveActiveTab === 'contributions') {
-          if (activeContributionIndex > 0) {
-            // Go to previous contribution
-            setDragOffset(120);
-            setTimeout(() => {
-              setActiveContributionIndex((prev) => prev - 1);
-              setDragOffset(0);
-              isTransitioningRef.current = false;
-              hasMovedRef.current = false;
-            }, 140);
-          } else {
-            // Go back to the main message
-            setDragOffset(120);
-            setTimeout(() => {
-              setActiveTab('main');
-              setDragOffset(0);
-              isTransitioningRef.current = false;
-              hasMovedRef.current = false;
-            }, 140);
-          }
-        } else {
-          // Already on main message -> Go to previous board
-          setDragOffset(window.innerWidth * 0.4);
-          setTimeout(() => {
-            onPrev();
-            setDragOffset(0);
-            isTransitioningRef.current = false;
-            hasMovedRef.current = false;
-          }, 160);
-        }
-      }
-    } else {
-      // Snap back smoothly
-      setDragOffset(0);
-      hasMovedRef.current = false;
+      // Swiping moves between the messages ON this board, and nothing else.
+      // Changing boards is the left/right chevrons' job, which is why they are
+      // desktop-only: on a phone a board is a place you swipe through, not a
+      // place you swipe out of.
+      goToMessage(messageIndex + (deltaX < 0 ? 1 : -1));
     }
+
+    // hasMovedRef is deliberately NOT cleared here. The click event fires after
+    // pointerup, and handleBoardCardClick reads this flag to know the gesture
+    // was a swipe rather than a tap — clearing it now would open the contributor
+    // panel at the end of every drag. The next pointerdown resets it.
   };
 
   // Keyboard navigation
@@ -437,40 +451,21 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowLeft') {
-        handlePrevMessage();
+        // Arrows mirror the on-screen chevrons: previous/next BOARD.
+        onPrev();
       } else if (e.key === 'ArrowRight') {
-        handleNextMessage();
+        onNext();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, activeContributionIndex, contributions.length, onPrev, onNext]);
+  }, [onClose, onPrev, onNext]);
 
   // Current active message depending on tab
   const activeMessage = effectiveActiveTab === 'main'
     ? post
     : (contributions[activeContributionIndex] || post);
 
-  // Navigation handlers
-  const handlePrevMessage = () => {
-    if (effectiveActiveTab === 'contributions' && contributions.length > 1) {
-      setActiveContributionIndex((prev) =>
-        (prev - 1 + contributions.length) % contributions.length
-      );
-    } else {
-      onPrev();
-    }
-  };
-
-  const handleNextMessage = () => {
-    if (effectiveActiveTab === 'contributions' && contributions.length > 1) {
-      setActiveContributionIndex((prev) =>
-        (prev + 1) % contributions.length
-      );
-    } else {
-      onNext();
-    }
-  };
 
   // Frame Background resolution (reusing main curator's theme consistently)
   const getFrameBg = () => {
@@ -495,11 +490,6 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
   const frameBgColor = getFrameBg();
 
-  // Permanent Main Board Details (always retained regardless of active tab / contributions navigation)
-  const mainBoardCaption = post.caption || post.content || 'Heartfelt Tribute Board';
-  const mainCuratorName = post.authorName || 'Curator';
-  const mainCuratorAvatar = post.authorAvatar;
-
   // Active message contributor details (for single-click contributor details overlay on the board)
   const activeContributorName = effectiveActiveTab === 'main'
     ? (post.authorName || 'Curator')
@@ -508,6 +498,34 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     ? post.authorAvatar
     : activeMessage.authorAvatar;
 
+  /**
+   * Who wrote the message currently on the board — the @handle under it.
+   *
+   * The caption and the tagged recipients above are board-level and stay put as
+   * you swipe. This line does not: the whole point of swiping through a board
+   * is reading each person's message, so it has to say whose message you are
+   * looking at. It used to be pinned to the board's owner, which named the
+   * wrong person on every message but the first.
+   */
+  const activeAuthor = useMemo(() => {
+    const source: { authorName?: string; authorHandle?: string; authorAvatar?: string } =
+      effectiveActiveTab === 'main' ? post : activeMessage;
+
+    const name = source.authorName || (effectiveActiveTab === 'main' ? 'Curator' : 'Contributor');
+    const raw = (source.authorHandle || '').trim();
+    const handle = raw
+      ? (raw.startsWith('@') ? raw : `@${raw}`)
+      : toHandle(name, 'curator');
+
+    return {
+      name,
+      handle,
+      avatar: source.authorAvatar,
+      // The board's face message is the owner's, so only that one is labelled.
+      isBoardOwner: effectiveActiveTab === 'main',
+    };
+  }, [effectiveActiveTab, post, activeMessage]);
+
   // Resolve creator's profile object.
   // The post already carries the author fields populated by the server, so we
   // build the stub from those rather than looking the handle up in a table.
@@ -515,15 +533,20 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     if (isViewerCreator && currentUser) return currentUser;
 
     const displayName = post.authorName || 'Curator';
-    const displayHandle = post.authorHandle 
+    const displayHandle = post.authorHandle
       ? (post.authorHandle.startsWith('@') ? post.authorHandle : `@${post.authorHandle}`)
-      : `@${displayName.toLowerCase().replace(/[^a-z0-9]/g, '_') || 'curator'}`;
+      : toHandle(displayName, 'curator');
 
     return {
-      id: post.authorId || `u-${displayName.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'curator'}`,
+      id: post.authorId || `u-${toUsername(displayName) || 'curator'}`,
       name: displayName,
       handle: displayHandle,
-      avatar: post.authorAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(displayName)}`,
+      avatar: avatarFromParts({
+        id: post.authorId,
+        username: usernameOf(displayHandle),
+        name: displayName,
+        profileImage: post.authorAvatar,
+      }),
       isVerified: false,
       heartsCount: 1,
       boardsCount: 1,
@@ -648,6 +671,11 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
     if (Array.isArray(post.recipients) && post.recipients.length > 0) {
       post.recipients.forEach(r => addToken(r));
+    } else if (post.recipientHandle) {
+      // The recipient's real handle, straight from the server. Preferred over
+      // recipientName: a display name has to be guessed back into a username,
+      // and that guess is how "@ms.lawson" became "ms_lawson".
+      addToken(post.recipientHandle);
     } else if (post.recipientName) {
       post.recipientName.split(',').forEach(r => addToken(r));
     } else if (post.targetId) {
@@ -681,7 +709,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     }
 
     return tokens;
-  }, [post.recipients, post.recipientName, post.targetId, post.hashtags, post.authorHandle, post.authorName, post.authorId, isViewerCreator, currentUser, creatorUser]);
+  }, [post.recipients, post.recipientHandle, post.recipientName, post.targetId, post.hashtags, post.authorHandle, post.authorName, post.authorId, isViewerCreator, currentUser, creatorUser]);
 
 
   // Reaction formatting helper
@@ -813,30 +841,39 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         </button>
       </header>
 
-      {/* Screen Left & Right Chevrons Navigation for Desktop */}
+      {/* Desktop-only chevrons: previous / next BOARD.
+          Messages within a board are reached by swiping the card instead, which
+          is why these stay hidden on mobile — a phone has no way to switch
+          boards from here, by design. */}
       <button
-        onClick={handlePrevMessage}
+        onClick={onPrev}
         className="hidden md:flex fixed left-4 sm:left-8 md:left-16 lg:left-24 xl:left-[192px] top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full hover:scale-105 active:scale-95 items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer"
-        aria-label="Previous message"
+        aria-label="Previous board"
       >
         <ChevronLeft className="w-6 h-6 text-white/60 hover:text-white transition-colors" />
       </button>
 
       <button
-        onClick={handleNextMessage}
+        onClick={onNext}
         className="hidden md:flex fixed right-4 sm:right-8 md:right-16 lg:right-24 xl:right-[192px] top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full hover:scale-105 active:scale-95 items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer"
-        aria-label="Next message"
+        aria-label="Next board"
       >
         <ChevronRight className="w-6 h-6 text-white/60 hover:text-white transition-colors" />
       </button>
 
       {/* 2. MIDDLE: ACTUAL MESSAGE BOARD / CONTENT */}
       <main
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-        className="w-full flex-1 flex flex-col items-center justify-center px-4 py-2 my-auto z-10 touch-pan-y"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        // A mouse press on the artwork would otherwise start a native HTML5
+        // image drag, which cancels the pointer stream mid-gesture. Touch has
+        // no such thing, so this too only ever bit on desktop.
+        onDragStart={(e) => e.preventDefault()}
+        className={`w-full flex-1 flex flex-col items-center justify-center px-4 py-2 my-auto z-10 touch-pan-y select-none ${
+          isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        }`}
       >
 
         {effectiveActiveTab === 'contributions' && !hasContributions ? (
@@ -879,12 +916,11 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           /* The Actual Message Board Frame (Fixed & Pristine) */
           <div
             onClick={handleBoardCardClick}
-            style={{
-              backgroundColor: frameBgColor,
-              transform: `translateX(${dragOffset}px) rotate(${dragOffset * 0.015}deg)`,
-              transition: isDragging ? 'none' : 'transform 0.24s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.24s ease',
-              opacity: isDragging ? Math.max(0.72, 1 - Math.abs(dragOffset) / 500) : 1
-            }}
+            // The frame does not move. It is the board — swiping changes which
+            // message sits inside it, so the board itself staying put is the
+            // whole point. It used to translate and rotate with the finger,
+            // which read as dragging the board away.
+            style={{ backgroundColor: frameBgColor }}
             className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] h-[400px] sm:h-[450px] md:h-[474px] rounded-[2.2rem] sm:rounded-[2.5rem] p-5 sm:p-6 md:p-7 flex items-center justify-center shadow-[0_20px_60px_rgba(0,0,0,0.45)] relative overflow-hidden cursor-pointer active:scale-[0.995] select-none will-change-transform"
             title="Single-click for contributor details, double-click for action menu"
           >
@@ -903,9 +939,37 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               </div>
             )}
 
-            {/* Inner Canvas Container (Preserving exact visual appearance from Create Page) */}
-            <div className="relative z-10 w-full h-full flex items-center justify-center">
-              <CanvasReadOnlyCard
+            {/* Inner Canvas Container (Preserving exact visual appearance from Create Page).
+                This layer — not the frame — is what follows the finger, damped
+                and capped so it reads as a nudge on the message rather than the
+                board being dragged. */}
+            <div
+              className="relative z-10 w-full h-full flex items-center justify-center"
+              style={{
+                transform: `translateX(${dragNudge}px)`,
+                transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+              }}
+            >
+              {/* Only the message moves.
+                  While dragging it follows the finger a little — heavily damped
+                  and capped, so it reads as the card being nudged rather than
+                  thrown. On release it settles, and the swap itself is the card
+                  transition below. */}
+              {/* Both cards are absolutely stacked, so the one leaving and the
+                  one arriving overlap for the length of the transition instead
+                  of reflowing the frame. */}
+              <AnimatePresence initial={false} custom={swipeDirection}>
+                <motion.div
+                  key={messageIndex}
+                  custom={swipeDirection}
+                  variants={MESSAGE_CARD_VARIANTS}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  <CanvasReadOnlyCard
                 canvasElements={activeMessage.canvasElements || (effectiveActiveTab === 'main' ? post.canvasElements : undefined) || []}
                 content={activeMessage.content || post.content}
                 uploadedImage={activeMessage.imageUrl || activeMessage.mediaUrl || (effectiveActiveTab === 'main' ? (post.imageUrl || post.mediaUrl) : undefined)}
@@ -917,7 +981,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 isCollaborative={!isSoloMode}
                 visibility={post.visibility}
                 showMetadata={false} // Strictly clean: No status pills, capacity info, or duplicate badges on the board!
-              />
+                  />
+                </motion.div>
+              </AnimatePresence>
 
               {/* Single Click — Contributor Details Overlay */}
               {showContributorDetails && (
@@ -951,38 +1017,15 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           </div>
         )}
 
-        {/* 3. BOARD NAVIGATION: Circular navigation indicator below the board */}
-        {effectiveActiveTab === 'contributions' && contributions.length > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-3.5 mb-1 z-20">
-            {contributions.map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setActiveContributionIndex(idx)}
-                className={`transition-all duration-300 rounded-full cursor-pointer ${
-                  activeContributionIndex === idx
-                    ? 'w-6 h-2 bg-white'
-                    : 'w-2 h-2 bg-white/30 hover:bg-white/60'
-                }`}
-                aria-label={`Jump to message ${idx + 1}`}
-              />
-            ))}
-          </div>
-        )}
-
       </main>
 
       {/* 4. BELOW THE BOARD (Strictly permanent main board metadata) */}
       <footer className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] mx-auto px-0 pb-6 pt-1 flex flex-col items-start text-left gap-3 z-20 shrink-0">
 
-        {/* A. Caption (Permanent Main Board Creator's Caption) */}
-        <h2 className="w-full text-base sm:text-lg font-bold text-white tracking-tight leading-snug truncate" title={mainBoardCaption}>
-          {mainBoardCaption}
-        </h2>
-
-        {/* B. Tagged recipient(s) (Permanent Main Board Recipients) */}
+        {/* Tagged recipient(s) and hashtags. */}
         <p className="text-xs sm:text-sm font-semibold text-white/60 break-words flex flex-wrap items-center gap-x-2 gap-y-1">
-          {displayTokens.map((token, idx) => (
+          {displayTokens
+            .map((token, idx) => (
             <button
               key={`${token.text}-${idx}`}
               type="button"
@@ -1006,32 +1049,34 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           ))}
         </p>
 
-        {/* C. Curator information/bio (Permanent Main Board Owner/Curator) */}
+        {/* C. Whose message is on the board right now — follows the swipe. */}
         <button
           type="button"
-          onClick={() => handleUserClick(mainCuratorName)}
+          onClick={() => handleUserClick(activeAuthor.handle)}
           className="flex items-center gap-2 group cursor-pointer text-left transition-opacity hover:opacity-95"
-          title={`View ${mainCuratorName}'s Heartboard`}
+          title={`View ${activeAuthor.handle}'s Heartboard`}
         >
           <div className="w-6 h-6 rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
-            {mainCuratorAvatar ? (
+            {activeAuthor.avatar ? (
               <SmartImage
-                src={mainCuratorAvatar}
-                alt={mainCuratorName}
+                src={activeAuthor.avatar}
+                alt={activeAuthor.name}
                 rounded="rounded-full"
                 instant
                 wrapperClassName="w-full h-full"
                 className="w-full h-full object-cover"
-                fallback={<span className="text-xs font-bold">{mainCuratorName.charAt(0).toUpperCase()}</span>}
+                fallback={<span className="text-xs font-bold">{activeAuthor.name.charAt(0).toUpperCase()}</span>}
               />
             ) : (
-              mainCuratorName.charAt(0).toUpperCase()
+              activeAuthor.name.charAt(0).toUpperCase()
             )}
           </div>
           <span className="text-xs sm:text-sm font-semibold text-white/60 group-hover:text-white group-hover:underline transition-colors">
-            {mainCuratorName} (Curator)
+            {activeAuthor.handle}
+            {activeAuthor.isBoardOwner && ' (Curator)'}
           </span>
         </button>
+
 
         {/* D. Reaction Picker & Action Bar */}
         <div className="w-fit relative flex flex-col items-start">
@@ -1196,13 +1241,18 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           onClose={() => setIsShareModalOpen(false)}
           shareData={{
             type: 'board',
-            boardId: post.id,
+            // The slug is what /board/:slug resolves; ShareProfileModal builds
+            // the link from this. Passing the raw id produced a URL that only
+            // worked by accident.
+            boardId: post.slug || post.id,
             boardTitle: post.caption || (post.content && post.content.length <= 40 ? post.content : undefined) || (post.recipientName ? `Tribute for ${post.recipientName}` : undefined) || `${post.authorName || 'Curator'}'s Board`,
             boardThumbnail: post.imageUrl || post.mediaUrl || post.authorAvatar,
             boardTheme: post.theme || '#BEE27C',
             boardAuthorName: post.authorName,
             boardRecipientName: post.recipientName || (Array.isArray(post.recipients) ? post.recipients[0] : undefined),
-            url: `${window.location.origin}/?board=${encodeURIComponent(post.id)}`
+            // No `url`: ShareProfileModal builds /board/:slug itself. This used
+            // to pass /?board=<id>, a prototype HashRouter link that resolves
+            // to nothing under BrowserRouter.
           }}
           onShowToast={(msg) => {
             setToastMessage(msg);

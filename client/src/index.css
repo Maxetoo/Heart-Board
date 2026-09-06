@@ -14,6 +14,49 @@ body {
   font-family: 'Caveat', cursive;
 }
 
+/*
+ * Inputs carry no border of their own.
+ *
+ * The visible ring on a field is always drawn by its own utility classes, which
+ * are class selectors and so still win over these element selectors — this only
+ * strips what the user agent adds underneath: the default 2px inset border, and
+ * on iOS Safari the inner shadow and rounded bevel that survive `border: none`.
+ * Those are what showed through as a flicker on the search fields before the
+ * component styles settled.
+ *
+ * `select` is deliberately excluded: appearance:none there would strip the
+ * native dropdown arrow that AccountSetupPage's country field relies on. The
+ * focus outline is left alone too — fields that replace it already say so with
+ * their own `focus:outline-none`, and removing it globally would leave keyboard
+ * users with no focus indicator anywhere.
+ */
+input,
+textarea {
+  border: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Safari/iOS paint an inner shadow on search and text fields regardless. */
+input[type='search'],
+input[type='text'],
+input[type='email'],
+input[type='password'],
+textarea {
+  -webkit-box-shadow: none;
+  box-shadow: none;
+}
+
+/* The clear "x" Safari/Edge inject into type=search duplicates our own button. */
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .cta-button {
   background-color: #FE6349 !important;
   color: #FFFFFF !important;

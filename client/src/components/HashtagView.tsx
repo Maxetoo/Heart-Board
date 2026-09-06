@@ -181,7 +181,10 @@ export const HashtagView: React.FC<HashtagViewProps> = ({
           type: 'board',
           boardTitle: `${cleanHashtag} Community`,
           boardTheme: '#149B88',
-          url: `${window.location.origin}/#tag-${rawTag}`
+          // ShareProfileModal only builds profile and board links, so a hashtag
+          // has to supply its own. It was /#tag-<tag>, a prototype HashRouter
+          // link that resolves to nothing under BrowserRouter.
+          url: `${window.location.origin}/hashtag/${encodeURIComponent(rawTag)}`
         }}
       />
     </div>

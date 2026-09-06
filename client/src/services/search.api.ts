@@ -10,16 +10,16 @@ export interface SearchResults {
 
 /**
  * GET /search — public, works signed out.
- * Replaces the prototype's in-memory filtering of a hard-coded user list.
+ *
+ * An empty or one-character `q` is a real request, not a no-op: the endpoint
+ * answers it in browse mode with the most active accounts and the most used
+ * hashtags. This used to return three empty arrays without asking, which is why
+ * the search panel opened with nothing under People or Hashtags.
  */
 export async function search(
   q: string,
   params: { type?: 'all' | 'users' | 'boards' | 'hashtags'; limit?: number } = {},
 ): Promise<SearchResults> {
-  if (!q || q.trim().length < 2) {
-    return { query: q, users: [], boards: [], hashtags: [] };
-  }
-
   const { data } = await api.get<SearchResults>('/search', {
     params: cleanParams({ q: q.trim(), type: 'all', limit: 10, ...params }),
   });

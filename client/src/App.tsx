@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { EntityType, Post, PostVisibility, RegisteredUser, Contribution } from './types';
 import { useAuth } from './contexts/AuthContext';
 import { useSearch } from './hooks/useSearch';
@@ -12,6 +12,7 @@ import * as messageApi from './services/message.api';
 import * as userApi from './services/user.api';
 import { toApiError } from './lib/api';
 import { usernameOf, userFromHandle, boardToPost, userToRegisteredUser } from './lib/adapters';
+import { formatCount, plural } from './lib/format';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
 import { CreateAppreciationModal } from './components/CreateAppreciationModal';
@@ -22,7 +23,9 @@ import { AuthView } from './components/AuthModal';
 import { WelcomeModal } from './components/WelcomeModal';
 import { EngagementPromptModal } from './components/EngagementPromptModal';
 import { useEngagementPrompt } from './hooks/useEngagementPrompt';
+import { useHeartboardNotifications } from './hooks/useHeartboardNotifications';
 import { HeroHeartAnimation } from './components/HeroHeartAnimation';
+import { HeartboardLogo } from './components/HeartboardLogo';
 import { EmailVerificationBanner } from './components/EmailVerificationBanner';
 import { 
   SlidersHorizontal, 
@@ -62,6 +65,9 @@ export function canViewPostPublicly(post: any) {
 }
 
 
+/** People and hashtags in the search panel reveal this many at a time. */
+const SEARCH_REVEAL_STEP = 7;
+
 interface TopNavigationProps {
   onFilterClick: () => void;
   searchQuery: string;
@@ -73,6 +79,8 @@ interface TopNavigationProps {
   currentUser?: RegisteredUser | null;
   onOpenAuth?: (mode?: 'login' | 'signup', prompt?: string) => void;
   onGoToProfile?: () => void;
+  /** Clears feed state behind the brand link; the Link itself navigates. */
+  onGoHome?: () => void;
 }
 
 const TopNavigation: React.FC<TopNavigationProps> = ({ 
@@ -85,8 +93,10 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
   onSelectHashtag,
   currentUser,
   onOpenAuth,
-  onGoToProfile
+  onGoToProfile,
+  onGoHome
 }) => {
+  const location = useLocation();
   const [isFullPageOpen, setIsFullPageOpen] = useState(false);
   const [activeSearchTab, setActiveSearchTab] = useState<'all' | 'users' | 'boards' | 'hashtags'>('all');
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -107,7 +117,10 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
   // Real platform search — GET /api/v1/search, debounced.
   // This replaces filtering a hard-coded list of fabricated celebrity accounts,
   // which showed users that do not exist in the database.
-  const searchResults = useSearch(searchQuery, currentUser?.id);
+  //
+  // Only while the panel is open: with no query this browses rather than
+  // returning nothing, so an ungated hook would fetch on every page load.
+  const searchResults = useSearch(searchQuery, currentUser?.id, { enabled: isFullPageOpen });
 
   const matchingUsers = searchResults.users;
 
@@ -124,30 +137,61 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
 
   const hasSearchInput = searchQuery.trim().length > 0;
 
+  // People and hashtags reveal a row at a time rather than dumping the whole
+  // pool into the panel.
+  const [visibleUsers, setVisibleUsers] = useState(SEARCH_REVEAL_STEP);
+  const [visibleHashtags, setVisibleHashtags] = useState(SEARCH_REVEAL_STEP);
+
+  // A new result set starts from the first page again — otherwise a query that
+  // returns three people keeps a "Show more" count from the previous one.
+  useEffect(() => {
+    setVisibleUsers(SEARCH_REVEAL_STEP);
+    setVisibleHashtags(SEARCH_REVEAL_STEP);
+  }, [searchQuery, activeSearchTab]);
+
+  // How many results the ACTIVE tab has. The empty state used to require all
+  // three collections to be empty, so picking "User" or "Hashtag" while only
+  // boards had matched rendered a completely blank panel — the tab looked dead.
+  const activeTabCount =
+    activeSearchTab === 'users'
+      ? matchingUsers.length
+      : activeSearchTab === 'boards'
+        ? matchingBoards.length
+        : activeSearchTab === 'hashtags'
+          ? popularHashtags.length
+          : matchingUsers.length + matchingBoards.length + popularHashtags.length;
+
+  /** What this tab is looking for, for the empty and loading copy. */
+  const activeTabNoun =
+    activeSearchTab === 'users'
+      ? 'people'
+      : activeSearchTab === 'boards'
+        ? 'boards'
+        : activeSearchTab === 'hashtags'
+          ? 'hashtags'
+          : 'results';
+
+
   return (
     <>
       <header className="bg-white py-4 px-6 md:px-12 flex items-center justify-between sticky top-0 z-[50]">
-        {/* Brand logo - left */}
-        <div 
-          onClick={() => {
-            setSearchQuery('');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
+        {/* Brand logo - left. A real link to the feed, so the mark and the
+            wordmark behave like a home button should: a visible href, and
+            cmd/middle-click opens a new tab. It used to be a bare div that only
+            cleared the search box and scrolled up, which left you exactly where
+            you were — an event category, say — with nothing having happened.
+            Replaces rather than pushes when already home, so repeat clicks do
+            not stack identical history entries. */}
+        <Link
+          to="/"
+          replace={location.pathname === '/'}
+          onClick={onGoHome}
+          aria-label="Heartboard home"
           className="flex items-center gap-3 shrink-0 cursor-pointer"
         >
-          <div className="w-10 h-10 shrink-0 aspect-square rounded-full bg-[#FE6349] flex items-center justify-center relative transform hover:rotate-6 transition-all">
-            <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-            </svg>
-            <div className="absolute top-[40%] left-1/2 -translate-x-1/2 flex flex-col items-center">
-              <div className="flex gap-1">
-                <span className="w-1 h-1 rounded-full bg-white inline-block"></span>
-                <span className="w-1 h-1 rounded-full bg-white inline-block"></span>
-              </div>
-            </div>
-          </div>
+          <HeartboardLogo className="w-10 h-10 shrink-0 transform hover:rotate-6 transition-all" />
           <span className="font-extrabold text-lg text-gray-900 tracking-tight hidden sm:block">Heartboard</span>
-        </div>
+        </Link>
 
         {/* Search - center (Target selector: header > div:nth-of-type(2) > input:nth-of-type(1)) */}
         <div className="flex-grow w-full mx-4 relative group">
@@ -165,7 +209,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
               setIsFullPageOpen(true);
             }}
             placeholder="Search user accounts (@mercy, @ronaldo), created boards..."
-            className="w-full bg-gray-25 border-none rounded-full py-2.5 pl-12 pr-10 text-sm text-gray-800 placeholder:text-gray-400 focus:bg-gray-50 active:bg-gray-50 focus:outline-none transition-all duration-200 cursor-pointer"
+            className="w-full h-10 py-0 bg-gray-25 border-0 rounded-full pl-12 pr-10 text-sm text-gray-800 placeholder:text-gray-400 focus:bg-gray-50 active:bg-gray-50 focus:outline-none appearance-none transition-colors duration-200 cursor-pointer"
           />
 
           {hasSearchInput && (
@@ -255,7 +299,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search anything here...."
-                      className="w-full bg-[#F8F9FB] hover:bg-[#F6F8FA] focus:bg-[#F8F9FB] border-none rounded-full py-3.5 pl-12 pr-12 text-sm font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none transition-all"
+                      className="w-full h-10 py-0 bg-[#F8F9FB] hover:bg-[#F6F8FA] focus:bg-[#F8F9FB] border-0 rounded-full pl-12 pr-12 text-sm font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none appearance-none transition-colors"
                     />
 
                     {hasSearchInput && (
@@ -337,11 +381,11 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                 {(activeSearchTab === 'all' || activeSearchTab === 'users') && matchingUsers.length > 0 && (
                   <section className="space-y-3">
                     <h2 className="text-xs sm:text-sm font-semibold text-gray-400 tracking-normal">
-                      {activeSearchTab === 'all' ? 'Recent users' : 'Registered users'}
+                      {hasSearchInput ? 'People' : 'Most active curators'}
                     </h2>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-                      {matchingUsers.map((user) => (
+                      {matchingUsers.slice(0, visibleUsers).map((user) => (
                         <div
                           key={user.id}
                           onClick={() => {
@@ -378,11 +422,22 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                             @{user.handle.replace(/^@/, '')}
                           </span>
                           <span className="text-[10px] sm:text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">
-                            {user.boardsCount || 0} BOARD CREATED
+                            {user.boardsCount || 0} {plural(user.boardsCount ?? 0, 'BOARD')} CREATED
                           </span>
                         </div>
                       ))}
                     </div>
+
+                    {matchingUsers.length > visibleUsers && (
+                      <div className="flex justify-center pt-2">
+                        <button
+                          onClick={() => setVisibleUsers((n) => n + SEARCH_REVEAL_STEP)}
+                          className="px-6 py-2.5 rounded-full bg-[#F8F9FB] hover:bg-[#ECEFF3] text-[#1A1B25] text-xs font-extrabold transition-all cursor-pointer"
+                        >
+                          Show more people ({matchingUsers.length - visibleUsers})
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -390,7 +445,9 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                 {(activeSearchTab === 'all' || activeSearchTab === 'boards') && matchingBoards.length > 0 && (
                   <section className="space-y-3">
                     <h2 className="text-xs sm:text-sm font-semibold text-gray-400 tracking-normal">
-                      {activeSearchTab === 'all' ? 'Hot Boards' : 'Registered users'}
+                      {/* The Boards tab used to be captioned "Registered
+                          users", copied from the section above it. */}
+                      {activeSearchTab === 'all' ? 'Hot Boards' : 'Boards'}
                     </h2>
 
                     <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-6">
@@ -413,11 +470,11 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                 {(activeSearchTab === 'all' || activeSearchTab === 'hashtags') && popularHashtags.length > 0 && (
                   <section className="space-y-3">
                     <h2 className="text-xs sm:text-sm font-semibold text-gray-400 tracking-normal">
-                      {activeSearchTab === 'all' ? 'Hashtag' : 'Popular Global Hashtag Tags'}
+                      {hasSearchInput ? 'Hashtags' : 'Most used hashtags'}
                     </h2>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-                      {popularHashtags.map((h) => (
+                      {popularHashtags.slice(0, visibleHashtags).map((h) => (
                         <div
                           key={h.tag}
                           onClick={() => {
@@ -439,28 +496,53 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                             #{h.tag.replace(/^#/, '')}
                           </span>
                           <span className="text-[10px] sm:text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">
-                            {h.count ? h.count.toUpperCase() : '10.6M'} MESSAGE
+                            {h.count}
                           </span>
                         </div>
                       ))}
                     </div>
+
+                    {popularHashtags.length > visibleHashtags && (
+                      <div className="flex justify-center pt-2">
+                        <button
+                          onClick={() => setVisibleHashtags((n) => n + SEARCH_REVEAL_STEP)}
+                          className="px-6 py-2.5 rounded-full bg-[#F8F9FB] hover:bg-[#ECEFF3] text-[#1A1B25] text-xs font-extrabold transition-all cursor-pointer"
+                        >
+                          Show more hashtags ({popularHashtags.length - visibleHashtags})
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
 
-                {/* Empty State */}
-                {matchingUsers.length === 0 && matchingBoards.length === 0 && popularHashtags.length === 0 && (
+                {/* Searching. Without this the 300ms debounce plus the request
+                    round-trip read as "this tab is empty" until results landed. */}
+                {searchResults.loading && activeTabCount === 0 && (
+                  <div className="py-20 flex flex-col items-center justify-center bg-[#F8F9FB] rounded-3xl p-8 gap-3">
+                    <Loader2 className="w-6 h-6 text-[#FE6349] animate-spin" />
+                    <p className="text-xs font-semibold text-gray-400">Searching {activeTabNoun}…</p>
+                  </div>
+                )}
+
+                {/* Empty state, scoped to the tab the user is actually on. */}
+                {!searchResults.loading && activeTabCount === 0 && (
                   <div className="py-20 text-center flex flex-col items-center justify-center bg-[#F8F9FB] rounded-3xl p-8">
                     <div className="w-16 h-16 rounded-full bg-rose-50 text-[#FE6349] flex items-center justify-center mb-4">
-                      <Search size={28} strokeWidth={2} />
+                      {activeSearchTab === 'hashtags' ? (
+                        <Hash size={28} strokeWidth={2} />
+                      ) : activeSearchTab === 'users' ? (
+                        <User size={28} strokeWidth={2} />
+                      ) : (
+                        <Search size={28} strokeWidth={2} />
+                      )}
                     </div>
                     <h3 className="text-base font-extrabold text-gray-900">
-                      No results found
+                      No {activeTabNoun} found
                     </h3>
                     <p className="text-xs text-gray-400 mt-1 max-w-sm leading-relaxed">
-                      {hasSearchInput 
-                        ? `We couldn't find any results for "${searchQuery}".`
-                        : "Start typing to search users, boards, or hashtags."
-                      }
+                      {hasSearchInput
+                        ? `We couldn't find any ${activeTabNoun} for "${searchQuery}".`
+                        : `There are no ${activeTabNoun} on Heartboard yet.`}
                     </p>
                     {hasSearchInput && (
                       <button
@@ -489,15 +571,6 @@ interface HeroPulseFeedProps {
 
 const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchClick }) => {
   const [activeMessageIndex, setActiveMessageIndex] = useState(0);
-
-  const defaultMockActivities = useMemo(() => [
-    { sender: "Mercy24", heartType: "Loving Heart 💖", receiver: "Matthew", color: "text-[#FE6349]", hexColor: "#FE6349" },
-    { sender: "Amino", heartType: "Reliable Heart 🧡", receiver: "Cristiano", color: "text-[#FF8A65]", hexColor: "#FF8A65" },
-    { sender: "Sarah", heartType: "Hard Work Heart 💚", receiver: "Alex", color: "text-[#4CD964]", hexColor: "#4CD964" },
-    { sender: "Seyi", heartType: "Workspace Legend 💜", receiver: "Ronike", color: "text-[#7B62FF]", hexColor: "#7B62FF" },
-    { sender: "Tyler", heartType: "Visionary Heart 💖", receiver: "James", color: "text-[#FF53C0]", hexColor: "#FF53C0" },
-    { sender: "Sophia", heartType: "Golden Status 💙", receiver: "Emma", color: "text-[#007A78]", hexColor: "#007A78" },
-  ], []);
 
   // Derive live activities from user posts & blown hearts dynamically
   const userHeartActivities = useMemo(() => {
@@ -533,9 +606,12 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchCl
     return list;
   }, [posts]);
 
-  const liveActivities = useMemo(() => {
-    return [...userHeartActivities, ...defaultMockActivities];
-  }, [userHeartActivities, defaultMockActivities]);
+  // This used to be padded with 6 fabricated activities ("Amino blew a
+  // Reliable Heart to Cristiano") that played forever regardless of whether
+  // anything real had happened. Real only now — the ticker is idle until
+  // someone actually blows a heart.
+  const liveActivities = userHeartActivities;
+  const hasActivity = liveActivities.length > 0;
 
   // When a user blows a new heart, reset active index to 0 so hero section updates immediately!
   const lastUserCountRef = useRef(userHeartActivities.length);
@@ -547,21 +623,22 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchCl
   }, [userHeartActivities.length]);
 
   useEffect(() => {
+    if (!hasActivity) return;
     const timer = setInterval(() => {
       setActiveMessageIndex((prev) => (prev + 1) % liveActivities.length);
     }, 3200);
     return () => clearInterval(timer);
-  }, [liveActivities.length]);
+  }, [liveActivities.length, hasActivity]);
 
-  const currentActivity = liveActivities[activeMessageIndex] || liveActivities[0];
+  const currentActivity = hasActivity ? (liveActivities[activeMessageIndex] || liveActivities[0]) : null;
 
   return (
     <div className="relative w-full overflow-hidden bg-white py-10 md:py-16 flex flex-col items-center justify-center min-h-[380px] md:min-h-[440px]">
       {/* Dynamic Organic Multi-Layer Hero Heart Animation Canvas */}
       <div className="w-full max-w-4xl h-[260px] md:h-[300px] relative flex items-center justify-center">
         <HeroHeartAnimation
-          activeColor={currentActivity.hexColor}
-          activeActivityKey={`${activeMessageIndex}-${currentActivity.sender}-${currentActivity.hexColor}`}
+          activeColor={currentActivity?.hexColor ?? '#FE6349'}
+          activeActivityKey={currentActivity ? `${activeMessageIndex}-${currentActivity.sender}-${currentActivity.hexColor}` : 'idle'}
           onCentralHeartClick={onGiftVouchClick}
         />
       </div>
@@ -569,26 +646,40 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchCl
       {/* Highly Animated Real-Time Ticker */}
       <div className="mt-4 sm:mt-6 relative min-h-[52px] h-auto w-full max-w-md overflow-hidden flex items-center justify-center px-4 z-20">
         <AnimatePresence mode="wait">
-          <motion.div
-            key={activeMessageIndex}
-            initial={{ opacity: 0, y: 15, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -15, scale: 0.95 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#1A1B25] max-w-full truncate cursor-pointer hover:bg-[#ECEFF3] transition-colors"
-            onClick={onGiftVouchClick}
-          >
-            <span className="font-extrabold text-[#1A1B25]">{currentActivity.sender}</span>
-            <span className="text-[#666D80]">blew a</span>
-            <span 
-              className="font-extrabold select-none flex items-center gap-0.5" 
-              style={{ color: currentActivity.hexColor }}
+          {currentActivity ? (
+            <motion.div
+              key={activeMessageIndex}
+              initial={{ opacity: 0, y: 15, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -15, scale: 0.95 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#1A1B25] max-w-full truncate cursor-pointer hover:bg-[#ECEFF3] transition-colors"
+              onClick={onGiftVouchClick}
             >
-              {currentActivity.heartType}
-            </span>
-            <span className="text-[#666D80]">to</span>
-            <span className="font-extrabold text-[#1A1B25]">@{currentActivity.receiver}</span>
-          </motion.div>
+              <span className="font-extrabold text-[#1A1B25]">{currentActivity.sender}</span>
+              <span className="text-[#666D80]">blew a</span>
+              <span
+                className="font-extrabold select-none flex items-center gap-0.5"
+                style={{ color: currentActivity.hexColor }}
+              >
+                {currentActivity.heartType}
+              </span>
+              <span className="text-[#666D80]">to</span>
+              <span className="font-extrabold text-[#1A1B25]">@{currentActivity.receiver}</span>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="idle"
+              initial={{ opacity: 0, y: 15, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -15, scale: 0.95 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#666D80] max-w-full truncate cursor-pointer hover:bg-[#ECEFF3] transition-colors"
+              onClick={onGiftVouchClick}
+            >
+              <span>Be the first to blow a heart today</span>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </div>
@@ -645,18 +736,6 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, onPlusCl
       </div>
     </nav>
   );
-};
-
-const formatStatNumber = (num: number): string => {
-  if (num >= 1000000) {
-    const val = (num / 1000000).toFixed(1);
-    return (val.endsWith('.0') ? Math.floor(num / 1000000) : val) + 'M';
-  }
-  if (num >= 1000) {
-    const val = (num / 1000).toFixed(1);
-    return (val.endsWith('.0') ? Math.floor(num / 1000) : val) + 'k';
-  }
-  return num.toLocaleString();
 };
 
 const MasonryFeed = ({ 
@@ -827,7 +906,6 @@ interface EventCategoryViewProps {
   filterId: string;
   posts: any[];
   onBack: () => void;
-  onFilterClick: () => void;
   onPostClick: (index: number) => void;
   onCreateBoard: (eventType?: string) => void;
   searchQuery: string;
@@ -838,7 +916,6 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
   filterId,
   posts,
   onBack,
-  onFilterClick,
   onPostClick,
   onCreateBoard,
   searchQuery,
@@ -900,7 +977,10 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
       {/* Top Utility Section */}
       <div className="bg-white px-6 md:px-12 pt-6 pb-6 border-b border-gray-100">
         <div className="max-w-7xl mx-auto space-y-6">
-          {/* Top row: Left (Back button), Right (Filter button + + button) */}
+          {/* Top row: Left (Back button), Right (+ button).
+              The filter control lives once, in TopNavigation's sticky header,
+              which stays mounted above this view — a second one here was a
+              duplicate that opened the identical filter modal. */}
           <div className="flex items-center justify-between">
             <button
               onClick={onBack}
@@ -910,54 +990,44 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
               <ChevronLeft size={22} strokeWidth={2.5} />
             </button>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onFilterClick}
-                aria-label="Filter"
-                className="w-12 h-12 rounded-full bg-[#F6F8FA] hover:bg-[#ECEFF3] active:bg-[#DFE1E6] text-[#353849] flex items-center justify-center transition-all cursor-pointer shadow-2xs shrink-0"
-              >
-                <SlidersHorizontal size={20} strokeWidth={2.2} />
-              </button>
-
-              <button
-                onClick={() => onCreateBoard(currentOption.label)}
-                aria-label="Create Board"
-                className="w-12 h-12 rounded-full bg-[#FE6349] hover:bg-[#ff5833] active:bg-[#e05234] text-white flex items-center justify-center transition-all cursor-pointer shadow-xs shrink-0"
-              >
-                <Plus size={22} strokeWidth={2.5} />
-              </button>
-            </div>
+            <button
+              onClick={() => onCreateBoard(currentOption.label)}
+              aria-label="Create Board"
+              className="w-12 h-12 rounded-full bg-[#FE6349] hover:bg-[#ff5833] active:bg-[#e05234] text-white flex items-center justify-center transition-all cursor-pointer shadow-xs shrink-0"
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </button>
           </div>
 
           {/* Current Message Board / Event Category Name + Count */}
           <div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1A1B25] tracking-tight">
-              {currentOption.label} ({formatStatNumber(matchedPosts.length)})
+              {currentOption.label} ({formatCount(matchedPosts.length)})
             </h1>
           </div>
 
-          {/* Search Section */}
+          {/* Search Section — matches TopNavigation's search bar exactly. */}
           <div className="relative w-full">
-            <div className="w-full bg-[#F6F8FA] rounded-full px-5 py-3.5 sm:py-4 flex items-center gap-3 border border-transparent focus-within:border-[#DFE1E6] focus-within:bg-white transition-all shadow-2xs">
-              <Search className="w-5 h-5 text-[#808897] shrink-0" strokeWidth={2} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by title, name...."
-                className="w-full bg-transparent border-none outline-hidden text-sm sm:text-base text-[#1A1B25] placeholder-[#808897] font-medium"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  aria-label="Clear search"
-                  className="text-[#808897] hover:text-[#1A1B25] p-1 rounded-full hover:bg-gray-200/60 transition-all cursor-pointer"
-                >
-                  <X size={16} strokeWidth={2.5} />
-                </button>
-              )}
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none z-10">
+              <Search size={18} strokeWidth={2.2} />
             </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by title, name...."
+              className="w-full h-10 py-0 bg-gray-25 border-0 rounded-full pl-12 pr-10 text-sm text-gray-800 placeholder:text-gray-400 focus:bg-gray-50 active:bg-gray-50 focus:outline-none appearance-none transition-colors duration-200"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-all cursor-pointer"
+              >
+                <X size={14} strokeWidth={2.5} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1048,17 +1118,22 @@ const App: React.FC = () => {
 
     if (isNewRegistration) {
       // Return user to Home Page and show welcome popup
-      setActiveNavTab('home');
       setSelectedFilterId('moment');
-      setViewingProfileUser(null);
-      setViewingHashtag(null);
       setIsWelcomeModalOpen(true);
+      navigate('/', { replace: true });
+      return;
+    }
+
+    // Signing in from /login or /signup has to leave that address, or the app
+    // sits on an auth URL with the auth view already dismissed. Replace, so
+    // Back does not return to the sign-in page.
+    if (location.pathname === '/login' || location.pathname === '/signup') {
+      navigate('/', { replace: true });
     }
   };
 
   const handleSignOut = async () => {
     await logout();
-    setActiveNavTab('home');
     setSelectedFilterId('moment');
     // Replace, so Back does not return to a signed-in-only page. The sync
     // effect clears the profile/hashtag view when the path changes.
@@ -1203,6 +1278,10 @@ const App: React.FC = () => {
     logout,
   } = useAuth();
 
+  // Raises browser notifications for the two Settings toggles. No-op until the
+  // user has enabled a toggle and granted permission.
+  useHeartboardNotifications();
+
   // Server-paginated discover feed, replacing INITIAL_MOCK_POSTS.
   const feed = useDiscoverFeed({ currentUserId: currentUser?.id, enabled: authReady });
   const { posts, setPosts, patchPost, removePost, prependPost } = feed;
@@ -1213,7 +1292,11 @@ const App: React.FC = () => {
   const [filterModalMode, setFilterModalMode] = useState<'events' | 'hearts'>('events');
   const [activeFilter, setActiveFilter] = useState<'all' | 'tears' | 'vouch' | 'hype'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeNavTab, setActiveNavTab] = useState<'home' | 'hearts'>('home');
+  // Seeded from the address so a cold load of /profile paints the heartboard
+  // directly, rather than flashing the feed until the sync effect below runs.
+  const [activeNavTab, setActiveNavTab] = useState<'home' | 'hearts'>(() =>
+    window.location.pathname === '/profile' ? 'hearts' : 'home',
+  );
   const [heartFilter, setHeartFilter] = useState<'received' | 'sent'>('received');
 
   // Authentication & Onboarding State
@@ -1273,6 +1356,18 @@ const App: React.FC = () => {
   useEffect(() => {
     const isAuthPath = path === '/login' || path === '/signup';
     const isCreatePath = path === '/create' || Boolean(boardSubRoute);
+
+    // The bottom-nav tab is part of the address like everything else: /profile
+    // is the Hearts tab, every other base route is Home. Overlay routes (auth,
+    // the composer, an open board) sit on top of whichever tab was showing, so
+    // they leave it alone.
+    //
+    // This used to be state nothing ever reset, so the personal heartboard
+    // leaked onto the home feed: returning to / from /profile kept rendering
+    // it, and the heart tab flipped the state without navigating at all.
+    if (!isAuthPath && !isCreatePath && !boardSlug) {
+      setActiveNavTab(path === '/profile' ? 'hearts' : 'home');
+    }
 
     // Route-backed overlays follow the URL exactly. Contextual opens (e.g.
     // "send a message to @x") set their own state and have no address, so they
@@ -1354,7 +1449,6 @@ const App: React.FC = () => {
     if (path === '/profile') {
       setViewingProfileUser(null);
       setViewingHashtag(null);
-      setActiveNavTab('hearts');
       return;
     }
 
@@ -1363,6 +1457,116 @@ const App: React.FC = () => {
     setViewingHashtag(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, location.search, boardSubRoute]);
+
+  // ── Search destinations ────────────────────────────────────────────────────
+  //
+  // Both of these views used to render from `posts` alone — the loaded page of
+  // the discover feed. So picking a person or a hashtag out of search navigated
+  // correctly and then showed nothing: a placeholder profile built from the
+  // handle in the URL (no real name, avatar or counts, because goToProfile
+  // discards the user object it was handed), or a hashtag page filtered against
+  // twelve unrelated feed cards. The endpoints for both already existed and
+  // were never called.
+
+  const profileHandle = profileMatch ? decodeURIComponent(profileMatch[1]) : null;
+  const hashtagTag = hashtagMatch ? decodeURIComponent(hashtagMatch[1]) : null;
+
+  /** Boards owned by the profile on screen, from GET /user/profile/:username. */
+  const [profileBoards, setProfileBoards] = useState<Post[] | null>(null);
+  /**
+   * True while the real account behind the handle in the URL is still loading.
+   *
+   * Until it lands, all we have is a stub built from the handle: a name guessed
+   * by capitalising it and a generated avatar. Rendering that and then swapping
+   * in the real name and photo looked like one profile turning into a different
+   * person, so the view shows placeholders for this instead.
+   */
+  const [profileLoading, setProfileLoading] = useState(false);
+  /** Boards carrying the hashtag on screen, from GET /board/hashtag/:tag. */
+  const [hashtagBoards, setHashtagBoards] = useState<Post[] | null>(null);
+
+  useEffect(() => {
+    if (!profileHandle) {
+      setProfileBoards(null);
+      setProfileLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setProfileBoards(null);
+    setProfileLoading(true);
+
+    (async () => {
+      try {
+        const { user, boards } = await userApi.getPublicProfile(profileHandle);
+        if (cancelled) return;
+
+        // Upgrade the URL-derived stub to the real account, so the header shows
+        // their display name, avatar and stats — and so the board filtering in
+        // HeartboardView can match on a real id.
+        const author = userToRegisteredUser(user);
+        setViewingProfileUser(author);
+
+        // This endpoint selects the board fields it needs and leaves `owner`
+        // out, so boardToPost cannot resolve an author and HeartboardView's
+        // "did this person create it" check would reject every one of them.
+        // They are this account's public boards by definition — say so.
+        setProfileBoards(
+          boards.map((b) => ({
+            ...boardToPost(b, currentUser?.id),
+            authorId: author.id,
+            authorName: author.name,
+            authorHandle: author.handle,
+            authorAvatar: author.avatar,
+          })),
+        );
+      } catch {
+        // Keep the stub; the view still renders with the handle from the URL.
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profileHandle, currentUser?.id]);
+
+  useEffect(() => {
+    if (!hashtagTag) {
+      setHashtagBoards(null);
+      return;
+    }
+
+    let cancelled = false;
+    setHashtagBoards(null);
+
+    (async () => {
+      try {
+        const { boards } = await boardApi.getBoardsByHashtag(hashtagTag, { limit: 40 });
+        if (!cancelled) setHashtagBoards(boards.map((b) => boardToPost(b, currentUser?.id)));
+      } catch {
+        // Fall back to filtering whatever the feed already has.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hashtagTag, currentUser?.id]);
+
+  // /profile is the signed-in user's own heartboard, so it needs a session to
+  // render anything. The bottom-nav heart button already asks a guest to sign
+  // in, but a direct link, a refresh, or a sign-out bypasses that and left an
+  // empty "My Heartboard" on screen. Wait for the session check before
+  // deciding — otherwise a reload bounces the signed-in user to /login.
+  useEffect(() => {
+    if (!authReady) return;
+    if (path === '/profile' && !currentUser) {
+      navigate('/login', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, currentUser, path]);
 
   // Cold load of /board/:slug/add-message or /board/:slug/edit: the composer
   // needs its parent board, which only exists once the board has resolved.
@@ -1521,13 +1725,36 @@ const App: React.FC = () => {
     };
   }, []);
 
+  /**
+   * Switches the bottom-nav tab by navigating, since the tab lives in the URL.
+   *
+   * Setting state alone left the address on / while the personal heartboard
+   * rendered over the feed. The guards keep a repeat tap on the current tab
+   * from stacking duplicate history entries.
+   */
+  /**
+   * Resets the feed to its default view: no search, no event category, no
+   * category filter. Navigation is the caller's job — the brand link is a real
+   * <Link> and does its own, while the bottom nav has to navigate explicitly.
+   */
+  const resetFeedView = () => {
+    setSearchQuery('');
+    setSelectedFilterId('moment');
+    setActiveFilter('all');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleTabChange = (tab: 'home' | 'hearts') => {
-    setActiveNavTab(tab);
-    if (tab === 'home') {
-      setActiveFilter('all');
-    } else if (tab === 'hearts') {
-      setActiveFilter('tears');
+    if (tab === 'hearts') {
+      if (path !== '/profile') pushView('/profile');
+      return;
     }
+    // Home returns to the unfiltered feed. Pressing it from inside an event
+    // category used to leave that category selected, so "Home" appeared to do
+    // nothing. (The heartboard never reads activeFilter, which is why switching
+    // to it has no business touching these.)
+    resetFeedView();
+    if (path !== '/') navigate('/');
   };
 
   const handleNewPost = (newPost: any) => {
@@ -1600,9 +1827,12 @@ const App: React.FC = () => {
 
   const query = searchQuery.trim().toLowerCase();
 
-  // Count of real matching accounts, from GET /api/v1/search.
-  const appSearch = useSearch(searchQuery, currentUser?.id);
-  const matchingUsersCount = appSearch.users.length;
+  // Count of real matching accounts, for the feed's "showing results for…"
+  // banner. Only ever rendered while searching, so it never needs browse
+  // results — and must not report them, or the banner would claim the browse
+  // list as matches for the query.
+  const appSearch = useSearch(searchQuery, currentUser?.id, { enabled: query.length >= 2 });
+  const matchingUsersCount = appSearch.active ? appSearch.users.length : 0;
 
   const filteredPosts = momentPosts.filter(post => {
     // Filter category
@@ -1667,9 +1897,10 @@ const App: React.FC = () => {
           </main>
         ) : viewingHashtag ? (
           <main className="flex-grow bg-white">
-            <HashtagView 
+            <HashtagView
               hashtag={viewingHashtag}
-              posts={posts}
+              // Server results for this tag; the loaded feed until they arrive.
+              posts={hashtagBoards ?? posts}
               onBack={closeOverlay}
               onCreateBoard={handleCreateBoardForHashtag}
               onSelectUser={handleSelectUser}
@@ -1689,7 +1920,11 @@ const App: React.FC = () => {
               onGiftHeart={handleGiftHeartForUser}
               onSendMessage={handleSendMessageForUser}
               onSelectUser={handleSelectUser}
-              posts={posts}
+              isProfileLoading={profileLoading}
+              // This person's own boards, not the discover feed. Empty rather
+              // than the feed while loading, so no unrelated board flashes up
+              // under someone else's name.
+              posts={profileBoards ?? (profileLoading ? [] : posts)}
               heartFilter={heartFilter}
               onHeartFilterChange={setHeartFilter}
               onFilterClick={(subTab) => {
@@ -1718,6 +1953,7 @@ const App: React.FC = () => {
               currentUser={currentUser}
               onOpenAuth={handleOpenAuth}
               onGoToProfile={() => pushView('/profile')}
+              onGoHome={resetFeedView}
             />
             
             {selectedFilterId === 'moment' ? (
@@ -1766,10 +2002,6 @@ const App: React.FC = () => {
                   filterId={selectedFilterId}
                   posts={posts}
                   onBack={() => setSelectedFilterId('moment')}
-                  onFilterClick={() => {
-                    setFilterModalMode('events');
-                    setIsFilterModalOpen(true);
-                  }}
                   onPostClick={(index) => {
                     const target = posts[index];
                     if (target) {
@@ -1820,10 +2052,10 @@ const App: React.FC = () => {
                 handleOpenAuth('login', 'Please sign in or create an account to access your personal Heartboard.');
                 return;
               }
+              // handleTabChange navigates; the URL -> state effect clears the
+              // profile and hashtag views on arrival.
               handleTabChange(tab);
-              setViewingProfileUser(null);
-              setViewingHashtag(null);
-            }} 
+            }}
             onPlusClick={() => {
               if (!currentUser) {
                 handleOpenAuth('login', 'Please sign in or create an account to create a board or message.');

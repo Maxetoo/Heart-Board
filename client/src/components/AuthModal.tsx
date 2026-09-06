@@ -24,6 +24,7 @@ import * as authApi from '../services/auth.api';
 import * as userApi from '../services/user.api';
 import { uploadFile } from '../services/upload.api';
 import { userToRegisteredUser } from '../lib/adapters';
+import { HeartboardLogo } from './HeartboardLogo';
 
 export type AuthMode = 'login' | 'signup' | 'verify' | 'onboarding_step1' | 'onboarding_step2';
 
@@ -373,9 +374,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
           )}
 
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#FE6349] flex items-center justify-center text-white shadow-xs">
-              <Heart size={16} fill="currentColor" />
-            </div>
+            <HeartboardLogo className="w-8 h-8 shrink-0" />
             <div>
               <span className="font-extrabold text-base text-[#1A1B25] tracking-tight">Heartboard</span>
             </div>

@@ -11,6 +11,26 @@ const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMid
 
 
 // ─── Helpers 
+/**
+ * Which of a recipient's boards are publicly listable.
+ *
+ * Shared by the tagged listing and the tagged count so the number on a profile
+ * can never disagree with the boards behind it.
+ */
+const TAGGED_VISIBILITY = { $in: ['public', 'link-only'] };
+
+/**
+ * Matches boards addressed TO a user.
+ *
+ * `receipent` is the field createBoard actually writes. `receipentOriginal`
+ * exists in the schema and was what the tagged queries filtered on, but no code
+ * path has ever set it — so every "tagged" list and count came back empty.
+ * Both are matched so historic boards are found today without a migration.
+ */
+const TAGGED_RECIPIENT_MATCH = (userId) => ({
+    $or: [{ receipent: userId }, { receipentOriginal: userId }],
+});
+
 async function computeLiveStats(userId) {
     const ownedBoards = await Board.find({ owner: userId, isActive: true })
         .select('_id')
@@ -18,7 +38,7 @@ async function computeLiveStats(userId) {
     const boardIds = ownedBoards.map(b => b._id);
     const totalBoards = boardIds.length;
 
-    const [totalMessages, totalLikes, msgSenderAgg, boardLikerAgg, profileLikesDoc] =
+    const [totalMessages, totalLikes, msgSenderAgg, boardLikerAgg, profileLikesDoc, totalTagged] =
         await Promise.all([
             boardIds.length
                 ? Message.countDocuments({ board: { $in: boardIds }, context: 'board' })
@@ -40,6 +60,23 @@ async function computeLiveStats(userId) {
                   ])
                 : Promise.resolve([]),
             User.findById(userId).select('stats.profileLikes').lean(),
+
+            // Boards this account was tagged on — i.e. is the recipient of,
+            // never ones it created itself.
+            //
+            // This matched receipentOriginal alone, which NOTHING writes:
+            // createBoard only ever sets `receipent`. Every account therefore
+            // reported 0 tagged boards. Match both so existing boards count
+            // now, and so the field keeps working once it is populated.
+            Board.countDocuments({
+                ...TAGGED_RECIPIENT_MATCH(userId),
+                // Same exclusion the tagged LIST applies, or the count and the
+                // list disagree for anyone who addressed a board to themselves.
+                owner:            { $ne: userId },
+                receipentFlagged: false,
+                isActive:         true,
+                visibility:       TAGGED_VISIBILITY,
+            }),
         ]);
 
     const curatorSet = new Set([
@@ -51,6 +88,7 @@ async function computeLiveStats(userId) {
         totalBoards,
         totalMessages,
         totalLikes,
+        totalTagged,
         totalCurators: curatorSet.size,
         profileLikes:  profileLikesDoc?.stats?.profileLikes ?? 0,
     };
@@ -211,20 +249,47 @@ const getPublicProfile = async (req, res) => {
     const { username } = req.params;
     const { view }     = req.query;
 
-    const user = await User.findOne({ username }).select('username profileImage accountType createdAt stats');
+    // displayName / isVerified / bio are what the profile header actually
+    // renders; without them the client could only show the raw username.
+    // All three are already public — search returns them for every account.
+    const user = await User.findOne({ username })
+        .select('username displayName bio isVerified profileImage accountType createdAt stats');
     if (!user) throw new CustomError.NotFoundError(`No user found with username "@${username}".`);
 
     let boards;
     if (view === 'tagged') {
+        // Boards SOMEONE ELSE created with this account as the recipient.
+        // `owner: { $ne: user._id }` keeps a board the account addressed to
+        // itself out of Tagged — that one belongs under Board.
         boards = await Board.find({
-            receipentOriginal: user._id, receipentFlagged: false, isActive: true,
-            visibility: { $in: ['public', 'link-only'] },
+            ...TAGGED_RECIPIENT_MATCH(user._id),
+            owner: { $ne: user._id },
+            receipentFlagged: false,
+            isActive: true,
+            visibility: TAGGED_VISIBILITY,
         })
-            .select('title description slug stats tier tags owner coverImage event style preview createdAt visibility')
-            .populate('owner', 'username profileImage')
+            .select('title description slug stats tier tags owner receipent receipentHashtag coverImage event style preview createdAt visibility')
+            .populate('owner', 'username displayName profileImage')
+            .populate('receipent', 'username displayName profileImage')
             .sort({ createdAt: -1 }).lean();
     } else {
-        boards = await Board.find({ owner: user._id, isActive: true })
+        // Only what this account has published under its own name. The filter
+        // used to be absent entirely, so every board the account owned —
+        // private ones included — was handed to any signed-in caller.
+        //
+        // 'anonymous' is excluded too: those are publicly readable but
+        // deliberately unattributed, so listing them on the author's profile
+        // would be the one place that names them.
+        //
+        // Deliberately not relaxed for the owner viewing themselves: this
+        // response is cached per username with no viewer in the key (see the
+        // route), so a viewer-dependent body would be served to whoever asked
+        // next. The owner's full list comes from GET /board?view=owned.
+        boards = await Board.find({
+            owner: user._id,
+            isActive: true,
+            visibility: 'public',
+        })
             .select('title description slug stats tier tags coverImage event style preview createdAt visibility')
             .sort({ createdAt: -1 }).lean();
     }
@@ -256,8 +321,13 @@ const changePassword = async (req, res) => {
         throw new CustomError.BadRequestError('OAuth accounts cannot change password this way. Use your OAuth provider.');
     }
 
+    // Deliberately a 400, not a 401. A 401 here means "your session is invalid"
+    // to every generic client-side handler — the SPA's axios interceptor treats
+    // any 401 as an expired cookie and clears the session, so a single typo in
+    // this field signed the user out and unmounted the form mid-edit, which read
+    // as the button doing nothing at all. The session is fine; the field is not.
     const isMatch = await user.comparePassword(currentPassword);
-    if (!isMatch) throw new CustomError.UnauthorizedError('Current password is incorrect.');
+    if (!isMatch) throw new CustomError.BadRequestError('Current password is incorrect.');
     if (currentPassword === newPassword) throw new CustomError.BadRequestError('New password must be different.');
 
     user.password = newPassword;
@@ -349,8 +419,12 @@ const likeProfile = async (req, res) => {
     const likeCount = Math.max(0, updated?.stats?.profileLikes ?? 0);
 
     await Promise.all([
-        invalidate(keys.publicProfile(target.username.toLowerCase())),
+        target.username ? invalidate(keys.publicProfile(target.username.toLowerCase())) : Promise.resolve(),
         invalidate(`likedProfiles:${viewerId}`),
+        // The target's own GET /user/me is cached for 5 minutes and carries
+        // stats.profileLikes, so without this their heart count (and the
+        // notification poller that watches it) stayed stale for a whole TTL.
+        invalidate(keys.profile(targetUserId.toString())),
     ]);
 
     res.status(StatusCodes.OK).json({

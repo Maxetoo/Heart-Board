@@ -86,6 +86,9 @@ export function useBoardMessages(
           const face = faceIndex >= 0 ? all[faceIndex] : undefined;
 
           if (face) {
+            // Keep the face message's id: editing a board edits this row, not
+            // the board document, because that is where the artwork lives.
+            patch.faceMessageId = face.id;
             patch.canvasElements = face.canvasElements;
             patch.imageUrl = face.imageUrl ?? patch.imageUrl;
             patch.mediaUrl = face.mediaUrl ?? patch.mediaUrl;

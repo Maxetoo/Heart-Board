@@ -48,6 +48,10 @@ const MessageSchema = new Schema({
     vectorKey:  { type: String,   default: null },
     audioUrl:   { type: String,   default: null },
     duration:   { type: Number,   default: null },
+    // Semantic Heart Spectrum ids picked in the composer ('gratitude', 'pride',
+    // …). Frontend-owned asset keys, like style.* on Board, so new hearts ship
+    // without a schema change.
+    hearts:     [{ type: String }],
   },
 
   status: {

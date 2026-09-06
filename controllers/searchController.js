@@ -21,18 +21,19 @@ const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const search = async (req, res) => {
   const q     = (req.query.q || '').trim();
   const type  = req.query.type || 'all';
-  const limit = Math.min(20, parseInt(req.query.limit, 10) || 10);
+  const limit = Math.min(50, parseInt(req.query.limit, 10) || 10);
 
-  if (!q || q.length < 2) {
-    return res.status(StatusCodes.OK).json({
-      query: q,
-      users: [],
-      boards: [],
-      hashtags: [],
-    });
-  }
-
-  const rx = new RegExp(escapeRegex(q.replace(/^[@#]/, '')), 'i');
+  // Browse mode.
+  //
+  // A query under two characters used to return three empty arrays, so opening
+  // the search panel showed nothing at all under People and Hashtags until you
+  // guessed a name — there was no way to discover either. With no query we
+  // return the most active accounts and the most used tags instead, which is
+  // what the panel's "Recent users" and "Hashtag" sections were always
+  // captioned for. Everything returned here is already public: the same fields
+  // this endpoint returns for a typed query.
+  const browsing = q.length < 2;
+  const rx = browsing ? null : new RegExp(escapeRegex(q.replace(/^[@#]/, '')), 'i');
 
   const wantUsers    = type === 'all' || type === 'users';
   const wantBoards   = type === 'all' || type === 'boards';
@@ -42,9 +43,14 @@ const search = async (req, res) => {
     wantUsers
       ? User.find({
           username: { $exists: true, $ne: null },
-          $or: [{ username: rx }, { displayName: rx }, { bio: rx }],
+          // Browsing matches everyone with a handle; the ordering below is what
+          // decides who is worth showing first.
+          ...(browsing ? {} : { $or: [{ username: rx }, { displayName: rx }, { bio: rx }] }),
         })
           .select('username displayName profileImage bio isVerified stats')
+          // Most active curators first when browsing, so the panel opens on
+          // people who have actually made something.
+          .sort(browsing ? { 'stats.totalBoards': -1, createdAt: -1 } : { createdAt: -1 })
           .limit(limit)
           .lean()
       : [],
@@ -53,7 +59,7 @@ const search = async (req, res) => {
       ? Board.find({
           isActive: true,
           visibility: 'public',
-          $or: [{ title: rx }, { description: rx }, { tags: rx }],
+          ...(browsing ? {} : { $or: [{ title: rx }, { description: rx }, { tags: rx }] }),
         })
           .populate('owner', 'username displayName profileImage isVerified')
           .select('title description slug stats tier owner coverImage event tags style preview createdAt')
@@ -64,9 +70,18 @@ const search = async (req, res) => {
 
     wantHashtags
       ? Board.aggregate([
-          { $match: { isActive: true, visibility: 'public', tags: rx } },
+          {
+            $match: {
+              isActive: true,
+              visibility: 'public',
+              ...(browsing ? { tags: { $exists: true, $ne: [] } } : { tags: rx }),
+            },
+          },
           { $unwind: '$tags' },
-          { $match: { tags: rx } },
+          // Second pass: $unwind flattens the array, so without this a board
+          // that matched on one tag would contribute all of its others too.
+          // Browsing has nothing to narrow to, so every tag counts.
+          ...(browsing ? [] : [{ $match: { tags: rx } }]),
           { $group: { _id: '$tags', count: { $sum: 1 } } },
           { $sort: { count: -1 } },
           { $limit: limit },

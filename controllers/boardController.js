@@ -61,6 +61,9 @@ const createBoard = async (req, res) => {
       event,
       visibility:       visibility || 'public',
       receipent:        receipentId,
+      // Schema field the tagged queries were written against but which nothing
+      // ever set. Populated from here on so it stops being dead.
+      receipentOriginal: receipentId,
       receipentHashtag: receipentHashtag,
       coverImage:       coverImage || null,
       tags:             Array.isArray(tags) ? tags : [],
@@ -69,6 +72,7 @@ const createBoard = async (req, res) => {
         theme:    style?.theme    ?? null,
         sticker:  style?.sticker  ?? null,
         confetti: style?.confetti ?? null,
+        hearts:   Array.isArray(style?.hearts) ? style.hearts.map(String).slice(0, 12) : [],
       },
     });
     createdBoard = board;
@@ -127,8 +131,11 @@ const getMyBoards = async (req, res) => {
 
   let filter;
   if (view === 'tagged') {
+    // Boards SOMEONE ELSE addressed to this account. A board the account both
+    // owns and addressed to itself belongs under Board, never Tagged.
     filter = {
-      receipent:        userId,
+      $or:              [{ receipent: userId }, { receipentOriginal: userId }],
+      owner:            { $ne: userId },
       receipentFlagged: false,
       isActive:         true,
     };
@@ -142,15 +149,20 @@ const getMyBoards = async (req, res) => {
   if (visibility) filter.visibility = visibility;
   if (event)      filter.event      = event;
 
-  const query = Board.find(filter);
-  if (view === 'tagged') query.populate('owner', 'username profileImage');
+  // Both views need the owner (the Board tab renders the card's author, and on
+  // the Tagged tab the owner is the person who made you the recipient), and the
+  // recipient — without it the client cannot label who a board is addressed to,
+  // and its avatar fell through to a name-seeded stand-in.
+  const query = Board.find(filter)
+    .populate('owner', 'username displayName profileImage')
+    .populate('receipent', 'username displayName profileImage');
 
   const [boards, total] = await Promise.all([
     query
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('title description slug stats tier tags visibility event isActive receipentFlagged receiprentFlagReason owner coverImage style preview createdAt'),
+      .select('title description slug stats tier tags visibility event isActive receipentFlagged receiprentFlagReason owner receipent receipentHashtag coverImage style preview createdAt'),
     Board.countDocuments(filter),
   ]);
 
@@ -193,11 +205,29 @@ const updateBoard = async (req, res) => {
   const board  = await requireBoardOwner(res, id, req.user.userId);
   if (!board) return;
 
-  const { title, description, visibility, coverImage } = req.body;
+  const { title, description, visibility, coverImage, style, event, tags } = req.body;
   if (title       !== undefined) board.title       = title;
   if (description !== undefined) board.description = description;
   if (visibility  !== undefined) board.visibility  = visibility;
   if (coverImage  !== undefined) board.coverImage  = coverImage;
+  if (event       !== undefined) board.event       = event;
+  if (Array.isArray(tags))       board.tags        = tags;
+
+  // The composer has always sent style, event and tags on an edit; this handler
+  // destructured only the first four fields and dropped the rest on the floor.
+  // The board then reverted to its old background on the next load, while the
+  // client's optimistic update made the change look like it had stuck.
+  //
+  // Merged field by field rather than replaced, so sending only { theme } does
+  // not blank out the sticker and confetti alongside it.
+  if (style && typeof style === 'object') {
+    if (style.theme    !== undefined) board.style.theme    = style.theme ?? null;
+    if (style.sticker  !== undefined) board.style.sticker  = style.sticker ?? null;
+    if (style.confetti !== undefined) board.style.confetti = style.confetti ?? null;
+    if (style.hearts   !== undefined) {
+      board.style.hearts = Array.isArray(style.hearts) ? style.hearts.map(String).slice(0, 12) : [];
+    }
+  }
 
   await board.save();
 

@@ -29,6 +29,7 @@ import {
   Copy,
   Check,
   Loader2,
+  RefreshCw,
   Trash2,
   AlertTriangle,
   KeyRound
@@ -38,6 +39,17 @@ import { useAuth } from '../contexts/AuthContext';
 import * as userApi from '../services/user.api';
 import { uploadFile, validateFile } from '../services/upload.api';
 import { toApiError } from '../lib/api';
+import {
+  notificationPermission,
+  notificationSupport,
+  requestNotificationPermission,
+} from '../lib/notifications';
+import { avatarDataUri, avatarPngFile, randomAvatarSeeds } from '../lib/avatars';
+import { avatarFromParts, usernameOf } from '../lib/adapters';
+import { useLikedProfiles } from '../hooks/useLikedProfiles';
+import { useMyBoards, useProfileBoards } from '../hooks/useBoards';
+import { formatStatCount, plural } from '../lib/format';
+import { SkeletonBlock } from './SmartImage';
 
 /**
  * The subset of a user this view renders.
@@ -95,6 +107,12 @@ export interface HeartboardViewProps {
   heartFilter?: 'received' | 'sent';
   onHeartFilterChange?: (filter: 'received' | 'sent') => void;
   onSignOut?: () => void;
+  /**
+   * The `profileUser` is still the stub derived from the handle in the URL —
+   * its name and avatar are guesses. Show placeholders rather than rendering
+   * them as if they were real.
+   */
+  isProfileLoading?: boolean;
 }
 
 // Re-use the exact HeartBubbleSvg component from Page 2 (Send/Blow Heart)
@@ -234,410 +252,15 @@ const HeartboardCard: React.FC<{ item: any; onClick: () => void }> = ({ item, on
   return <PostCard post={item} onClick={onClick} />;
 };
 
-const DEFAULT_MOCK_RECEIVED_HEARTS = [
-  {
-    id: 'rec-heart-loving-1',
-    authorName: 'Mercy24',
-    authorHandle: '@mercy24',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mercy24',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['loving'],
-    heartDetails: { id: 'loving', label: 'Loving Partner', emoji: '💖', bubbleColor: '#FFB800' },
-    content: 'Loving Heart 💖 blown to Micky Mouse with deepest appreciation!',
-    createdAt: '2024-03-21T08:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-loving-2',
-    authorName: 'Ronike',
-    authorHandle: '@ronike_vibe',
-    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['loving'],
-    heartDetails: { id: 'loving', label: 'Loving Partner', emoji: '💖', bubbleColor: '#FFB800' },
-    content: 'Loving soul and always spreading sunshine everywhere! ✨',
-    createdAt: '2024-03-20T14:15:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-loving-3',
-    authorName: 'Tyler',
-    authorHandle: '@tyler_grandson',
-    authorAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['loving'],
-    heartDetails: { id: 'loving', label: 'Loving Partner', emoji: '💖', bubbleColor: '#FFB800' },
-    content: 'Endless love and appreciation for your support throughout the journey!',
-    createdAt: '2024-03-19T11:20:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-reliable-1',
-    authorName: 'Alex_Dev',
-    authorHandle: '@alex_dev',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['reliable'],
-    heartDetails: { id: 'reliable', label: 'Reliable', emoji: '🤝', bubbleColor: '#FF8A65' },
-    content: 'Always dependable and on time whenever a deadline approaches. True rock! 🤝',
-    createdAt: '2024-03-20T16:45:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-reliable-2',
-    authorName: 'Sarah',
-    authorHandle: '@sarah_zen',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['reliable'],
-    heartDetails: { id: 'reliable', label: 'Reliable', emoji: '🤝', bubbleColor: '#FF8A65' },
-    content: 'Rock-solid reliability through thick and thin.',
-    createdAt: '2024-03-18T09:30:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-leadership-1',
-    authorName: 'Cristiano Ronaldo',
-    authorHandle: '@cristiano',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Cristiano',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['leadership'],
-    heartDetails: { id: 'leadership', label: 'Leadership', emoji: '👑', bubbleColor: '#7B62FF' },
-    content: 'True leadership that inspires the entire community. Keep pushing! 👑',
-    createdAt: '2024-03-19T18:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-leadership-2',
-    authorName: 'Amino',
-    authorHandle: '@amino_official',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Amino',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['leadership'],
-    heartDetails: { id: 'leadership', label: 'Leadership', emoji: '👑', bubbleColor: '#7B62FF' },
-    content: 'Guiding light for our creative projects and team coordination!',
-    createdAt: '2024-03-17T12:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-hardworking-1',
-    authorName: 'Sarah',
-    authorHandle: '@sarah_zen',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['hardworking'],
-    heartDetails: { id: 'hardworking', label: 'Hard working', emoji: '💪', bubbleColor: '#4CD964' },
-    content: 'Incredible work ethic day in and day out! Never ceases to amaze. 💪',
-    createdAt: '2024-03-21T07:10:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-hardworking-2',
-    authorName: 'Davido Fans',
-    authorHandle: '@davido_30bg',
-    authorAvatar: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?auto=format&fit=crop&q=80&w=200',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['hardworking'],
-    heartDetails: { id: 'hardworking', label: 'Hard working', emoji: '💪', bubbleColor: '#4CD964' },
-    content: 'Non-stop dedication, hard work and persistent positivity!',
-    createdAt: '2024-03-16T15:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-visionary-1',
-    authorName: 'Beyoncé Fan',
-    authorHandle: '@bey_hive',
-    authorAvatar: 'https://images.unsplash.com/photo-1574100004472-e536d3b6bacc?auto=format&fit=crop&q=80&w=200',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['visionary'],
-    heartDetails: { id: 'visionary', label: 'Visionary', emoji: '✨', bubbleColor: '#FF53C0' },
-    content: 'Foresight that changes the game. Truly a visionary creator! ✨',
-    createdAt: '2024-03-20T10:30:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  },
-  {
-    id: 'rec-heart-best-1',
-    authorName: 'Argentina Fans',
-    authorHandle: '@argentina_fans',
-    authorAvatar: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=200',
-    recipientName: 'Micky Mouse',
-    recipients: ['@mickymouse'],
-    selectedHearts: ['best'],
-    heartDetails: { id: 'best', label: 'Best of all', emoji: '🏆', bubbleColor: '#007A78' },
-    content: 'Best of all! A genuine legend and inspiring soul in the community. 🏆',
-    createdAt: '2024-03-19T20:15:00Z',
-    isHeartToken: true,
-    isCreatedByUser: false,
-    section: 'hearts'
-  }
-];
 
-const DEFAULT_MOCK_SENT_HEARTS = [
-  {
-    id: 'sent-heart-loving-1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Beyounce',
-    recipientHandle: '@beyounce',
-    recipientAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-    recipients: ['@beyounce'],
-    selectedHearts: ['loving'],
-    heartDetails: { id: 'loving', label: 'Loving Partner', emoji: '💖', bubbleColor: '#FFB800' },
-    content: 'Queen Bey, your music healed my heart! Loving token for you 💖',
-    createdAt: '2024-03-21T09:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-loving-2',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Sarah',
-    recipientHandle: '@sarah_zen',
-    recipientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-    recipients: ['@sarah_zen'],
-    selectedHearts: ['loving'],
-    heartDetails: { id: 'loving', label: 'Loving Partner', emoji: '💖', bubbleColor: '#FFB800' },
-    content: 'Thank you for the warm guidance, calm mindset, and kindness! 💖',
-    createdAt: '2024-03-20T17:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-reliable-1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Tyler',
-    recipientHandle: '@tyler_grandson',
-    recipientAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200',
-    recipients: ['@tyler_grandson'],
-    selectedHearts: ['reliable'],
-    heartDetails: { id: 'reliable', label: 'Reliable', emoji: '🤝', bubbleColor: '#FF8A65' },
-    content: 'Thank you for always keeping your word and standing strong with family.',
-    createdAt: '2024-03-19T13:40:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-leadership-1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Cristiano Ronaldo',
-    recipientHandle: '@cristiano',
-    recipientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Cristiano',
-    recipients: ['@cristiano'],
-    selectedHearts: ['leadership'],
-    heartDetails: { id: 'leadership', label: 'Leadership', emoji: '👑', bubbleColor: '#7B62FF' },
-    content: 'Unmatched leadership on and off the pitch. True global inspiration! 👑',
-    createdAt: '2024-03-20T21:10:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-leadership-2',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Lionel Messi',
-    recipientHandle: '@messi',
-    recipientAvatar: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=200',
-    recipients: ['@messi'],
-    selectedHearts: ['leadership'],
-    heartDetails: { id: 'leadership', label: 'Leadership', emoji: '👑', bubbleColor: '#7B62FF' },
-    content: 'Masterful captaincy and calm leadership in the world cup final.',
-    createdAt: '2024-03-18T19:30:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-hardworking-1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Alex_Dev',
-    recipientHandle: '@alex_dev',
-    recipientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex',
-    recipients: ['@alex_dev'],
-    selectedHearts: ['hardworking'],
-    heartDetails: { id: 'hardworking', label: 'Hard working', emoji: '💪', bubbleColor: '#4CD964' },
-    content: 'Astonishing technical grit and late-night coding breakthroughs! 🛠️💪',
-    createdAt: '2024-03-21T06:45:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-visionary-1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Davido',
-    recipientHandle: '@davido_30bg',
-    recipientAvatar: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?auto=format&fit=crop&q=80&w=200',
-    recipients: ['@davido_30bg'],
-    selectedHearts: ['visionary'],
-    heartDetails: { id: 'visionary', label: 'Visionary', emoji: '✨', bubbleColor: '#FF53C0' },
-    content: 'Visionary music pioneer taking global Afrobeats to unprecedented heights! 🌟',
-    createdAt: '2024-03-19T15:20:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-best-1',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Cristiano Ronaldo',
-    recipientHandle: '@cristiano',
-    recipientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Cristiano',
-    recipients: ['@cristiano'],
-    selectedHearts: ['best'],
-    heartDetails: { id: 'best', label: 'Best of all', emoji: '🏆', bubbleColor: '#007A78' },
-    content: 'The greatest of all time. Respect and honor forever! 🏆',
-    createdAt: '2024-03-18T22:00:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  },
-  {
-    id: 'sent-heart-best-2',
-    authorName: 'Micky Mouse',
-    authorHandle: '@mickymouse',
-    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky',
-    recipientName: 'Lionel Messi',
-    recipientHandle: '@messi',
-    recipientAvatar: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=200',
-    recipients: ['@messi'],
-    selectedHearts: ['best'],
-    heartDetails: { id: 'best', label: 'Best of all', emoji: '🏆', bubbleColor: '#007A78' },
-    content: 'Pure footballing perfection. Best of all time! 🏆',
-    createdAt: '2024-03-17T18:15:00Z',
-    isHeartToken: true,
-    isCreatedByUser: true,
-    section: 'hearts'
-  }
-];
-
-const MOCK_HEARTBOARD_ITEMS = [
-  {
-    id: 'hb-1',
-    title: 'Beyoncé Live World Tour',
-    authorName: 'Curated by @mickymouse',
-    type: 'image',
-    mediaUrl: 'https://images.unsplash.com/photo-1574100004472-e536d3b6bacc?auto=format&fit=crop&q=80&w=500',
-    frameBg: '#FAF0EC', // cozy soft peach frame
-    aspectRatio: 'portrait',
-    tab: 'board'
-  },
-  {
-    id: 'hb-2',
-    title: 'Love Granpa So Much',
-    authorName: 'Tyler',
-    type: 'image_note',
-    content: 'Love Granpa So Much',
-    mediaUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=400',
-    frameBg: '#1A1B25', // dark charcoal border frame
-    paperBg: '#F8F9FB',
-    aspectRatio: 'landscape',
-    tab: 'board'
-  },
-  {
-    id: 'hb-3',
-    title: 'Tribute to Davido',
-    authorName: 'Amino',
-    type: 'note',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    mediaUrl: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?auto=format&fit=crop&q=80&w=300',
-    frameBg: '#F7B238', // warm yellow orange frame
-    paperBg: '#FFFDF9',
-    aspectRatio: 'tall_note',
-    tab: 'board'
-  },
-  {
-    id: 'hb-4',
-    title: 'Voice Note Tribute',
-    authorName: 'Anonymous',
-    type: 'audio',
-    content: 'Voice capsule appreciation',
-    frameBg: '#FAF0EC', // soft pinkish peach
-    aspectRatio: 'square_audio',
-    tab: 'board'
-  },
-  {
-    id: 'hb-5',
-    title: 'Ronaldo Retirement Card',
-    authorName: 'Amino',
-    type: 'note_stickers',
-    content: 'I love you ronaldo!. Happy retirement, Your cousin Amino',
-    frameBg: '#149B88', // teal green frame
-    paperBg: '#FFFDF9',
-    stickers: ['red_heart', 'yellow_star'],
-    aspectRatio: 'landscape_note',
-    tab: 'tagged'
-  },
-  {
-    id: 'hb-6',
-    title: 'Tupac Loved Memorial',
-    authorName: 'Fanbase',
-    type: 'note_stickers',
-    content: 'Legacy lives forever',
-    mediaUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&q=80&w=300',
-    frameBg: '#BEE27C', // lime green frame
-    paperBg: '#FFFDF9',
-    stickers: ['giant_heart'],
-    aspectRatio: 'tall_note',
-    tab: 'board',
-    section: 'board'
-  }
-];
-
-const PRESET_AVATARS = [
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200',
-  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200'
-];
+/**
+ * How many generated avatars the picker offers at once.
+ *
+ * These used to be five hard-coded Unsplash stock photos — real photographs of
+ * real people, offered as if they were yours to wear. They are now DiceBear
+ * `avataaars`, generated in the browser from random seeds (see ../lib/avatars).
+ */
+const GENERATED_AVATAR_COUNT = 5;
 
 export type HeartboardSubTab = 'board' | 'tagged' | 'collaboration' | 'hearts';
 
@@ -646,6 +269,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   onPostClick, 
   onFilterClick,
   profileUser = null,
+  isProfileLoading = false,
   currentUser = null,
   onBack,
   onGiftHeart,
@@ -694,12 +318,27 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const { user: authUser, refresh: refreshAuth, logout } = useAuth();
   const account = authUser ?? currentUser ?? null;
 
-  const [userName, setUserName] = useState(account?.name ?? 'Micky Mouse');
-  const [userHandle, setUserHandle] = useState(account?.handle ?? '@mickymouse');
+  const [userName, setUserName] = useState(account?.name ?? 'You');
+  const [userHandle, setUserHandle] = useState(account?.handle ?? '@you');
   const [userEmail, setUserEmail] = useState(account?.email ?? '');
   const [userBio, setUserBio] = useState(account?.bio ?? '');
   const [profileImage, setProfileImage] = useState<string | null>(account?.avatar || null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+  /**
+   * Whose profile the page is showing — the ONLY identity that share, copy-link
+   * and the downloadable card may read.
+   *
+   * userName/userHandle/profileImage above are the SIGNED-IN account's editable
+   * state. On someone else's profile they are still you, so every share path
+   * that read them produced your own card and your own link while the page
+   * showed theirs.
+   */
+  const sharedProfile = {
+    name: profileUser?.name ?? userName,
+    handle: profileUser?.handle ?? userHandle,
+    avatar: profileUser?.avatar ?? profileImage ?? null,
+  };
 
   // Mirror the account onto local state whenever it changes (initial /user/me
   // resolving, or a save that returns an updated document).
@@ -716,6 +355,25 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const canEditAccount = Boolean(authUser);
   const isOAuthAccount = authUser?.oauthProvider === 'google';
 
+  // Hearts the viewer has dropped on other people's profiles.
+  const likedProfiles = useLikedProfiles(authUser?.id);
+  const viewedProfileId = profileUser?.id || undefined;
+  const hasHeartedProfile = likedProfiles.isLiked(viewedProfileId);
+  const heartPending = likedProfiles.isPending(viewedProfileId);
+  /** The server rejects hearting yourself, and a signed-out viewer has no set. */
+  const canHeartThisProfile = Boolean(authUser && viewedProfileId && viewedProfileId !== authUser.id);
+
+  const handleToggleProfileHeart = async () => {
+    if (!authUser) {
+      showToast('Sign in to drop a heart');
+      return;
+    }
+    if (!canHeartThisProfile) return;
+    const result = await likedProfiles.toggle(viewedProfileId);
+    if (result === true) showToast(`You dropped a heart on ${profileUser?.name ?? 'this profile'}`);
+    else if (result === false) showToast('Heart removed');
+  };
+
   // File Input Ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -730,6 +388,22 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Generated-avatar picker. Seeds are the state, not images: DiceBear is
+  // deterministic, so a seed is the whole avatar and a reroll is one crypto
+  // call. Previews are rendered from them on demand and kept by seed.
+  const [avatarSeeds, setAvatarSeeds] = useState<string[]>(() =>
+    randomAvatarSeeds(GENERATED_AVATAR_COUNT),
+  );
+  const [avatarPreviews, setAvatarPreviews] = useState<Record<string, string>>({});
+  /** Which generated avatar is currently being rasterised and uploaded. */
+  const [pendingAvatarSeed, setPendingAvatarSeed] = useState<string | null>(null);
+  /**
+   * The chosen seed, tracked separately because tempProfileImage holds the
+   * uploaded Cloudinary URL rather than the preview, so it cannot identify
+   * which tile it came from.
+   */
+  const [selectedAvatarSeed, setSelectedAvatarSeed] = useState<string | null>(null);
 
   // Settings State & Interactive Handlers
   const [boardVisibility, setBoardVisibility] = useState<'Public' | 'Only Recipient' | 'Anonymous'>('Public');
@@ -760,7 +434,10 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [activeHeartTags, setActiveHeartTags] = useState<string[]>(['#loveRonaldo', '#messi', '#workspacelegend']);
+  // Hashtag claiming has no backend yet (see CLIENT_MIGRATION_INSTRUCTIONS.txt) —
+  // this list used to be seeded with fake pre-claimed tags. Starting empty is
+  // honest about the fact that nothing has actually been claimed.
+  const [activeHeartTags, setActiveHeartTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [showTagManager, setShowTagManager] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -768,7 +445,13 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const [shareModalData, setShareModalData] = useState<ShareData | null>(null);
 
   const handleCopyProfileLink = () => {
-    const profileUrl = window.location.origin ? `${window.location.origin}?profile=${encodeURIComponent(userHandle)}` : `https://heartboard.app/${userHandle}`;
+    // /profile/:username is the real route. This used to copy
+    // "?profile=@handle", a prototype link that opens the bare feed.
+    //
+    // sharedProfile, not userHandle: on someone else's profile the latter is
+    // still the SIGNED-IN account, so Copy handed out your own link while you
+    // were looking at theirs.
+    const profileUrl = `${window.location.origin}/profile/${encodeURIComponent(usernameOf(sharedProfile.handle))}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(profileUrl).then(() => {
         setCopiedProfileLink(true);
@@ -880,6 +563,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     setTempHandle(userHandle.replace(/^@/, ''));
     setTempBio(userBio);
     setTempProfileImage(profileImage);
+    setSelectedAvatarSeed(null);
     setProfileError(null);
     setIsEditingProfile(true);
   };
@@ -976,6 +660,8 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     try {
       const { url } = await uploadFile(file, 'image');
       setTempProfileImage(url);
+      // An uploaded photo replaces a generated pick, so drop the tile's ring.
+      setSelectedAvatarSeed(null);
 
       // The camera button is also reachable outside the edit form, where there
       // is no Save button to press — persist immediately in that case.
@@ -996,6 +682,67 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     }
   };
 
+  /**
+   * Renders previews for the offered seeds, but only while the edit form is
+   * open — that keeps the 120KB style definition off every other page load,
+   * since the dynamic import inside avatarDataUri never runs until now.
+   */
+  React.useEffect(() => {
+    if (!isEditingProfile) return;
+
+    let cancelled = false;
+    void Promise.all(
+      avatarSeeds.map(async (seed) => [seed, await avatarDataUri(seed)] as const),
+    )
+      .then((entries) => {
+        if (!cancelled) setAvatarPreviews(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        // The tiles stay as placeholders; uploading a photo still works.
+        if (!cancelled) setAvatarPreviews({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditingProfile, avatarSeeds]);
+
+  /**
+   * Picks a generated avatar.
+   *
+   * The SVG is rasterised and uploaded rather than stored directly: the server
+   * rejects `data:` URLs on profileImage, so a generated avatar has to become a
+   * hosted image exactly like an uploaded photo. Save Changes then persists the
+   * returned URL along with the rest of the form.
+   */
+  const handlePickGeneratedAvatar = async (seed: string) => {
+    if (!canEditAccount) {
+      showToast('Sign in to change your profile picture');
+      return;
+    }
+
+    setPendingAvatarSeed(seed);
+    setProfileError(null);
+    try {
+      const { url } = await uploadFile(await avatarPngFile(seed), 'image');
+      setTempProfileImage(url);
+      setSelectedAvatarSeed(seed);
+      showToast('Avatar ready — press Save Changes');
+    } catch (err) {
+      const message = toApiError(err).message;
+      setProfileError(message);
+      showToast(message);
+    } finally {
+      setPendingAvatarSeed(null);
+    }
+  };
+
+  /** Rolls a fresh set of faces. Any pick already made is left alone. */
+  const handleShuffleAvatars = () => {
+    setAvatarPreviews({});
+    setAvatarSeeds(randomAvatarSeeds(GENERATED_AVATAR_COUNT));
+  };
+
   /** Notification toggles: optimistic, reverted if the request fails. */
   const persistNotificationPref = async (
     key: 'heartTokenAlerts' | 'trophyCaseUpdates',
@@ -1011,13 +758,33 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
       return;
     }
 
+    // Turning a toggle on is the user gesture the browser requires for the
+    // permission prompt — asking anywhere else is silently ignored. Saving the
+    // pref does not depend on the answer: the toggle is the user's intent, and
+    // permission can be granted later from the address bar.
+    let permission = notificationPermission();
+    if (value && notificationSupport() === 'supported' && permission === 'default') {
+      permission = await requestNotificationPermission();
+    }
+
     setSavingPrefs(true);
     try {
       await userApi.updateProfile({
         notificationPrefs: { [key]: value } as Record<typeof key, boolean>,
       });
       await refreshAuth();
-      showToast(`${label} ${value ? 'enabled' : 'disabled'}`);
+
+      if (!value) {
+        showToast(`${label} disabled`);
+      } else if (notificationSupport() === 'unsupported') {
+        showToast(`${label} enabled — this browser cannot show notifications`);
+      } else if (permission === 'denied') {
+        showToast(`${label} enabled — allow notifications in your browser to receive them`);
+      } else if (permission === 'granted') {
+        showToast(`${label} enabled`);
+      } else {
+        showToast(`${label} enabled — allow notifications when your browser asks`);
+      }
     } catch (err) {
       setter(!value);
       showToast(toApiError(err).message);
@@ -1065,7 +832,36 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     }
   };
 
-  const allAvailableItems = posts.length > 0 ? posts : MOCK_HEARTBOARD_ITEMS;
+  /**
+   * Board and Tagged always come from the server, on ANY profile — your own or
+   * someone else's. The server draws the line the product intends:
+   *
+   *   Board  = boards this person CREATED
+   *   Tagged = boards someone ELSE created with this person as the recipient
+   *
+   * Collaboration and Hearts have no server view, so they still derive from the
+   * `posts` this view was handed.
+   */
+  const isOwnProfileView = !profileUser;
+  const serverBoardView: 'owned' | 'tagged' | null =
+    activeSubTab === 'board' ? 'owned' : activeSubTab === 'tagged' ? 'tagged' : null;
+
+  // Own profile: GET /board?view=… (includes private and link-only boards).
+  const myBoards = useMyBoards(serverBoardView ?? 'owned', {
+    enabled: Boolean(serverBoardView && isOwnProfileView && authUser),
+    currentUserId: authUser?.id,
+  });
+
+  // Someone else's profile: GET /user/profile/:username?view=… (public only).
+  const otherBoards = useProfileBoards(usernameOf(profileUser?.handle), serverBoardView ?? 'owned', {
+    enabled: Boolean(serverBoardView && !isOwnProfileView && profileUser?.handle),
+    currentUserId: authUser?.id,
+  });
+
+  const serverBoards = isOwnProfileView ? myBoards.items : otherBoards.items;
+  const serverBoardsLoading = isOwnProfileView ? myBoards.loading : otherBoards.loading;
+  const usingServerBoards = Boolean(serverBoardView && serverBoards);
+  const allAvailableItems = usingServerBoards ? (serverBoards as any[]) : posts;
 
   // Helper to reliably identify heart token items vs message boards
   const isHeartPost = (item: any) => {
@@ -1081,6 +877,17 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const isViewingOtherUser = Boolean(profileUser);
   const currentUserName = isViewingOtherUser ? profileUser!.name : userName;
   const currentUserHandle = isViewingOtherUser ? profileUser!.handle : userHandle;
+
+  /**
+   * Where to send someone who shares a heart category.
+   *
+   * A heart category is not addressable — there is no route for one — so the
+   * shareable thing is the Heartboard it lives on. The links used to point at
+   * /?hearts=<id>, which no route has ever matched.
+   */
+  const heartboardShareUrl = `${window.location.origin}/profile/${encodeURIComponent(
+    usernameOf(sharedProfile.handle),
+  )}`;
 
   // Extract all heart token posts from dynamic posts
   const allHeartTokenPosts = posts.filter((p: any) => isHeartPost(p));
@@ -1110,20 +917,12 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     return p.isCreatedByUser !== true;
   });
 
-  // Combine defaults with user actions without duplicates
-  const allReceivedHearts = [
-    ...dynamicReceivedHearts,
-    ...DEFAULT_MOCK_RECEIVED_HEARTS.filter(
-      def => !dynamicReceivedHearts.some((dyn: any) => dyn.id === def.id)
-    )
-  ];
-
-  const allSentHearts = [
-    ...dynamicSentHearts,
-    ...DEFAULT_MOCK_SENT_HEARTS.filter(
-      def => !dynamicSentHearts.some((dyn: any) => dyn.id === def.id)
-    )
-  ];
+  // Heart tokens have no backend of their own yet (see CLIENT_MIGRATION_INSTRUCTIONS.txt) —
+  // "sent"/"received" here only reflects tokens created client-side this
+  // session, via posts. There is no fabricated history standing in for real
+  // data any more; an empty list means honestly zero, not "loading".
+  const allReceivedHearts = dynamicReceivedHearts;
+  const allSentHearts = dynamicSentHearts;
 
   // Dynamically calculate category stats strictly for the active filter (Received vs Sent)
   const buildCategoriesForDataset = (dataset: any[], isSentFilter: boolean): HeartCategoryCardData[] => {
@@ -1178,7 +977,12 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             // In Sent mode, show recipient details
             const recName = post.recipientName || post.targetId || 'Recipient';
             const recHandle = post.recipientHandle || post.recipients?.[0] || (post.recipientName ? `@${post.recipientName.toLowerCase().replace(/\s+/g, '')}` : '@recipient');
-            const recAvatar = post.recipientAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(recName)}`;
+            const recAvatar = avatarFromParts({
+              id: post.recipientId,
+              username: usernameOf(recHandle),
+              name: recName,
+              profileImage: post.recipientAvatar,
+            });
 
             matchedEntries.push({
               id: post.id,
@@ -1194,7 +998,12 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             // In Received mode, show sender details
             const sndName = post.authorName || 'Anonymous';
             const sndHandle = post.authorHandle || (post.authorName ? `@${post.authorName.toLowerCase().replace(/\s+/g, '')}` : '@anonymous');
-            const sndAvatar = post.authorAvatar || post.mediaUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(sndName)}`;
+            const sndAvatar = avatarFromParts({
+              id: post.authorId,
+              username: usernameOf(sndHandle),
+              name: sndName,
+              profileImage: post.authorAvatar,
+            });
 
             matchedEntries.push({
               id: post.id,
@@ -1266,8 +1075,8 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
   const filteredItems = allAvailableItems.filter((item) => {
     // 1. Target user resolution for current profile context
-    const targetName = (profileUser?.name || currentUser?.name || userName || 'Micky Mouse').trim();
-    const targetHandle = (profileUser?.handle || currentUser?.handle || userHandle || '@mickymouse').trim();
+    const targetName = (profileUser?.name || currentUser?.name || userName || 'You').trim();
+    const targetHandle = (profileUser?.handle || currentUser?.handle || userHandle || '@you').trim();
     const targetHandleClean = targetHandle.replace(/^@/, '').toLowerCase();
     const targetNameClean = targetName.toLowerCase();
     const targetNameNoSpaces = targetNameClean.replace(/\s+/g, '');
@@ -1341,7 +1150,13 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
     let matchesTab = false;
 
-    if (activeSubTab === 'board') {
+    // The server already returned exactly this tab's boards (owner: me for
+    // Board, receipent: me for Tagged), so re-deciding membership here with
+    // name matching could only throw correct rows away.
+    if (usingServerBoards) {
+      if (isHeartPost(item)) return false;
+      matchesTab = true;
+    } else if (activeSubTab === 'board') {
       // 1. Board section = Message boards created by this user only (NEVER heart tokens!)
       if (isHeartPost(item)) return false;
       matchesTab = isCreator(item);
@@ -1431,9 +1246,20 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             <ChevronLeft className="w-6 h-6 stroke-[2.5]" />
           </button>
           
-          <button 
+          <button
             aria-label="Share Profile"
-            onClick={() => setIsShareModalOpen(true)}
+            onClick={() => {
+              // Set the data explicitly rather than relying on the fallback, so
+              // a stale shareModalData from a previously shared board or heart
+              // category cannot be reused for this profile.
+              setShareModalData({
+                type: 'profile',
+                userHandle: sharedProfile.handle,
+                userName: sharedProfile.name,
+                profileImage: sharedProfile.avatar,
+              });
+              setIsShareModalOpen(true);
+            }}
             className="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-[#353849] transition-all cursor-pointer shadow-2xs"
           >
             <Share2 className="w-4 h-4 stroke-[2.5]" />
@@ -1459,7 +1285,9 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
         <div className="flex flex-row items-center gap-6 mb-8">
           {/* Avatar */}
           <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-[140px] md:h-[140px] rounded-full bg-[#FDF4F2] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs border border-rose-100/60">
-            {profileUser.avatar ? (
+            {isProfileLoading ? (
+              <SkeletonBlock className="w-full h-full" rounded="rounded-full" />
+            ) : profileUser.avatar ? (
               <img src={profileUser.avatar} alt={profileUser.name} className="w-full h-full object-cover" />
             ) : (
               <svg className="w-16 h-16 sm:w-20 sm:h-20 text-[#FFB5A9] fill-current" viewBox="0 0 24 24">
@@ -1471,22 +1299,53 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
           {/* User Name, Stats & Action Buttons */}
           <div className="flex flex-col justify-center gap-2">
             <div>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#1A1B25] tracking-tight">
-                {profileUser.name}
-              </h2>
-              <p className="text-xs sm:text-sm md:text-base font-semibold text-[#808897] mt-1">
-                {profileUser.messagesCount || '101.6M'} Messages &nbsp;|&nbsp; {profileUser.taggedCount || '30.6M'} Tagged
-              </p>
+              {isProfileLoading ? (
+                // The stub's name is the URL handle with its first letter
+                // capitalised, and its counts are zero. Showing that and then
+                // replacing it read as one profile becoming a different person.
+                <>
+                  <SkeletonBlock className="h-8 sm:h-9 md:h-10 w-48 sm:w-56" rounded="rounded-xl" />
+                  <SkeletonBlock className="h-4 w-40 mt-2" rounded="rounded-lg" />
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#1A1B25] tracking-tight">
+                    {profileUser.name}
+                  </h2>
+                  {/* Real counts from the profile's live stats. These used to
+                      fall back to a hard-coded "101.6M Messages | 30.6M
+                      Tagged" — and taggedCount was never mapped from the API
+                      at all, so the fallback is what every profile showed. */}
+                  <p className="text-xs sm:text-sm md:text-base font-semibold text-[#808897] mt-1">
+                    {formatStatCount(profileUser.messagesCount)} {plural(profileUser.messagesCount, 'Message')}
+                    &nbsp;|&nbsp;
+                    {formatStatCount(profileUser.taggedCount)} Tagged
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Action buttons: Heart & Message */}
             <div className="flex items-center gap-3 mt-2">
-              <button 
-                onClick={() => onGiftHeart && onGiftHeart(asRegisteredUser(profileUser))}
-                className="bg-[#ffffff] hover:bg-[#F8F9FB] text-[#1A1B25] border-2 border-[#ECEFF3] px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95"
+              {/* Drops a heart on the person (POST /user/:id/like). Distinct
+                  from "gift a heart token", which composes a board — that is
+                  the Message button's neighbour in the create flow. */}
+              <button
+                onClick={handleToggleProfileHeart}
+                disabled={heartPending || !canHeartThisProfile}
+                aria-pressed={hasHeartedProfile}
+                className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95 border-2 disabled:cursor-default disabled:opacity-60 ${
+                  hasHeartedProfile
+                    ? 'bg-[#FFF1EE] border-[#FFD5CC] text-[#FE6349] hover:bg-[#FFE7E2]'
+                    : 'bg-[#ffffff] border-[#ECEFF3] text-[#1A1B25] hover:bg-[#F8F9FB]'
+                }`}
               >
-                <Heart className="w-4 h-4 text-[#1A1B25] fill-none stroke-[2.5]" />
-                <span>Heart</span>
+                <Heart
+                  className={`w-4 h-4 stroke-[2.5] transition-colors ${
+                    hasHeartedProfile ? 'text-[#FE6349] fill-[#FE6349]' : 'text-[#1A1B25] fill-none'
+                  }`}
+                />
+                <span>{hasHeartedProfile ? 'Hearted' : 'Heart'}</span>
               </button>
 
               <button 
@@ -1546,10 +1405,11 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 onClick={() => {
                   setShareModalData({
                     type: 'profile',
-                    userHandle: userHandle,
-                    userName: userName,
-                    profileImage: profileImage,
-                    url: `${window.location.origin}/#${userHandle.replace('@', '')}`
+                    userHandle: sharedProfile.handle,
+                    userName: sharedProfile.name,
+                    profileImage: sharedProfile.avatar,
+                    // No `url`: ShareProfileModal builds /profile/:handle. This
+                    // used to pass /#handle, which lands on the bare feed.
                   });
                   setIsShareModalOpen(true);
                 }}
@@ -1668,8 +1528,8 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 : activeSubTab === 'collaboration'
                 ? "Search boards you contributed to by caption, creator, or message..."
                 : heartFilter === 'received'
-                ? "Search received hearts by type or sender's name (e.g. Mercy24)..."
-                : "Search sent hearts by type or recipient's name (e.g. Cristiano)..."
+                ? "Search received hearts by type or sender's name..."
+                : "Search sent hearts by type or recipient's name..."
             }
             className="w-full bg-gray-25 border-0 outline-none focus:outline-none focus:ring-0 rounded-full py-3 pl-10 pr-4 text-xs font-medium text-[#1A1B25] placeholder:text-[#A4ABB8]"
           />
@@ -1717,7 +1577,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                     type: 'board',
                     boardTitle: `${catData.categoryName} Hearts`,
                     boardTheme: catData.bubbleColor,
-                    url: `${window.location.origin}/?hearts=${encodeURIComponent(catData.id)}`
+                    url: heartboardShareUrl,
                   });
                   setIsShareModalOpen(true);
                 }}
@@ -1728,6 +1588,14 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             ))}
           </div>
         )
+      ) : serverBoardsLoading && filteredItems.length === 0 ? (
+        // "No boards yet" while the request is still in flight reads as an
+        // empty account rather than as loading.
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6 my-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonBlock key={i} className="w-full aspect-[380/474]" rounded="rounded-2xl sm:rounded-[2.5rem]" />
+          ))}
+        </div>
       ) : filteredItems.length === 0 ? (
         <div className="bg-white rounded-[2.5rem] p-12 text-center border border-gray-100 flex flex-col items-center justify-center my-6">
           <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mb-3 text-[#FE6349]">
@@ -1844,7 +1712,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                           type: 'board',
                           boardTitle: `${activeCategoryModal.categoryName} Hearts`,
                           boardTheme: activeCategoryModal.bubbleColor,
-                          url: `${window.location.origin}/?hearts=${encodeURIComponent(activeCategoryModal.id)}`
+                          url: heartboardShareUrl,
                         });
                         setIsShareModalOpen(true);
                       }}
@@ -1968,15 +1836,27 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
                           return (
                             <div key={itemKey} className="relative">
-                              {/* Tooltip Card */}
+                              {/*
+                                Tooltip Card. Opens BELOW the bubble.
+                                It used to open above (bottom-full), but the
+                                grid's scrollable area sits directly under the
+                                drawer's search bar with only ~40px of padding
+                                above the first row — nowhere near enough room
+                                for the ~120px tall card, so it was clipped by
+                                the drawer's overflow-hidden body for every
+                                heart in that row (the ones a user opens first).
+                                Opening downward always has scrollable room
+                                below, so it can never run out of space the
+                                same way.
+                              */}
                               <AnimatePresence>
                                 {isTooltipOpen && (
                                   <motion.div
-                                    initial={{ opacity: 0, y: 6, scale: 0.9 }}
+                                    initial={{ opacity: 0, y: -6, scale: 0.9 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                                    exit={{ opacity: 0, y: -4, scale: 0.95 }}
                                     transition={{ duration: 0.15 }}
-                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-30 pointer-events-auto min-w-[160px]"
+                                    className="absolute top-full mt-3 left-1/2 -translate-x-1/2 z-30 pointer-events-auto min-w-[160px]"
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <div className="bg-white rounded-2xl px-4 py-3 shadow-xl border border-gray-100/90 flex flex-col items-center relative">
@@ -2005,8 +1885,8 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                                         {personItem.date}
                                       </span>
 
-                                      {/* Bottom Pointer Tail Arrow */}
-                                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-r border-b border-gray-100/90 rotate-45" />
+                                      {/* Top Pointer Tail Arrow — points up at the bubble above it */}
+                                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-gray-100/90 rotate-45" />
                                     </div>
                                   </motion.div>
                                 )}
@@ -2049,7 +1929,10 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={() => setIsSettingsOpen(false)}
-              className="fixed inset-0 bg-black/40 z-50 backdrop-blur-xs"
+              // Above the bottom nav (z-100), not below it. At z-50 the nav sat
+              // on top of the drawer and covered Sign Out at the bottom of it,
+              // and stayed tappable through the backdrop.
+              className="fixed inset-0 bg-black/40 z-[110] backdrop-blur-xs"
             />
 
             {/* Drawer Panel */}
@@ -2058,7 +1941,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-              className="fixed top-0 right-0 bottom-0 w-full max-w-sm sm:max-w-md bg-white z-50 flex flex-col overflow-hidden font-sans"
+              className="fixed top-0 right-0 bottom-0 w-full max-w-sm sm:max-w-md bg-white z-[110] flex flex-col overflow-hidden font-sans"
             >
               {/* Drawer Header */}
               <div className="flex items-center justify-between p-6 bg-white sticky top-0 z-10">
@@ -2075,8 +1958,9 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 </button>
               </div>
 
-              {/* Drawer Content Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Drawer Content Body. The trailing padding keeps Sign Out clear
+                  of a phone's home indicator once it is scrolled to. */}
+              <div className="flex-1 overflow-y-auto p-6 pb-10 space-y-6">
                 {/* Profile Quick Overview & Editing */}
                 <div className="bg-gray-25 p-4 rounded-2xl transition-all">
                   {!isEditingProfile ? (
@@ -2158,7 +2042,10 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                             {tempProfileImage && (
                               <button
                                 type="button"
-                                onClick={() => setTempProfileImage(null)}
+                                onClick={() => {
+                                  setTempProfileImage(null);
+                                  setSelectedAvatarSeed(null);
+                                }}
                                 className="px-2.5 py-1.5 rounded-full bg-gray-100 text-xs font-medium text-[#666D80] hover:bg-gray-200 transition-all cursor-pointer"
                               >
                                 Remove
@@ -2168,66 +2055,94 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Preset Avatars */}
+                      {/* Generated Avatars */}
                       <div>
-                        <span className="text-[10px] font-semibold text-[#808897] block mb-1.5">Or choose a preset avatar:</span>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-semibold text-[#808897]">Or choose a generated avatar:</span>
+                          <button
+                            type="button"
+                            onClick={handleShuffleAvatars}
+                            disabled={pendingAvatarSeed !== null}
+                            title="Generate a new set"
+                            className="flex items-center gap-1 text-[10px] font-semibold text-[#666D80] hover:text-[#1A1B25] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <RefreshCw className="w-3 h-3" strokeWidth={2.5} />
+                            <span>Shuffle</span>
+                          </button>
+                        </div>
                         <div className="flex items-center gap-2">
-                          {PRESET_AVATARS.map((url, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => setTempProfileImage(url)}
-                              className={`w-8 h-8 rounded-full overflow-hidden transition-all cursor-pointer ${
-                                tempProfileImage === url ? 'scale-105 opacity-100' : 'opacity-60 hover:opacity-100'
-                              }`}
-                            >
-                              <img src={url} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
-                            </button>
-                          ))}
+                          {avatarSeeds.map((seed) => {
+                            const preview = avatarPreviews[seed];
+                            const isSelected = selectedAvatarSeed === seed;
+                            const isPending = pendingAvatarSeed === seed;
+                            return (
+                              <button
+                                key={seed}
+                                type="button"
+                                onClick={() => handlePickGeneratedAvatar(seed)}
+                                disabled={pendingAvatarSeed !== null || isUploadingAvatar}
+                                title="Use this avatar"
+                                className={`w-8 h-8 rounded-full overflow-hidden bg-[#FDF4F2] flex items-center justify-center transition-all cursor-pointer disabled:cursor-not-allowed ${
+                                  isSelected
+                                    ? 'ring-2 ring-[#FE6349] scale-105 opacity-100'
+                                    : 'opacity-60 hover:opacity-100'
+                                }`}
+                              >
+                                {isPending ? (
+                                  <Loader2 className="w-3.5 h-3.5 text-[#FE6349] animate-spin" />
+                                ) : preview ? (
+                                  <img src={preview} alt="Generated avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                  // Waiting on the style definition to load.
+                                  <span className="w-full h-full bg-gray-100 animate-pulse" />
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Display Name</label>
+                        <label className="text-[11px] font-bold text-[#353849] mb-1 block">Display Name</label>
                         <input
                           type="text"
                           value={tempName}
                           onChange={(e) => setTempName(e.target.value)}
                           maxLength={50}
-                          className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25]"
+                          className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-bold text-[#1A1B25]"
                           placeholder="e.g. Micky Mouse"
                         />
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Username</label>
+                        <label className="text-[11px] font-bold text-[#353849] mb-1 block">Username</label>
                         <div className="flex items-center bg-gray-25 rounded-xl px-3">
-                          <span className="text-xs font-medium text-[#A4ABB8]">@</span>
+                          <span className="text-xs font-bold text-[#666D80]">@</span>
                           <input
                             type="text"
                             value={tempHandle}
                             onChange={(e) => setTempHandle(e.target.value.replace(/\s+/g, ''))}
                             maxLength={14}
-                            className="flex-1 bg-transparent border-none outline-none py-2 pl-0.5 text-xs font-medium text-[#1A1B25]"
+                            className="flex-1 bg-transparent border-none outline-none py-2 pl-0.5 text-xs font-bold text-[#1A1B25]"
                             placeholder="mickymouse"
                           />
                         </div>
-                        <p className="text-[10px] text-[#A4ABB8] font-medium mt-1">
+                        <p className="text-[10px] text-[#666D80] font-semibold mt-1">
                           This is your profile URL. 3–14 characters.
                         </p>
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Bio</label>
+                        <label className="text-[11px] font-bold text-[#353849] mb-1 block">Bio</label>
                         <textarea
                           value={tempBio}
                           onChange={(e) => setTempBio(e.target.value)}
                           maxLength={160}
                           rows={2}
-                          className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25] resize-none"
+                          className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-bold text-[#1A1B25] resize-none"
                           placeholder="A short line about you"
                         />
-                        <p className="text-[10px] text-[#A4ABB8] font-medium mt-1 text-right">
+                        <p className="text-[10px] text-[#666D80] font-semibold mt-1 text-right">
                           {tempBio.length}/160
                         </p>
                       </div>
@@ -2239,9 +2154,9 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                         field outright.
                       */}
                       <div>
-                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Email</label>
+                        <label className="text-[11px] font-bold text-[#353849] mb-1 block">Email</label>
                         <div className="w-full bg-gray-25 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium text-[#666D80] truncate">
+                          <span className="text-xs font-bold text-[#1A1B25] truncate">
                             {userEmail || 'Not signed in'}
                           </span>
                           {userEmail && (
@@ -2254,7 +2169,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                             )
                           )}
                         </div>
-                        <p className="text-[10px] text-[#A4ABB8] font-medium mt-1">
+                        <p className="text-[10px] text-[#666D80] font-semibold mt-1">
                           Email can't be changed here — it needs re-verification.
                         </p>
                       </div>
@@ -2291,6 +2206,19 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 {/* Section: Notifications */}
                 <div>
                   <h4 className="text-xs font-bold text-[#808897] uppercase tracking-wider mb-3">Notifications</h4>
+                  {/* Without this, a browser-level block is invisible: the
+                      toggles read as on while nothing ever arrives. */}
+                  {(heartTokenAlerts || trophyCaseUpdates) && notificationSupport() === 'unsupported' && (
+                    <p className="text-[11px] font-medium text-[#A4ABB8] mb-2 px-1">
+                      This browser cannot show notifications.
+                    </p>
+                  )}
+                  {(heartTokenAlerts || trophyCaseUpdates) && notificationPermission() === 'denied' &&
+                    notificationSupport() === 'supported' && (
+                    <p className="text-[11px] font-semibold text-amber-600 mb-2 px-1">
+                      Notifications are blocked for this site — allow them in your browser to receive these.
+                    </p>
+                  )}
                   <div className="bg-gray-25 rounded-2xl overflow-hidden divide-y divide-gray-100">
                     <div
                       onClick={() => {
@@ -2554,10 +2482,11 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
         }}
         shareData={shareModalData || {
           type: 'profile',
-          userHandle: userHandle,
-          userName: userName,
-          profileImage: profileImage,
-          url: `${window.location.origin}/#${userHandle.replace('@', '')}`
+          // The profile ON SCREEN, not the signed-in account. The modal derives
+          // /profile/:handle and renders the downloadable card from these.
+          userHandle: sharedProfile.handle,
+          userName: sharedProfile.name,
+          profileImage: sharedProfile.avatar,
         }}
         onShowToast={showToast}
       />

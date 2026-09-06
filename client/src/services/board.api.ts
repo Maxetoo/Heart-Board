@@ -25,7 +25,8 @@ export interface CreateBoardPayload {
   coverImagePublicId?: string | null;
   tags?: string[];
   onlyMe?: boolean;
-  style?: { theme?: string; sticker?: string; confetti?: string };
+  /** `hearts` are Semantic Heart Spectrum ids; the server caps the list at 12. */
+  style?: { theme?: string; sticker?: string; confetti?: string; hearts?: string[] };
 }
 
 export async function createBoard(payload: CreateBoardPayload) {
