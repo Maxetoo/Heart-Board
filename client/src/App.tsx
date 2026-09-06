@@ -10,7 +10,7 @@ import { getGlobalStats } from './services/stats.api';
 import * as boardApi from './services/board.api';
 import * as messageApi from './services/message.api';
 import { toApiError } from './lib/api';
-import { usernameOf, userFromHandle } from './lib/adapters';
+import { usernameOf, userFromHandle, boardToPost } from './lib/adapters';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
 import { CreateAppreciationModal } from './components/CreateAppreciationModal';
@@ -975,6 +975,10 @@ const App: React.FC = () => {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [authModalPrompt, setAuthModalPrompt] = useState<string | undefined>(undefined);
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(() => {
+    // Someone following a shared link came for a specific board or profile.
+    // Opening a generic welcome dialogue over it buries what they clicked.
+    const deepLinked = /^\/(board|profile|hashtag)\//.test(window.location.pathname);
+    if (deepLinked) return false;
     try {
       const hasSeen = localStorage.getItem('heartboard_welcome_dismissed');
       return !hasSeen;
@@ -1031,9 +1035,9 @@ const App: React.FC = () => {
     await logout();
     setActiveNavTab('home');
     setSelectedFilterId('moment');
-    setViewingProfileUser(null);
-    setViewingHashtag(null);
-    navigate('/');
+    // Replace, so Back does not return to a signed-in-only page. The sync
+    // effect clears the profile/hashtag view when the path changes.
+    navigate('/', { replace: true });
   };
 
   const handleCloseWelcomeModal = () => {
@@ -1071,22 +1075,98 @@ const App: React.FC = () => {
 
   // ── URL <-> view state sync ────────────────────────────────────────────────
   //
-  // The prototype drove profile / hashtag / board views purely from React
-  // state, so none of them had a URL: share links, refresh and browser
-  // back/forward all failed. These two effects make the URL authoritative.
+  // The URL is the single source of truth for which view is showing. The
+  // prototype drove profile / hashtag / board views purely from React state, so
+  // none of them had an address; share links, refresh and browser back/forward
+  // all failed. Closing an overlay also left a stale /board/:slug in the bar,
+  // because the close handlers only reset state.
+  //
+  // Rules:
+  //   * to OPEN a view, call the goTo* helpers (they navigate)
+  //   * to CLOSE a view, call closeOverlay() (it navigates back)
+  //   * never set viewingProfileUser / viewingHashtag / selectedPostIndex
+  //     directly outside the effect below
 
-  // URL -> state. Runs on every navigation, including a cold load of a
-  // pasted link.
+  /**
+   * Pushes a view and marks the history entry as one we created.
+   *
+   * The marker lives on the history entry itself rather than in a counter,
+   * because a counter drifts the moment the user presses the browser Back
+   * button, which pops an entry without telling us.
+   */
+  const pushView = (to: string) => {
+    navigate(to, { state: { fromApp: true } });
+  };
+
+  /**
+   * Closes whatever overlay is open and restores the underlying URL.
+   *
+   * If we pushed the current entry then something of ours sits behind it, so a
+   * real history back keeps the in-app close button and the browser Back button
+   * behaving identically. If the user deep-linked straight here there is
+   * nothing of ours to return to, so replace with the feed — going back would
+   * take them out of the app entirely.
+   */
+  const closeOverlay = () => {
+    const cameFromApp = (location.state as { fromApp?: boolean } | null)?.fromApp;
+    if (cameFromApp) navigate(-1);
+    else navigate('/', { replace: true });
+  };
+
+  const goToProfile = (user: RegisteredUser) => {
+    const handle = usernameOf(user.handle);
+    pushView(handle ? `/profile/${encodeURIComponent(handle)}` : '/profile');
+  };
+
+  const goToHashtag = (tag: string) => {
+    pushView(`/hashtag/${encodeURIComponent(tag.replace(/^#/, ''))}`);
+  };
+
+  const goToBoard = (post: Post) => {
+    pushView(`/board/${encodeURIComponent(post.slug || post.id)}`);
+  };
+
+  /** Board prev/next swaps the address in place rather than stacking history. */
+  const replaceBoard = (post: Post) => {
+    navigate(`/board/${encodeURIComponent(post.slug || post.id)}`, { replace: true });
+  };
+
+  /**
+   * Leaves a board that no longer exists.
+   *
+   * Uses replace rather than a history back so the dead /board/:slug is dropped
+   * from the stack entirely — going Back onto a deleted board would 404.
+   */
+  const leaveDeletedBoard = () => {
+    navigate('/', { replace: true });
+  };
+
+  const path = location.pathname;
+  const profileMatch = path.match(/^\/profile\/([^/]+)$/);
+  const hashtagMatch = path.match(/^\/hashtag\/([^/]+)$/);
+  const boardMatch = path.match(/^\/board\/([^/]+)$/);
+  const boardSlug = boardMatch ? decodeURIComponent(boardMatch[1]) : null;
+
+  // URL -> state, on navigation ONLY.
+  //
+  // Deliberately depends on the pathname alone. An earlier version also
+  // depended on posts.length, which meant loading the next page of the feed
+  // re-ran this and closed whatever modal the user had open.
   useEffect(() => {
-    const path = location.pathname;
+    const isAuthPath = path === '/login' || path === '/signup';
+    const isCreatePath = path === '/create';
 
-    const profileMatch = path.match(/^\/profile\/([^/]+)$/);
-    const hashtagMatch = path.match(/^\/hashtag\/([^/]+)$/);
-    const boardMatch = path.match(/^\/board\/([^/]+)$/);
+    // Route-backed overlays follow the URL exactly. Contextual opens (e.g.
+    // "send a message to @x") set their own state and have no address, so they
+    // are unaffected — this effect no longer runs unless the path changes.
+    setIsAuthModalOpen(isAuthPath);
+    if (isAuthPath) setAuthModalMode(path === '/signup' ? 'signup' : 'login');
+    setIsCreateModalOpen(isCreatePath);
 
     if (profileMatch) {
       const handle = decodeURIComponent(profileMatch[1]);
-      // Only replace when the target actually changed, or we fight the user.
+      // Only replace the object when the target actually changed, so a data
+      // refresh does not clobber a richer profile already loaded.
       if (usernameOf(viewingProfileUser?.handle) !== handle.toLowerCase()) {
         setViewingProfileUser(userFromHandle(handle));
       }
@@ -1095,63 +1175,91 @@ const App: React.FC = () => {
     }
 
     if (hashtagMatch) {
-      const tag = decodeURIComponent(hashtagMatch[1]);
-      setViewingHashtag(tag);
+      setViewingHashtag(decodeURIComponent(hashtagMatch[1]));
       setViewingProfileUser(null);
-      return;
-    }
-
-    if (boardMatch) {
-      const slug = decodeURIComponent(boardMatch[1]);
-      const idx = posts.findIndex((p) => p.slug === slug || p.id === slug);
-      if (idx !== -1) setSelectedPostIndex(idx);
-      setViewingProfileUser(null);
-      setViewingHashtag(null);
       return;
     }
 
     if (path === '/profile') {
-      // Own profile.
       setViewingProfileUser(null);
       setViewingHashtag(null);
       setActiveNavTab('hearts');
       return;
     }
 
-    if (path === '/login' || path === '/signup') {
-      setAuthModalMode(path === '/signup' ? 'signup' : 'login');
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    if (path === '/create') {
-      setIsCreateModalOpen(true);
-      return;
-    }
-
-    // Feed
+    // Board, feed, and everything else: no profile or hashtag view.
     setViewingProfileUser(null);
     setViewingHashtag(null);
-    setSelectedPostIndex(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, posts.length]);
+  }, [path]);
+
+  // Which board is open is derived from the slug in the URL, re-resolved when
+  // the feed changes so a deep link still opens once its board has loaded.
+  useEffect(() => {
+    if (!boardSlug) {
+      setSelectedPostIndex(null);
+      return;
+    }
+    const idx = posts.findIndex((p) => p.slug === boardSlug || p.id === boardSlug);
+    // Stay closed until the feed actually contains it, rather than snapping to
+    // an unrelated post at index 0.
+    setSelectedPostIndex(idx !== -1 ? idx : null);
+  }, [boardSlug, posts]);
 
   /**
-   * State -> URL. Called by the handlers below instead of setting state
-   * directly, so navigating always leaves an address behind.
+   * Deep link to a board that is not in the loaded feed — a shared link, a
+   * private board, or simply one further down the pagination. Fetch it on its
+   * own and prepend it so the URL resolves to something.
    */
-  const goToProfile = (user: RegisteredUser) => {
-    const handle = usernameOf(user.handle);
-    navigate(handle ? `/profile/${encodeURIComponent(handle)}` : '/profile');
-  };
+  const fetchedSlugRef = useRef<string | null>(null);
+  const [boardNotFound, setBoardNotFound] = useState<string | null>(null);
 
-  const goToHashtag = (tag: string) => {
-    navigate(`/hashtag/${encodeURIComponent(tag.replace(/^#/, ''))}`);
-  };
+  // Latest posts, read inside the effect below without becoming a dependency.
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
 
-  const goToBoard = (post: Post) => {
-    navigate(`/board/${encodeURIComponent(post.slug || post.id)}`);
-  };
+  useEffect(() => {
+    if (!boardSlug) {
+      setBoardNotFound(null);
+      fetchedSlugRef.current = null;
+      return;
+    }
+    if (postsRef.current.some((p) => p.slug === boardSlug || p.id === boardSlug)) return;
+    if (fetchedSlugRef.current === boardSlug) return;
+
+    fetchedSlugRef.current = boardSlug;
+    setBoardNotFound(null);
+
+    // Deliberately keyed on boardSlug ALONE. Depending on `posts` meant the
+    // discover feed resolving mid-flight re-ran this effect, and the cleanup
+    // cancelled the in-flight request — so a 404 never surfaced and the page
+    // sat silently on a board that does not exist.
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { board } = await boardApi.getBoardBySlug(boardSlug);
+        if (cancelled) return;
+        prependPost(boardToPost(board, currentUser?.id));
+        setBoardNotFound(null);
+      } catch (e) {
+        if (cancelled) return;
+        const err = toApiError(e);
+        setBoardNotFound(
+          err.status === 403
+            ? 'This board is private.'
+            : err.status === 404
+              ? 'That board could not be found.'
+              : err.message,
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardSlug]);
 
   const handleGiftHeartForUser = (user: RegisteredUser) => {
     if (!currentUser) {
@@ -1247,18 +1355,6 @@ const App: React.FC = () => {
     } else if (tab === 'hearts') {
       setActiveFilter('tears');
     }
-  };
-
-  const handlePrev = () => {
-    setSelectedPostIndex((prev) => 
-      prev !== null ? (prev - 1 + posts.length) % posts.length : null
-    );
-  };
-
-  const handleNext = () => {
-    setSelectedPostIndex((prev) => 
-      prev !== null ? (prev + 1) % posts.length : null
-    );
   };
 
   const handleNewPost = (newPost: any) => {
@@ -1384,8 +1480,14 @@ const App: React.FC = () => {
               initialMode={authModalMode}
               promptMessage={authModalPrompt}
               onClose={() => {
-                setIsAuthModalOpen(false);
                 setAuthModalPrompt(undefined);
+                // /login and /signup are real routes; closing must leave them,
+                // otherwise the modal reopens on the next render pass.
+                if (location.pathname === '/login' || location.pathname === '/signup') {
+                  closeOverlay();
+                } else {
+                  setIsAuthModalOpen(false);
+                }
               }}
               onAuthSuccess={handleAuthSuccess}
             />
@@ -1395,7 +1497,7 @@ const App: React.FC = () => {
             <HashtagView 
               hashtag={viewingHashtag}
               posts={posts}
-              onBack={() => navigate("/")}
+              onBack={closeOverlay}
               onCreateBoard={handleCreateBoardForHashtag}
               onSelectUser={handleSelectUser}
               onPostClick={(post) => {
@@ -1410,7 +1512,7 @@ const App: React.FC = () => {
               profileUser={viewingProfileUser}
               currentUser={currentUser}
               onSignOut={handleSignOut}
-              onBack={() => navigate("/")}
+              onBack={closeOverlay}
               onGiftHeart={handleGiftHeartForUser}
               onSendMessage={handleSendMessageForUser}
               onSelectUser={handleSelectUser}
@@ -1442,11 +1544,7 @@ const App: React.FC = () => {
               onSelectHashtag={handleSelectHashtag}
               currentUser={currentUser}
               onOpenAuth={handleOpenAuth}
-              onGoToProfile={() => {
-                setActiveNavTab('hearts');
-                setViewingProfileUser(null);
-                setViewingHashtag(null);
-              }}
+              onGoToProfile={() => pushView('/profile')}
             />
             
             {selectedFilterId === 'moment' ? (
@@ -1568,7 +1666,10 @@ const App: React.FC = () => {
         {isCreateModalOpen && (
           <CreateAppreciationModal 
             onClose={() => {
-              setIsCreateModalOpen(false);
+              // /create is a real route; closing must leave it, or the sync
+              // effect immediately reopens the modal.
+              if (location.pathname === '/create') closeOverlay();
+              else setIsCreateModalOpen(false);
               setCreateModalRecipient(undefined);
               setCreateModalHashtag(undefined);
               setCreateModalMode(undefined);
@@ -1617,7 +1718,7 @@ const App: React.FC = () => {
               // Optimistic removal, rolled back by a reload if the server refuses.
               const snapshot = posts;
               removePost(postId);
-              setSelectedPostIndex(null);
+              leaveDeletedBoard();
               setEditingPost(null);
               setEditMode(null);
               setIsCreateModalOpen(false);
@@ -1690,22 +1791,49 @@ const App: React.FC = () => {
           }}
         />
 
+        {/* A /board/:slug that could not be loaded — private, deleted, or a bad
+            link. Without this the address bar showed a board while the page
+            silently rendered the feed underneath. */}
+        {boardSlug && boardNotFound && selectedPostIndex === null && (
+          <div className="fixed inset-0 z-[1500] bg-[#F8F9FB] flex items-center justify-center p-6">
+            <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xs border border-[#ECEFF3] text-center">
+              <div className="w-12 h-12 rounded-full bg-[#FE6349]/10 text-[#FE6349] flex items-center justify-center mx-auto mb-4 text-2xl">
+                💛
+              </div>
+              <h2 className="text-xl font-extrabold text-[#1A1B25] mb-2">
+                This board is not available
+              </h2>
+              <p className="text-sm text-[#666D80] mb-6">{boardNotFound}</p>
+              <button
+                onClick={closeOverlay}
+                className="px-6 py-2.5 bg-[#FE6349] hover:bg-[#e05234] text-white font-bold rounded-full text-sm transition-all cursor-pointer"
+              >
+                Back to Heartboard
+              </button>
+            </div>
+          </div>
+        )}
+
         {selectedPostIndex !== null && posts[selectedPostIndex] && (
           <MediaModal 
             post={posts[selectedPostIndex]} 
             currentUser={currentUser}
             onRequireAuth={(prompt) => handleOpenAuth('login', prompt)}
-            onClose={() => setSelectedPostIndex(null)}
-            onPrev={() => setSelectedPostIndex((prev) => prev !== null ? (prev - 1 + posts.length) % posts.length : null)}
-            onNext={() => setSelectedPostIndex((prev) => prev !== null ? (prev + 1) % posts.length : null)}
-            onSelectUser={(user) => {
-              setSelectedPostIndex(null);
-              handleSelectUser(user);
+            // Closing the board restores the previous URL. Previously this only
+            // reset state, leaving /board/:slug stale in the address bar.
+            onClose={closeOverlay}
+            // Prev/next swap the address in place, so paging through boards
+            // does not bury the feed under a long history stack.
+            onPrev={() => {
+              const target = posts[(selectedPostIndex - 1 + posts.length) % posts.length];
+              if (target) replaceBoard(target);
             }}
-            onSelectHashtag={(tag) => {
-              setSelectedPostIndex(null);
-              handleSelectHashtag(tag);
+            onNext={() => {
+              const target = posts[(selectedPostIndex + 1) % posts.length];
+              if (target) replaceBoard(target);
             }}
+            onSelectUser={(user) => handleSelectUser(user)}
+            onSelectHashtag={(tag) => handleSelectHashtag(tag)}
             onAddContributionClick={(parentPost) => {
               setContributionParentPost(parentPost);
               setCreateModalRecipient(undefined);
@@ -1726,7 +1854,7 @@ const App: React.FC = () => {
             onDeleteBoard={async (postId) => {
               const snapshot = posts;
               removePost(postId);
-              setSelectedPostIndex(null);
+              leaveDeletedBoard();
               try {
                 await boardApi.deleteBoard(postId);
               } catch (e) {
@@ -1767,7 +1895,7 @@ const App: React.FC = () => {
                   // Removing the last message can delete the board too.
                   if (res.boardDeleted) {
                     removePost(targetPost.id);
-                    setSelectedPostIndex(null);
+                    leaveDeletedBoard();
                   }
                 } catch (e) {
                   setPosts(snapshot);
@@ -1775,7 +1903,7 @@ const App: React.FC = () => {
                 }
               } else {
                 removePost(targetPost.id);
-                setSelectedPostIndex(null);
+                leaveDeletedBoard();
                 try {
                   await boardApi.deleteBoard(targetPost.id);
                 } catch (e) {
