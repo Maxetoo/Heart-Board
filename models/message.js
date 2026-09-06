@@ -52,6 +52,10 @@ const MessageSchema = new Schema({
     // …). Frontend-owned asset keys, like style.* on Board, so new hearts ship
     // without a schema change.
     hearts:     [{ type: String }],
+    // Confetti chosen for THIS message. The composer has always offered one per
+    // message, but there was nowhere to store it, so a message always fell back
+    // to the board's — and clearing it on a message appeared to do nothing.
+    confetti:   { type: String,   default: null },
   },
 
   status: {

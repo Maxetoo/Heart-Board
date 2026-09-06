@@ -138,6 +138,8 @@ export interface MessageContentDTO {
   duration?: number | null;
   /** Semantic Heart Spectrum ids chosen in the composer. */
   hearts?: string[];
+  /** Confetti for this message. null clears it; undefined leaves it unchanged. */
+  confetti?: string | null;
 }
 
 export interface MessageDTO {

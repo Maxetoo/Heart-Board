@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Mail, 
-  Phone, 
   Lock, 
   User, 
   Check, 
@@ -68,10 +67,9 @@ export const AuthView: React.FC<AuthModalProps> = ({
   onAuthSuccess
 }) => {
   const [currentStep, setCurrentStep] = useState<AuthMode>(initialMode);
-  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email');
 
   // Form Fields
-  const [emailOrPhone, setEmailOrPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -161,7 +159,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!emailOrPhone.trim()) {
+    if (!email.trim()) {
       setErrorMessage('Please enter your email address');
       return;
     }
@@ -172,7 +170,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
 
     setSubmitting(true);
     try {
-      await login(emailOrPhone.trim(), password);
+      await login(email.trim(), password);
       const profile = await refresh();
       if (profile) {
         onAuthSuccess(profile, false);
@@ -199,8 +197,8 @@ export const AuthView: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    const email = emailOrPhone.trim();
-    if (!email) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setErrorMessage('Please enter your email address');
       return;
     }
@@ -213,10 +211,10 @@ export const AuthView: React.FC<AuthModalProps> = ({
 
     setSubmitting(true);
     try {
-      const message = await register(email, password);
+      const message = await register(trimmedEmail, password);
 
       // Suggest a handle for after they verify.
-      const cleanPrefix = email
+      const cleanPrefix = trimmedEmail
         .split('@')[0]
         .replace(/[^a-zA-Z0-9_]/g, '_')
         .toLowerCase()
@@ -224,7 +222,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
       setCustomHandle(cleanPrefix);
 
       setCurrentStep('verify');
-      setSuccessMessage(message || `We sent a verification link to ${email}`);
+      setSuccessMessage(message || `We sent a verification link to ${trimmedEmail}`);
       setResendTimer(30);
       setCanResend(false);
     } catch (err) {
@@ -252,10 +250,10 @@ export const AuthView: React.FC<AuthModalProps> = ({
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await authApi.resendVerificationEmail(emailOrPhone.trim());
+      const res = await authApi.resendVerificationEmail(email.trim());
       setResendTimer(45);
       setCanResend(false);
-      setSuccessMessage(res.message || `A new verification link is on its way to ${emailOrPhone}`);
+      setSuccessMessage(res.message || `A new verification link is on its way to ${email}`);
     } catch (err) {
       setErrorMessage(toApiError(err).message);
     } finally {
@@ -475,51 +473,22 @@ export const AuthView: React.FC<AuthModalProps> = ({
               <div className="h-[1px] bg-[#ECEFF3] flex-1" />
             </div>
 
-            {/* Method Tabs (Email vs Phone) */}
-            <div className="flex bg-[#F8F9FB] p-1 rounded-2xl mb-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMethod('email');
-                  setErrorMessage(null);
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  authMethod === 'email' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-[#808897] hover:text-gray-900'
-                }`}
-              >
-                <Mail size={14} />
-                <span>Email</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMethod('phone');
-                  setErrorMessage(null);
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  authMethod === 'phone' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-[#808897] hover:text-gray-900'
-                }`}
-              >
-                <Phone size={14} />
-                <span>Phone</span>
-              </button>
-            </div>
-
             {/* Form */}
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#666D80] mb-1 text-left">
-                  {authMethod === 'email' ? 'Email Address' : 'Phone Number'}
+                  Email Address
                 </label>
                 <div className="relative">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    {authMethod === 'email' ? <Mail size={16} /> : <Phone size={16} />}
+                    <Mail size={16} />
                   </div>
                   <input
-                    type={authMethod === 'email' ? 'email' : 'tel'}
-                    value={emailOrPhone}
-                    onChange={(e) => setEmailOrPhone(e.target.value)}
-                    placeholder={authMethod === 'email' ? 'you@domain.com' : '+1 (555) 000-0000'}
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@domain.com"
                     className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-4 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all"
                   />
                 </div>
@@ -619,51 +588,22 @@ export const AuthView: React.FC<AuthModalProps> = ({
               <div className="h-[1px] bg-[#ECEFF3] flex-1" />
             </div>
 
-            {/* Method Tabs */}
-            <div className="flex bg-[#F8F9FB] p-1 rounded-2xl mb-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMethod('email');
-                  setErrorMessage(null);
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  authMethod === 'email' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-[#808897] hover:text-gray-900'
-                }`}
-              >
-                <Mail size={14} />
-                <span>Email Address</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMethod('phone');
-                  setErrorMessage(null);
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  authMethod === 'phone' ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-[#808897] hover:text-gray-900'
-                }`}
-              >
-                <Phone size={14} />
-                <span>Phone Number</span>
-              </button>
-            </div>
-
             {/* Sign Up Form */}
             <form onSubmit={handleSignUpSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#666D80] mb-1 text-left">
-                  {authMethod === 'email' ? 'Email Address' : 'Phone Number'}
+                  Email Address
                 </label>
                 <div className="relative">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    {authMethod === 'email' ? <Mail size={16} /> : <Phone size={16} />}
+                    <Mail size={16} />
                   </div>
                   <input
-                    type={authMethod === 'email' ? 'email' : 'tel'}
-                    value={emailOrPhone}
-                    onChange={(e) => setEmailOrPhone(e.target.value)}
-                    placeholder={authMethod === 'email' ? 'sarah@example.com' : '+1 (555) 234-5678'}
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="sarah@example.com"
                     className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-4 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all"
                   />
                 </div>
@@ -731,7 +671,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
               </h1>
               <p className="text-xs sm:text-sm text-[#808897] font-medium mt-1.5 leading-relaxed">
                 We sent a verification link to{' '}
-                <strong className="text-[#1A1B25]">{emailOrPhone || 'your email address'}</strong>.
+                <strong className="text-[#1A1B25]">{email || 'your email address'}</strong>.
                 Open it to activate your account, then sign in.
               </p>
             </div>

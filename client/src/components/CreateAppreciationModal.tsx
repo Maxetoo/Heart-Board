@@ -85,6 +85,36 @@ import { ConfettiPickerModal } from './ConfettiPickerModal';
 const DEFAULT_TEXT_FONT = 'Nunito, sans-serif';
 const DEFAULT_TEXT_ALIGN = 'center' as const;
 
+/**
+ * Centres a fixed 254x350 card inside any container at `scale`, WITHOUT letting
+ * its layout box escape.
+ *
+ * transform: scale() only changes how an element is painted — its layout box
+ * stays 254x350. On a mobile feed card the container is about 162x206, so that
+ * box overflowed its flex parent by ~144px, and a centred flex item that
+ * overflows is clipped asymmetrically: the card hung off the bottom of the
+ * frame while the top still showed the border. Desktop containers are ~354px
+ * tall, so the box fit and nothing looked wrong there — which is why this was
+ * mobile-only.
+ *
+ * Taking the card out of flow removes the overflow entirely: absolute + a
+ * -50% translate centres it on the container's midpoint, and the scale rides
+ * on the same transform.
+ */
+/**
+ * How much of the available box the card fills. The remainder is the frame
+ * border showing through evenly on all four sides.
+ */
+const FIT_INSET = 0.96;
+
+const CENTERED_SCALE_STYLE = (scale: number): React.CSSProperties => ({
+  position: 'absolute',
+  left: '50%',
+  top: '50%',
+  transform: `translate(-50%, -50%) scale(${scale})`,
+  transformOrigin: 'center center',
+});
+
 export interface CanvasElement {
   id: string;
   type: 'text' | 'image' | 'vector' | 'bg';
@@ -501,7 +531,11 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
       const w = rect.width;
       const h = rect.height;
       if (w > 0 && h > 0) {
-        const s = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT);
+        // FIT_INSET keeps the card off the frame's inner edge. A pure
+        // min(w/W, h/H) fills the container's height exactly, so the card's
+        // corners pressed into the frame's rounded corners and got shaved by
+        // its overflow-hidden — the clipped bottom corners in the report.
+        const s = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT) * FIT_INSET;
         setMeasuredScale(s);
       }
     };
@@ -534,14 +568,13 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
     >
       {/* Slanted background layers for collaborative boards strictly matching reference design */}
       {isCollaborative && (
-        <div 
+        <div
           style={{
             width: `${BASE_WIDTH}px`,
             height: `${BASE_HEIGHT}px`,
-            transform: `scale(${effectiveScale})`,
-            transformOrigin: 'center center',
+            ...CENTERED_SCALE_STYLE(effectiveScale),
           }}
-          className="absolute pointer-events-none origin-center"
+          className="pointer-events-none"
         >
           <div className="absolute inset-0 w-full h-full bg-white/20 rounded-[1.8rem] -rotate-[3.5deg] transform origin-center" />
           <div className="absolute inset-0 w-full h-full bg-white/20 rounded-[1.8rem] rotate-[3.5deg] transform origin-center" />
@@ -549,14 +582,13 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
       )}
 
       {/* Main Board Canvas Card: Fixed 254x350 base dimensions, scaled proportionally to fit container */}
-      <div 
+      <div
         style={{
           width: `${BASE_WIDTH}px`,
           height: `${BASE_HEIGHT}px`,
-          transform: `scale(${effectiveScale})`,
-          transformOrigin: 'center center',
+          ...CENTERED_SCALE_STYLE(effectiveScale),
         }}
-        className="bg-white rounded-[1.8rem] p-5 shadow-xs flex flex-col justify-between relative overflow-hidden shrink-0 z-10 select-none"
+        className="bg-white rounded-[1.8rem] p-5 shadow-xs flex flex-col justify-between overflow-hidden shrink-0 z-10 select-none"
       >
         {/* Confetti Animation Overlay */}
         <ConfettiOverlay type={selectedConfetti || null} />
@@ -1616,6 +1648,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             imageUrls: updatedContrib.imageUrl ? [updatedContrib.imageUrl] : [],
             audioUrl: pendingAudioUrl ?? null,
             hearts: selectedHearts,
+            // null clears it; undefined would be dropped by JSON.stringify
+            // and leave the old confetti in place.
+            confetti: selectedConfetti || null,
           },
           canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
         });
@@ -1679,9 +1714,13 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               : usernameOf(editPrimaryRecipient)
             : undefined,
           style: {
-            theme: updatedPost.theme,
-            sticker: updatedPost.sticker,
-            confetti: updatedPost.confetti,
+            // null, NOT undefined. JSON.stringify drops undefined keys, so the
+            // server's `if (style.x !== undefined)` guard never fired and the
+            // old value survived — you could add a confetti or a sticker but
+            // never remove one. null is what the server turns into "cleared".
+            theme: updatedPost.theme ?? null,
+            sticker: selectedSticker ? selectedSticker.id : null,
+            confetti: selectedConfetti || null,
             hearts: selectedHearts,
           },
         });
@@ -1698,6 +1737,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 imageUrls: uploadedImage ? [uploadedImage] : [],
                 audioUrl: pendingAudioUrl ?? null,
                 hearts: selectedHearts,
+                // null clears it; undefined would be dropped by JSON.stringify
+                // and leave the old confetti in place.
+                confetti: selectedConfetti || null,
               },
               canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
             });
@@ -1788,6 +1830,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               imageUrls: contribImage ? [contribImage] : [],
               audioUrl: pendingAudioUrl ?? null,
               hearts: selectedHearts,
+              // null clears it; undefined would be dropped by JSON.stringify
+              // and leave the old confetti in place.
+              confetti: selectedConfetti || null,
             },
             cloudinaryPublicId: contribPublicId ?? null,
             fileType: contribImage ? 'image' : null,
@@ -1915,6 +1960,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             imageUrls: coverImage ? [coverImage] : [],
             audioUrl: pendingAudioUrl ?? null,
             hearts: selectedHearts,
+            // null clears it; undefined would be dropped by JSON.stringify
+            // and leave the old confetti in place.
+            confetti: selectedConfetti || null,
           },
           cloudinaryPublicId: coverImagePublicId ?? null,
           fileType: coverImage ? 'image' : null,

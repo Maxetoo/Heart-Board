@@ -355,6 +355,7 @@ export function messageToContribution(m: MessageDTO, currentUserId?: string): Co
     canvasElements: unwrapCanvasData(m.canvasData),
     sticker: m.content?.vectorKey ?? undefined,
     selectedHearts: m.content?.hearts ?? [],
+    confetti: m.content?.confetti ?? undefined,
 
     reactions: 0,
     reactionCounts: {},

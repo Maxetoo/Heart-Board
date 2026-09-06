@@ -25,8 +25,20 @@ export interface CreateBoardPayload {
   coverImagePublicId?: string | null;
   tags?: string[];
   onlyMe?: boolean;
-  /** `hearts` are Semantic Heart Spectrum ids; the server caps the list at 12. */
-  style?: { theme?: string; sticker?: string; confetti?: string; hearts?: string[] };
+  /**
+   * `hearts` are Semantic Heart Spectrum ids; the server caps the list at 12.
+   *
+   * Pass `null` to CLEAR theme/sticker/confetti — the server only overwrites a
+   * field it actually receives, and JSON.stringify silently drops `undefined`,
+   * so `undefined` means "leave as is". The types allowed only `string`, which
+   * is why clearing a confetti was impossible to express.
+   */
+  style?: {
+    theme?: string | null;
+    sticker?: string | null;
+    confetti?: string | null;
+    hearts?: string[];
+  };
 }
 
 export async function createBoard(payload: CreateBoardPayload) {
