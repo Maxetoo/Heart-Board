@@ -37,6 +37,7 @@ import {
   Send
 } from 'lucide-react';
 import { refineText } from '../services/geminiService';
+import { SmartImage } from './SmartImage';
 import { createBoard, updateBoard } from '../services/board.api';
 import { postMessage, editMessage } from '../services/message.api';
 import { uploadFile, validateFile } from '../services/upload.api';
@@ -258,15 +259,19 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
     >
       {/* 1. Image Element */}
       {el.type === 'image' && el.imageUrl && (
-        <img
+        <SmartImage
           src={el.imageUrl}
-          alt="Uploaded attachment"
+          alt="Board attachment"
           draggable={false}
+          rounded=""
+          // The skeleton needs a real box, otherwise there is nothing to pulse
+          // while a Cloudinary image downloads.
+          wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
           style={{
             borderRadius: `${el.cornerRadius || 0}px`,
             border: el.strokeEnabled ? `${el.strokeWidth ?? 3}px solid ${el.strokeColor || '#FF6B4A'}` : 'none',
           }}
-          className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none transition-all"
+          className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none"
         />
       )}
 
@@ -372,15 +377,19 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
     >
       {/* 1. Image Element */}
       {el.type === 'image' && el.imageUrl && (
-        <img
+        <SmartImage
           src={el.imageUrl}
-          alt="Uploaded attachment"
+          alt="Board attachment"
           draggable={false}
+          rounded=""
+          // The skeleton needs a real box, otherwise there is nothing to pulse
+          // while a Cloudinary image downloads.
+          wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
           style={{
             borderRadius: `${el.cornerRadius || 0}px`,
             border: el.strokeEnabled ? `${el.strokeWidth ?? 3}px solid ${el.strokeColor || '#FF6B4A'}` : 'none',
           }}
-          className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none transition-all"
+          className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none"
         />
       )}
 
@@ -569,7 +578,12 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
           ) : (
             <div className="flex flex-col items-center justify-center w-full h-full p-4 pointer-events-none my-auto text-center">
               {uploadedImage && (
-                <img src={uploadedImage} alt="Uploaded attachment" className="max-w-[200px] max-h-[140px] rounded-xl object-contain shadow-xs my-auto" />
+                <SmartImage
+                  src={uploadedImage}
+                  alt="Board attachment"
+                  wrapperClassName="max-w-[200px] max-h-[140px] min-w-[120px] min-h-[90px] my-auto"
+                  className="max-w-[200px] max-h-[140px] rounded-xl object-contain shadow-xs"
+                />
               )}
               {fallbackText ? (
                 <div className="w-full p-2 my-auto">

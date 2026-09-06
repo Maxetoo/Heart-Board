@@ -77,6 +77,9 @@ export const AppRoutes: React.FC = () => (
         <Route path="/profile/:username" element={<App />} />
         <Route path="/hashtag/:tag" element={<App />} />
         <Route path="/board/:slug" element={<App />} />
+        <Route path="/board/:slug/add-message" element={<App />} />
+        <Route path="/board/:slug/edit" element={<App />} />
+        <Route path="/message/:id/edit" element={<App />} />
         <Route path="/create" element={<App />} />
         <Route path="*" element={<App />} />
       </Routes>

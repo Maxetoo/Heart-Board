@@ -24,6 +24,7 @@ import {
 import { ConfettiOverlay } from './ConfettiOverlay';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
 import { ShareProfileModal } from './ShareProfileModal';
+import { SmartImage } from './SmartImage';
 import { ActionMenuModal } from './ActionMenuModal';
 
 interface MediaModalProps {
@@ -39,6 +40,8 @@ interface MediaModalProps {
     selectedHearts?: string[];
   };
   currentUser?: RegisteredUser | null;
+  /** True while the board's full document and messages are still loading. */
+  isHydrating?: boolean;
   onRequireAuth?: (prompt?: string) => void;
   onClose: () => void;
   onPrev: () => void;
@@ -57,6 +60,7 @@ interface MediaModalProps {
 export const MediaModal: React.FC<MediaModalProps> = ({
   post,
   currentUser,
+  isHydrating = false,
   onRequireAuth,
   onClose,
   onPrev,
@@ -889,6 +893,16 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               <ConfettiOverlay type={(activeMessage.confetti || post.confetti) as any} />
             )}
 
+            {/* Board artwork lives on the board's messages, so opening a board
+                always costs a round trip. Say so, instead of showing a bare
+                card that silently fills in a moment later. */}
+            {isHydrating && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-sm text-white text-[11px] font-bold pointer-events-none">
+                <span className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                <span>Loading board…</span>
+              </div>
+            )}
+
             {/* Inner Canvas Container (Preserving exact visual appearance from Create Page) */}
             <div className="relative z-10 w-full h-full flex items-center justify-center">
               <CanvasReadOnlyCard
@@ -910,10 +924,14 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 <div className="absolute inset-x-0 bottom-0 pt-16 pb-3.5 px-4 sm:px-5 bg-gradient-to-t from-black/85 via-black/45 to-transparent rounded-b-[1.8rem] sm:rounded-b-[2rem] md:rounded-b-3xl flex items-center gap-2.5 z-30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
                   <div className="w-8 h-8 rounded-full bg-[#FAF0EC] border border-white/30 flex items-center justify-center text-xs font-extrabold text-[#FE6349] shrink-0 overflow-hidden shadow-xs">
                     {activeContributorAvatar ? (
-                      <img
+                      <SmartImage
                         src={activeContributorAvatar}
                         alt={activeContributorName}
+                        rounded="rounded-full"
+                        instant
+                        wrapperClassName="w-full h-full"
                         className="w-full h-full object-cover"
+                        fallback={<span className="text-xs font-bold">{activeContributorName.charAt(0).toUpperCase()}</span>}
                       />
                     ) : (
                       <User className="w-4 h-4 text-[#FE6349]" />
@@ -997,7 +1015,15 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         >
           <div className="w-6 h-6 rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
             {mainCuratorAvatar ? (
-              <img src={mainCuratorAvatar} alt={mainCuratorName} className="w-full h-full object-cover" />
+              <SmartImage
+                src={mainCuratorAvatar}
+                alt={mainCuratorName}
+                rounded="rounded-full"
+                instant
+                wrapperClassName="w-full h-full"
+                className="w-full h-full object-cover"
+                fallback={<span className="text-xs font-bold">{mainCuratorName.charAt(0).toUpperCase()}</span>}
+              />
             ) : (
               mainCuratorName.charAt(0).toUpperCase()
             )}

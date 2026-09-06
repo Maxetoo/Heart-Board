@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as messageApi from '../services/message.api';
 import * as boardApi from '../services/board.api';
 import { messageToContribution, boardToPost } from '../lib/adapters';
@@ -24,19 +24,24 @@ export function useBoardMessages(
   post: Post | null | undefined,
   currentUserId: string | undefined,
   onLoaded: (postId: string, patch: Partial<Post>) => void,
-) {
+): { hydrating: boolean } {
   const slug = post?.slug;
   const postId = post?.id;
   // Only fetch once per board per open; contributions already present mean the
   // board has been hydrated.
   const loadedFor = useRef<string | null>(null);
+  const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
-    if (!slug || !postId) return;
+    if (!slug || !postId) {
+      setHydrating(false);
+      return;
+    }
     if (loadedFor.current === slug) return;
 
     loadedFor.current = slug;
     let cancelled = false;
+    setHydrating(true);
 
     (async () => {
       try {
@@ -99,6 +104,8 @@ export function useBoardMessages(
         if (Object.keys(patch).length) onLoaded(postId, patch);
       } catch {
         // Leave the feed card's data in place; the modal still renders.
+      } finally {
+        if (!cancelled) setHydrating(false);
       }
     })();
 
@@ -106,4 +113,6 @@ export function useBoardMessages(
       cancelled = true;
     };
   }, [slug, postId, currentUserId, onLoaded]);
+
+  return { hydrating };
 }
