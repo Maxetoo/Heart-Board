@@ -150,7 +150,7 @@ const getMyBoards = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('title description slug stats tier tags visibility event isActive receipentFlagged receiprentFlagReason owner coverImage createdAt'),
+      .select('title description slug stats tier tags visibility event isActive receipentFlagged receiprentFlagReason owner coverImage style preview createdAt'),
     Board.countDocuments(filter),
   ]);
 
@@ -342,7 +342,7 @@ const discoverBoards = async (req, res) => {
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .select('title description slug stats tier owner coverImage event createdAt'),
+      .select('title description slug stats tier owner coverImage event style preview createdAt'),
     Board.countDocuments(filter),
   ]);
 
@@ -442,7 +442,7 @@ const getBoardsByHashtag = async (req, res) => {
       // User has `profileImage`, not `avatar` — the old projection always
       // returned owners without a picture.
       .populate('owner', 'username displayName profileImage isVerified')
-      .select('title description slug stats tier tags owner coverImage event style createdAt')
+      .select('title description slug stats tier tags owner coverImage event style preview createdAt')
       .lean(),
     Board.countDocuments(filter),
   ]);

@@ -178,12 +178,12 @@ const getPublicProfile = async (req, res) => {
             receipentOriginal: user._id, receipentFlagged: false, isActive: true,
             visibility: { $in: ['public', 'link-only'] },
         })
-            .select('title description slug stats tier tags owner createdAt visibility')
+            .select('title description slug stats tier tags owner coverImage event style preview createdAt visibility')
             .populate('owner', 'username profileImage')
             .sort({ createdAt: -1 }).lean();
     } else {
         boards = await Board.find({ owner: user._id, isActive: true })
-            .select('title description slug stats tier tags createdAt visibility')
+            .select('title description slug stats tier tags coverImage event style preview createdAt visibility')
             .sort({ createdAt: -1 }).lean();
     }
 

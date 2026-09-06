@@ -101,6 +101,18 @@ export interface BoardDTO {
   onlyMe?: boolean;
   /** Added by this migration — see §11.1 of the migration doc. */
   style?: { theme?: string; sticker?: string; confetti?: string } | null;
+  /**
+   * Denormalised snapshot of the board's face message, so feed cards can show
+   * the artwork without fetching messages. Inline data: URLs are stripped
+   * server-side, so this stays small.
+   */
+  preview?: {
+    text?: string | null;
+    imageUrl?: string | null;
+    audioUrl?: string | null;
+    type?: MessageType | null;
+    canvasData?: unknown;
+  } | null;
   /** Per-reaction totals, aggregated server-side. See §11.4. */
   reactionCounts?: Partial<Record<ReactionKey, number>>;
   createdAt: string;

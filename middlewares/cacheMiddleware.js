@@ -144,11 +144,26 @@ function isRedisReady() {
 
 // ─── cacheGet — best-effort read ─────────────────────────────────────────────
 // Returns parsed value on HIT, null on MISS or any error.
-// Never throws, never hangs (ioredis commandTimeout handles the timeout).
+// Never throws and never hangs: the client is configured with a commandTimeout,
+// and the race below is a second line of defence. The comment here used to
+// claim a timeout existed when none was configured, and a stalled Redis left
+// GET /board/discover hanging forever with the feed stuck on skeletons.
+const CACHE_READ_TIMEOUT_MS = 1500;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 async function cacheGet(key) {
   if (!isRedisReady()) return null;
   try {
-    const val = await redis.get(key);
+    const val = await withTimeout(redis.get(key), CACHE_READ_TIMEOUT_MS, 'cache GET');
     if (val !== null) {
       console.log(`[cache] HIT  ${key}`);
       return JSON.parse(val);
@@ -178,7 +193,8 @@ async function invalidate(...keysToDelete) {
   const valid = keysToDelete.filter(Boolean);
   if (!valid.length || !isRedisReady()) return;
   try {
-    await redis.del(...valid);
+    // Awaited before a mutation responds, so it must be bounded too.
+    await withTimeout(redis.del(...valid), CACHE_READ_TIMEOUT_MS, 'cache DEL');
     console.log(`[cache] DEL  ${valid.join(', ')}`);
   } catch (err) {
     console.warn(`[cache] DEL error: ${err.message}`);

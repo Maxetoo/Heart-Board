@@ -93,6 +93,27 @@ const BoardSchema = new Schema({
     default: [],
   },
 
+  /**
+   * Denormalised snapshot of the board's face message, so feed cards can render
+   * the actual artwork without a second request.
+   *
+   * A Board carries no artwork of its own — it lives on the board's messages —
+   * and the list endpoints only project board fields. Feed cards were therefore
+   * text-only until the user opened a board and its messages were fetched.
+   *
+   * Kept deliberately small: canvasData here has inline data: URLs stripped, so
+   * a legacy 3MB message never ends up multiplied across a page of 12 cards.
+   * The full artwork is still served by GET /message/:slug/board.
+   */
+  preview: {
+    text:       { type: String, default: null },
+    imageUrl:   { type: String, default: null },
+    audioUrl:   { type: String, default: null },
+    type:       { type: String, default: null },
+    canvasData: { type: mongoose.Schema.Types.Mixed, default: null },
+    updatedAt:  { type: Date,   default: null },
+  },
+
   // Presentation chosen in the create flow: frame theme, sticker and confetti.
   // Free-form strings on purpose — these are asset keys owned by the frontend,
   // so new frames can ship without a schema migration.

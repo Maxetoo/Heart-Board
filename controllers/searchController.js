@@ -56,7 +56,7 @@ const search = async (req, res) => {
           $or: [{ title: rx }, { description: rx }, { tags: rx }],
         })
           .populate('owner', 'username displayName profileImage isVerified')
-          .select('title description slug stats tier owner coverImage event tags createdAt')
+          .select('title description slug stats tier owner coverImage event tags style preview createdAt')
           .sort({ 'stats.likes': -1, createdAt: -1 })
           .limit(limit)
           .lean()

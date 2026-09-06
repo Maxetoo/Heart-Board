@@ -7,6 +7,7 @@ const uploadSendingQueue = require('../workers/uploadAndPostWorker');
 const { deleteFromCloudinary } = require('../services/cloudinaryUpload');
 const { StatusCodes } = require('http-status-codes');
 const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMiddleware');
+const { buildBoardPreview } = require('../helpers/boardPreview');
 
 const validateContent = (type, content) => {
   if (type === 'text' && !content?.text)
@@ -82,7 +83,16 @@ const postMessage = async (req, res) => {
     });
     createdMessage = message;
 
-    await Board.findByIdAndUpdate(board._id, { $inc: { 'stats.messages': 1 } });
+    const boardUpdate = { $inc: { 'stats.messages': 1 } };
+
+    // The board's face is its owner's own message. Snapshot it onto the board
+    // so feed cards can render the artwork without fetching messages.
+    const isBoardFace = board.owner.toString() === userId.toString();
+    if (isBoardFace) {
+      boardUpdate.$set = { preview: buildBoardPreview(message) };
+    }
+
+    await Board.findByIdAndUpdate(board._id, boardUpdate);
 
     if (uploadedPublicId) {
       try {
@@ -389,6 +399,16 @@ const editMessage = async (req, res) => {
   message.canvasData = canvasData ?? message.canvasData;
   message.isEdited   = true;
   await message.save();
+
+  // Keep the board's denormalised preview in step with its face message.
+  if (message.context === 'board' && message.board?._id) {
+    const boardDoc = await Board.findById(message.board._id).select('owner').lean();
+    if (boardDoc && boardDoc.owner.toString() === userId.toString()) {
+      await Board.findByIdAndUpdate(message.board._id, {
+        $set: { preview: buildBoardPreview(message) },
+      });
+    }
+  }
 
   const invalidations = [invalidate(keys.message(req.params.id))];
   if (message.context === 'board' && message.board?.slug)

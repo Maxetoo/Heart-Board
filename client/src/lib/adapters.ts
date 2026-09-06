@@ -133,6 +133,12 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
     ...(b.receipentHashtag ? [b.receipentHashtag] : []),
   ].map((t) => (t.startsWith('#') ? t : `#${t}`));
 
+  // The board's artwork lives on its face message. `preview` is the server's
+  // denormalised snapshot of it, which is what lets a feed card render the real
+  // card instead of a bare text placeholder.
+  const previewElements = unwrapCanvasData(b.preview?.canvasData);
+  const previewImage = b.preview?.imageUrl ?? undefined;
+
   return {
     id: b._id,
     slug: b.slug,
@@ -149,13 +155,22 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
         ? `#${b.receipentHashtag}`
         : undefined,
 
-    content: b.description ?? '',
+    // Prefer the face message's own words; the board description is a fallback.
+    content: b.preview?.text || b.description || '',
     caption: b.title,
 
-    type: b.coverImage ? 'image' : 'text',
-    mediaType: b.coverImage ? 'image' : 'note',
-    imageUrl: b.coverImage ?? undefined,
-    mediaUrl: b.coverImage ?? undefined,
+    type: b.preview?.type === 'audio' ? 'audio' : b.coverImage || previewImage ? 'image' : 'text',
+    mediaType:
+      b.preview?.type === 'audio'
+        ? 'audio'
+        : b.coverImage || previewImage
+          ? 'image'
+          : 'note',
+    imageUrl: b.coverImage ?? previewImage,
+    mediaUrl: b.coverImage ?? previewImage ?? b.preview?.audioUrl ?? undefined,
+
+    // Renders the real card on the feed rather than a text-only placeholder.
+    canvasElements: previewElements,
 
     visibility: toPostVisibility(b.visibility),
     createdAt: b.createdAt,
