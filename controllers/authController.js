@@ -4,7 +4,8 @@ const {StatusCodes} = require('http-status-codes');
 const Subscription = require('../models/subscription');
 const {createCookies} = require('../helpers/jwtHelper')
 const crypto = require('crypto');
-const emailSendingQueue = require('../events/emailSendingEvent');  
+const emailSendingQueue = require('../events/emailSendingEvent');
+const { appUrl } = require('../configs/origins');
 
 
 
@@ -183,8 +184,8 @@ const oauthCallback = async (req, res) => {
   const user = req.user;
 
   try {
-    if (!user) {  
-       return res.redirect(`${process.env.ALLOWED_ORIGIN}/login?error=auth_failed`);
+    if (!user) {
+       return res.redirect(appUrl('/login?error=auth_failed'));
     }
 
     // create subscription if this is their first OAuth login
@@ -200,10 +201,13 @@ const oauthCallback = async (req, res) => {
     };
     createCookies(res, token);
 
-    res.redirect(`${process.env.CLIENT_URL}`);
+    // Back to the app's own origin — NOT the API host. A user with no username
+    // yet (always the case on a first Google sign-in) is routed on to
+    // /account-setup by RequireProfileSetup once the SPA boots.
+    res.redirect(appUrl('/'));
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.redirect(`${process.env.CLIENT_URL}/login?error=auth_failed`);
+    res.redirect(appUrl('/login?error=auth_failed'));
   }
 };
 

@@ -105,6 +105,17 @@ export function userToRegisteredUser(u: UserDTO | UserRefDTO): RegisteredUser {
     // Display label only. The server's authorization role lives on roleName.
     roleLabel: u.isVerified ? 'Verified Curator' : 'Member',
     roleName: full.role,
+
+    // Account fields. These are only ever present on /user/me (a populated
+    // UserRefDTO carries none of them), which is exactly where the settings
+    // drawer reads from. Omitting them here was why Settings showed a
+    // placeholder email instead of the signed-in account's.
+    email: full.email,
+    isEmailVerified: full.isEmailVerified,
+    country: full.country,
+    accountType: full.accountType,
+    oauthProvider: full.oauthProvider,
+    notificationPrefs: full.notificationPrefs,
   };
 }
 

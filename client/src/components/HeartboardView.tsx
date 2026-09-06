@@ -27,9 +27,17 @@ import {
   PenLine,
   ArrowLeft,
   Copy,
-  Check
+  Check,
+  Loader2,
+  Trash2,
+  AlertTriangle,
+  KeyRound
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
+import * as userApi from '../services/user.api';
+import { uploadFile, validateFile } from '../services/upload.api';
+import { toApiError } from '../lib/api';
 
 /**
  * The subset of a user this view renders.
@@ -679,41 +687,79 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     }, 50);
   };
 
-  // Profile State
-  const [userName, setUserName] = useState(currentUser ? currentUser.name : 'Micky Mouse');
-  const [userHandle, setUserHandle] = useState(currentUser ? currentUser.handle : '@mickymouse');
-  const [userEmail, setUserEmail] = useState(currentUser?.email || 'Aminuolawale@gmail.com');
-  const [profileImage, setProfileImage] = useState<string | null>(currentUser?.avatar || null);
+  // ── Profile state ──────────────────────────────────────────────────────────
+  // The signed-in account comes from AuthContext (/user/me), which is the only
+  // authority. `currentUser` is still accepted as a prop so this component keeps
+  // working in isolation, but auth wins whenever a session exists.
+  const { user: authUser, refresh: refreshAuth, logout } = useAuth();
+  const account = authUser ?? currentUser ?? null;
+
+  const [userName, setUserName] = useState(account?.name ?? 'Micky Mouse');
+  const [userHandle, setUserHandle] = useState(account?.handle ?? '@mickymouse');
+  const [userEmail, setUserEmail] = useState(account?.email ?? '');
+  const [userBio, setUserBio] = useState(account?.bio ?? '');
+  const [profileImage, setProfileImage] = useState<string | null>(account?.avatar || null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
-  // Sync profile details when currentUser changes
+  // Mirror the account onto local state whenever it changes (initial /user/me
+  // resolving, or a save that returns an updated document).
   React.useEffect(() => {
-    if (currentUser) {
-      setUserName(currentUser.name);
-      setUserHandle(currentUser.handle);
-      if (currentUser.avatar) {
-        setProfileImage(currentUser.avatar);
-      }
-      if (currentUser.email) {
-        setUserEmail(currentUser.email);
-      }
-    }
-  }, [currentUser]);
+    if (!account) return;
+    setUserName(account.name);
+    setUserHandle(account.handle);
+    setUserBio(account.bio ?? '');
+    setUserEmail(account.email ?? '');
+    if (account.avatar) setProfileImage(account.avatar);
+  }, [account]);
+
+  /** The signed-in user is the only one whose settings may be edited. */
+  const canEditAccount = Boolean(authUser);
+  const isOAuthAccount = authUser?.oauthProvider === 'google';
 
   // File Input Ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Temporary edit state
+  // Temporary edit state. `tempHandle` is the real `username` (unique, used in
+  // URLs); `tempName` is the cosmetic displayName. They used to be one field,
+  // with the handle silently derived from the name — which meant renaming
+  // yourself also changed your profile URL.
   const [tempName, setTempName] = useState(userName);
-  const [tempEmail, setTempEmail] = useState(userEmail);
+  const [tempHandle, setTempHandle] = useState(userHandle.replace(/^@/, ''));
+  const [tempBio, setTempBio] = useState(userBio);
   const [tempProfileImage, setTempProfileImage] = useState<string | null>(profileImage);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Settings State & Interactive Handlers
   const [boardVisibility, setBoardVisibility] = useState<'Public' | 'Only Recipient' | 'Anonymous'>('Public');
   const [contributionLimit, setContributionLimit] = useState<'Free' | 'Unlimited'>('Free');
   const [handshakeAutoConfirm, setHandshakeAutoConfirm] = useState(true);
-  const [heartTokenAlerts, setHeartTokenAlerts] = useState(true);
-  const [trophyCaseUpdates, setTrophyCaseUpdates] = useState(true);
+  const [heartTokenAlerts, setHeartTokenAlerts] = useState(
+    authUser?.notificationPrefs?.heartTokenAlerts ?? true,
+  );
+  const [trophyCaseUpdates, setTrophyCaseUpdates] = useState(
+    authUser?.notificationPrefs?.trophyCaseUpdates ?? true,
+  );
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  React.useEffect(() => {
+    const prefs = authUser?.notificationPrefs;
+    if (!prefs) return;
+    setHeartTokenAlerts(prefs.heartTokenAlerts ?? true);
+    setTrophyCaseUpdates(prefs.trophyCaseUpdates ?? true);
+  }, [authUser?.notificationPrefs]);
+
+  // ── Account controls ───────────────────────────────────────────────────────
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [activeHeartTags, setActiveHeartTags] = useState<string[]>(['#loveRonaldo', '#messi', '#workspacelegend']);
   const [newTagInput, setNewTagInput] = useState('');
   const [showTagManager, setShowTagManager] = useState(false);
@@ -831,39 +877,191 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
   const handleStartEdit = () => {
     setTempName(userName);
-    setTempEmail(userEmail);
+    setTempHandle(userHandle.replace(/^@/, ''));
+    setTempBio(userBio);
     setTempProfileImage(profileImage);
+    setProfileError(null);
     setIsEditingProfile(true);
   };
 
-  const handleSaveProfile = () => {
-    const rawVal = tempName.trim() || 'Micky Mouse';
-    setUserName(rawVal);
-    const derivedHandle = rawVal.startsWith('@')
-      ? rawVal
-      : `@${rawVal.toLowerCase().replace(/\s+/g, '')}`;
-    setUserHandle(derivedHandle);
-    setUserEmail(tempEmail.trim() || 'Aminuolawale@gmail.com');
-    setProfileImage(tempProfileImage);
-    setIsEditingProfile(false);
-    showToast('Profile details saved');
+  /**
+   * Persists the profile to PATCH /user/profile.
+   *
+   * This used to set local React state and nothing else, so "Save Changes"
+   * appeared to work and then reverted on the next reload.
+   *
+   * Only changed fields are sent: the server rejects an empty update, and
+   * sending an unchanged username would still cost a uniqueness lookup.
+   */
+  const handleSaveProfile = async () => {
+    if (!canEditAccount) {
+      setProfileError('You need to be signed in to edit your profile.');
+      return;
+    }
+
+    const nextName = tempName.trim();
+    const nextHandle = tempHandle.trim().replace(/^@/, '').toLowerCase();
+    const nextBio = tempBio.trim();
+
+    if (nextHandle && (nextHandle.length < 3 || nextHandle.length > 14)) {
+      setProfileError('Username must be between 3 and 14 characters.');
+      return;
+    }
+    if (nextHandle && !/^[a-z0-9_.-]+$/.test(nextHandle)) {
+      setProfileError('Username can only contain letters, numbers, . _ and -');
+      return;
+    }
+    if (nextBio.length > 160) {
+      setProfileError('Bio must be 160 characters or fewer.');
+      return;
+    }
+
+    const payload: Parameters<typeof userApi.updateProfile>[0] = {};
+    if (nextName !== userName) payload.displayName = nextName;
+    if (nextHandle !== userHandle.replace(/^@/, '').toLowerCase()) payload.username = nextHandle;
+    if (nextBio !== userBio) payload.bio = nextBio;
+    if ((tempProfileImage ?? '') !== (profileImage ?? '')) {
+      payload.profileImage = tempProfileImage ?? '';
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setIsEditingProfile(false);
+      showToast('No changes to save');
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setProfileError(null);
+    try {
+      await userApi.updateProfile(payload);
+      // Re-read /user/me so every consumer of AuthContext sees the new values,
+      // not just this drawer.
+      await refreshAuth();
+      setIsEditingProfile(false);
+      showToast('Profile updated');
+    } catch (e) {
+      // 409 = username taken. Surface the server's own wording.
+      setProfileError(toApiError(e).message);
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Uploads the avatar to Cloudinary and keeps only the URL.
+   *
+   * The previous implementation stored a base64 data URL in state and would
+   * have written multiple megabytes into the user document — the same failure
+   * that bloated Message.canvasData. The server now rejects `data:` URLs.
+   */
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        showToast('Image size should be under 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setTempProfileImage(result);
-        setProfileImage(result);
+    // Reset the input so re-picking the same file fires a change event again.
+    e.target.value = '';
+    if (!file) return;
+
+    const problem = validateFile(file, 'image');
+    if (problem) {
+      showToast(problem);
+      return;
+    }
+
+    if (!canEditAccount) {
+      showToast('Sign in to change your profile picture');
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    setProfileError(null);
+    try {
+      const { url } = await uploadFile(file, 'image');
+      setTempProfileImage(url);
+
+      // The camera button is also reachable outside the edit form, where there
+      // is no Save button to press — persist immediately in that case.
+      if (!isEditingProfile) {
+        await userApi.updateProfile({ profileImage: url });
+        await refreshAuth();
+        setProfileImage(url);
         showToast('Profile picture updated');
-      };
-      reader.readAsDataURL(file);
+      } else {
+        showToast('Picture ready — press Save Changes');
+      }
+    } catch (err) {
+      const message = toApiError(err).message;
+      setProfileError(message);
+      showToast(message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  /** Notification toggles: optimistic, reverted if the request fails. */
+  const persistNotificationPref = async (
+    key: 'heartTokenAlerts' | 'trophyCaseUpdates',
+    value: boolean,
+    label: string,
+  ) => {
+    const setter = key === 'heartTokenAlerts' ? setHeartTokenAlerts : setTrophyCaseUpdates;
+    setter(value);
+
+    if (!canEditAccount) {
+      showToast('Sign in to change notification settings');
+      setter(!value);
+      return;
+    }
+
+    setSavingPrefs(true);
+    try {
+      await userApi.updateProfile({
+        notificationPrefs: { [key]: value } as Record<typeof key, boolean>,
+      });
+      await refreshAuth();
+      showToast(`${label} ${value ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      setter(!value);
+      showToast(toApiError(err).message);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      setPasswordError('Enter both your current and new password.');
+      return;
+    }
+    setIsChangingPassword(true);
+    setPasswordError(null);
+    try {
+      await userApi.changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setShowPasswordForm(false);
+      showToast('Password changed');
+    } catch (err) {
+      setPasswordError(toApiError(err).message);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  /**
+   * Deletes the account. The server deactivates the user's boards and removes
+   * the user and subscription — it is not reversible, hence the typed
+   * confirmation.
+   */
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm.trim().toLowerCase() !== 'delete') return;
+    setIsDeleting(true);
+    try {
+      await userApi.deleteAccount();
+      await logout();
+      setIsSettingsOpen(false);
+      if (onSignOut) onSignOut();
+    } catch (err) {
+      showToast(toApiError(err).message);
+      setIsDeleting(false);
     }
   };
 
@@ -1896,20 +2094,29 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                           </div>
                           <button
                             onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploadingAvatar || !canEditAccount}
                             title="Upload profile picture"
-                            className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                            className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer disabled:cursor-not-allowed"
                           >
-                            <Camera className="w-3.5 h-3.5" />
+                            {isUploadingAvatar ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Camera className="w-3.5 h-3.5" />
+                            )}
                           </button>
                         </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-[#1A1B25]">{userName}</h3>
-                          <p className="text-xs text-[#A4ABB8] font-medium">{userHandle}</p>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-[#1A1B25] truncate">{userName}</h3>
+                          <p className="text-xs text-[#A4ABB8] font-medium truncate">{userHandle}</p>
+                          {userEmail && (
+                            <p className="text-[11px] text-[#A4ABB8] font-medium truncate">{userEmail}</p>
+                          )}
                         </div>
                       </div>
-                      <button 
+                      <button
                         onClick={handleStartEdit}
-                        className="px-3.5 py-1.5 rounded-full bg-white text-xs font-semibold text-[#1A1B25] hover:bg-gray-50 transition-all cursor-pointer"
+                        disabled={!canEditAccount}
+                        className="px-3.5 py-1.5 rounded-full bg-white text-xs font-semibold text-[#1A1B25] hover:bg-gray-50 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         Edit
                       </button>
@@ -1938,10 +2145,15 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                             <button
                               type="button"
                               onClick={() => fileInputRef.current?.click()}
-                              className="px-3 py-1.5 rounded-full bg-white text-xs font-semibold text-[#1A1B25] hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5"
+                              disabled={isUploadingAvatar}
+                              className="px-3 py-1.5 rounded-full bg-white text-xs font-semibold text-[#1A1B25] hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              <Camera className="w-3.5 h-3.5 text-[#666D80]" />
-                              <span>Upload Photo</span>
+                              {isUploadingAvatar ? (
+                                <Loader2 className="w-3.5 h-3.5 text-[#666D80] animate-spin" />
+                              ) : (
+                                <Camera className="w-3.5 h-3.5 text-[#666D80]" />
+                              )}
+                              <span>{isUploadingAvatar ? 'Uploading…' : 'Upload Photo'}</span>
                             </button>
                             {tempProfileImage && (
                               <button
@@ -1976,37 +2188,101 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Name & Handle</label>
+                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Display Name</label>
                         <input
                           type="text"
                           value={tempName}
                           onChange={(e) => setTempName(e.target.value)}
+                          maxLength={50}
                           className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25]"
-                          placeholder="Name / Handle (e.g. Micky Mouse)"
+                          placeholder="e.g. Micky Mouse"
                         />
                       </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Username</label>
+                        <div className="flex items-center bg-gray-25 rounded-xl px-3">
+                          <span className="text-xs font-medium text-[#A4ABB8]">@</span>
+                          <input
+                            type="text"
+                            value={tempHandle}
+                            onChange={(e) => setTempHandle(e.target.value.replace(/\s+/g, ''))}
+                            maxLength={14}
+                            className="flex-1 bg-transparent border-none outline-none py-2 pl-0.5 text-xs font-medium text-[#1A1B25]"
+                            placeholder="mickymouse"
+                          />
+                        </div>
+                        <p className="text-[10px] text-[#A4ABB8] font-medium mt-1">
+                          This is your profile URL. 3–14 characters.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Bio</label>
+                        <textarea
+                          value={tempBio}
+                          onChange={(e) => setTempBio(e.target.value)}
+                          maxLength={160}
+                          rows={2}
+                          className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25] resize-none"
+                          placeholder="A short line about you"
+                        />
+                        <p className="text-[10px] text-[#A4ABB8] font-medium mt-1 text-right">
+                          {tempBio.length}/160
+                        </p>
+                      </div>
+
+                      {/*
+                        Email is read-only. There is no change-email endpoint —
+                        moving an account to a new address has to re-run the
+                        verification flow, and PATCH /user/profile rejects the
+                        field outright.
+                      */}
                       <div>
                         <label className="text-[11px] font-semibold text-[#666D80] mb-1 block">Email</label>
-                        <input
-                          type="email"
-                          value={tempEmail}
-                          onChange={(e) => setTempEmail(e.target.value)}
-                          className="w-full bg-gray-25 border-none outline-none rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25]"
-                          placeholder="Email address"
-                        />
+                        <div className="w-full bg-gray-25 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-[#666D80] truncate">
+                            {userEmail || 'Not signed in'}
+                          </span>
+                          {userEmail && (
+                            authUser?.isEmailVerified ? (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-[#4CB993] shrink-0">
+                                <CheckCircle2 className="w-3 h-3" /> Verified
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-[#E8A33D] shrink-0">Unverified</span>
+                            )
+                          )}
+                        </div>
+                        <p className="text-[10px] text-[#A4ABB8] font-medium mt-1">
+                          Email can't be changed here — it needs re-verification.
+                        </p>
                       </div>
+
+                      {profileError && (
+                        <p className="text-[11px] font-semibold text-red-600 bg-red-50 rounded-xl px-3 py-2">
+                          {profileError}
+                        </p>
+                      )}
+
                       <div className="flex items-center justify-end gap-2 pt-1">
                         <button
-                          onClick={() => setIsEditingProfile(false)}
-                          className="px-3 py-1.5 rounded-full bg-gray-25 text-xs font-medium text-[#666D80] hover:bg-gray-50 cursor-pointer"
+                          onClick={() => {
+                            setIsEditingProfile(false);
+                            setProfileError(null);
+                          }}
+                          disabled={isSavingProfile}
+                          className="px-3 py-1.5 rounded-full bg-gray-25 text-xs font-medium text-[#666D80] hover:bg-gray-50 cursor-pointer disabled:opacity-50"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={handleSaveProfile}
-                          className="px-4 py-1.5 rounded-full bg-[#1A1B25] text-white text-xs font-semibold hover:bg-black cursor-pointer"
+                          disabled={isSavingProfile || isUploadingAvatar}
+                          className="px-4 py-1.5 rounded-full bg-[#1A1B25] text-white text-xs font-semibold hover:bg-black cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                         >
-                          Save Changes
+                          {isSavingProfile && <Loader2 className="w-3 h-3 animate-spin" />}
+                          {isSavingProfile ? 'Saving…' : 'Save Changes'}
                         </button>
                       </div>
                     </div>
@@ -2016,11 +2292,10 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 <div>
                   <h4 className="text-xs font-bold text-[#808897] uppercase tracking-wider mb-3">Notifications</h4>
                   <div className="bg-gray-25 rounded-2xl overflow-hidden divide-y divide-gray-100">
-                    <div 
+                    <div
                       onClick={() => {
-                        const nextVal = !heartTokenAlerts;
-                        setHeartTokenAlerts(nextVal);
-                        showToast(`Heart Token Alerts ${nextVal ? 'enabled' : 'disabled'}`);
+                        if (savingPrefs) return;
+                        void persistNotificationPref('heartTokenAlerts', !heartTokenAlerts, 'Heart Token Alerts');
                       }}
                       className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
                     >
@@ -2036,11 +2311,10 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                       </div>
                     </div>
 
-                    <div 
+                    <div
                       onClick={() => {
-                        const nextVal = !trophyCaseUpdates;
-                        setTrophyCaseUpdates(nextVal);
-                        showToast(`Trophy Case Updates ${nextVal ? 'enabled' : 'disabled'}`);
+                        if (savingPrefs) return;
+                        void persistNotificationPref('trophyCaseUpdates', !trophyCaseUpdates, 'Trophy Case Updates');
                       }}
                       className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
                     >
@@ -2121,8 +2395,124 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                   </div>
                 </div>
 
+                {/* Section: Account — backed by /user/change-password and
+                    /user/delete-account, which existed on the server but had
+                    no UI. */}
+                {canEditAccount && (
+                  <div>
+                    <h4 className="text-xs font-bold text-[#808897] uppercase tracking-wider mb-3">Account</h4>
+                    <div className="bg-gray-25 rounded-2xl overflow-hidden divide-y divide-gray-100">
+                      {/* Change password — unavailable for Google accounts,
+                          which have no password on the server at all. */}
+                      <div
+                        onClick={() => !isOAuthAccount && setShowPasswordForm(!showPasswordForm)}
+                        className={`p-4 flex items-center justify-between transition-colors ${
+                          isOAuthAccount ? 'opacity-60' : 'hover:bg-gray-50 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <KeyRound className="w-4 h-4 text-[#666D80]" />
+                          <div>
+                            <p className="text-xs font-bold text-[#1A1B25]">Change Password</p>
+                            <p className="text-[11px] text-[#A4ABB8] font-medium">
+                              {isOAuthAccount
+                                ? 'Managed by Google — change it there'
+                                : 'Update your sign-in password'}
+                            </p>
+                          </div>
+                        </div>
+                        {!isOAuthAccount && (
+                          <ChevronRight
+                            className={`w-4 h-4 text-[#A4ABB8] transition-transform ${showPasswordForm ? 'rotate-90' : ''}`}
+                          />
+                        )}
+                      </div>
+
+                      {showPasswordForm && !isOAuthAccount && (
+                        <div className="p-4 space-y-2.5">
+                          <input
+                            type="password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="Current password"
+                            autoComplete="current-password"
+                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25] outline-none focus:border-[#1A1B25]"
+                          />
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="New password"
+                            autoComplete="new-password"
+                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25] outline-none focus:border-[#1A1B25]"
+                          />
+                          <p className="text-[10px] text-[#A4ABB8] font-medium">
+                            At least 5 characters, with an uppercase letter, a number and a symbol.
+                          </p>
+                          {passwordError && (
+                            <p className="text-[11px] font-semibold text-red-600">{passwordError}</p>
+                          )}
+                          <button
+                            onClick={handleChangePassword}
+                            disabled={isChangingPassword}
+                            className="w-full py-2 rounded-xl bg-[#1A1B25] text-white text-xs font-semibold hover:bg-black cursor-pointer disabled:opacity-60 flex items-center justify-center gap-1.5"
+                          >
+                            {isChangingPassword && <Loader2 className="w-3 h-3 animate-spin" />}
+                            {isChangingPassword ? 'Updating…' : 'Update Password'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Delete account */}
+                      <div
+                        onClick={() => setShowDeleteConfirm(!showDeleteConfirm)}
+                        className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                          <div>
+                            <p className="text-xs font-bold text-red-600">Delete Account</p>
+                            <p className="text-[11px] text-[#A4ABB8] font-medium">
+                              Permanently removes your account
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight
+                          className={`w-4 h-4 text-[#A4ABB8] transition-transform ${showDeleteConfirm ? 'rotate-90' : ''}`}
+                        />
+                      </div>
+
+                      {showDeleteConfirm && (
+                        <div className="p-4 space-y-2.5 bg-red-50/50">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                            <p className="text-[11px] text-[#666D80] font-medium">
+                              Your boards will be deactivated and your account removed. This cannot be undone.
+                            </p>
+                          </div>
+                          <input
+                            type="text"
+                            value={deleteConfirm}
+                            onChange={(e) => setDeleteConfirm(e.target.value)}
+                            placeholder='Type "delete" to confirm'
+                            className="w-full bg-white border border-red-200 rounded-xl px-3 py-2 text-xs font-medium text-[#1A1B25] outline-none focus:border-red-500"
+                          />
+                          <button
+                            onClick={handleDeleteAccount}
+                            disabled={isDeleting || deleteConfirm.trim().toLowerCase() !== 'delete'}
+                            className="w-full py-2 rounded-xl bg-red-600 text-white text-xs font-semibold hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {isDeleting && <Loader2 className="w-3 h-3 animate-spin" />}
+                            {isDeleting ? 'Deleting…' : 'Delete My Account'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Logout Button */}
-                <button 
+                <button
                   onClick={() => {
                     showToast('Signed out of Heartboard session');
                     setIsSettingsOpen(false);

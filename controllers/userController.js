@@ -104,7 +104,14 @@ const checkUsername = async (req, res) => {
 
 const getMyProfile = async (req, res) => {
     const userId = req.user.userId;
-    const user = await User.findById(userId).select('username email profileImage accountType createdAt stats isEmailVerified');
+    // Everything the settings drawer edits must be projected here, or the form
+    // loads blank and "save" appears to do nothing because there was nothing to
+    // compare against. displayName/bio/country/role/notificationPrefs were all
+    // missing from this select.
+    const user = await User.findById(userId).select(
+        'username email displayName bio profileImage country accountType role isVerified ' +
+        'oauthProvider notificationPrefs createdAt stats isEmailVerified'
+    );
     if (!user) throw new CustomError.NotFoundError('User not found.');
 
     const liveStats = await computeLiveStats(userId);
@@ -113,8 +120,18 @@ const getMyProfile = async (req, res) => {
 
 
 const updateProfile = async (req, res) => {
-    const { username, profileImage, country, accountType, bio, displayName } = req.body;
+    const { username, profileImage, country, accountType, bio, displayName, notificationPrefs } = req.body;
     const userId = req.user.userId;
+
+    // `email` is deliberately not accepted. Changing it has to re-run the
+    // verification flow (authController.verifyEmail), so it cannot be a silent
+    // field on this endpoint — otherwise an account can be moved to an
+    // unverified address while still reading as verified.
+    if (req.body.email !== undefined) {
+        throw new CustomError.BadRequestError(
+            'Email cannot be changed here. Use the email verification flow.'
+        );
+    }
 
     // Usernames are stored lowercase and matched lowercase everywhere else
     // (checkUsername, getPublicProfile, createBoard receipent lookup), so
@@ -131,10 +148,35 @@ const updateProfile = async (req, res) => {
 
     const updates = {};
     if (normalisedUsername) updates.username = normalisedUsername;
-    if (profileImage) updates.profileImage = profileImage;
+    if (profileImage !== undefined) {
+        // Avatars must be Cloudinary URLs. A base64 data URL here is how a
+        // 3MB blob ends up inside a user document (see the same problem fixed
+        // in Message.canvasData) — reject it rather than store it.
+        if (typeof profileImage === 'string' && profileImage.startsWith('data:')) {
+            throw new CustomError.BadRequestError(
+                'Upload the image to /upload first and send the returned URL.'
+            );
+        }
+        updates.profileImage = profileImage || '';
+    }
     if (country)      updates.country      = country;
     if (bio !== undefined)         updates.bio         = bio;
     if (displayName !== undefined) updates.displayName = displayName;
+
+    // Merge rather than replace, so a client that sends one toggle does not
+    // reset the other to its schema default.
+    if (notificationPrefs && typeof notificationPrefs === 'object') {
+        if (typeof notificationPrefs.heartTokenAlerts === 'boolean') {
+            updates['notificationPrefs.heartTokenAlerts'] = notificationPrefs.heartTokenAlerts;
+        }
+        if (typeof notificationPrefs.trophyCaseUpdates === 'boolean') {
+            updates['notificationPrefs.trophyCaseUpdates'] = notificationPrefs.trophyCaseUpdates;
+        }
+    }
+
+    if (Object.keys(updates).length === 0) {
+        throw new CustomError.BadRequestError('No changes were supplied.');
+    }
     // Only allow 'personal' from the client. 'enterprise' is set exclusively
     // by the subscription webhook after a confirmed payment.
     // if (accountType === 'personal') updates.accountType = 'personal';

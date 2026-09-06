@@ -62,13 +62,8 @@ app.use(helmet({
 // In production the SPA is served by this same Express app, so CORS is mostly
 // moot. In development the Vite dev server runs on :3000 and proxies /api here,
 // but the localhost origins are allowed too as a fallback for direct calls.
-const allowedOrigins = [
-  origin,
-  'https://res.cloudinary.com',
-  ...(process.env.NODE_ENV === 'production'
-    ? []
-    : ['http://localhost:3000', 'http://127.0.0.1:3000']),
-].filter(Boolean);
+// The list lives in configs/origins.js so the OAuth redirects agree with it.
+const { allowedOrigins } = require('./configs/origins');
 
 app.use(cors({
   origin:      allowedOrigins,

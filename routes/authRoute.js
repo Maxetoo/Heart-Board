@@ -11,6 +11,7 @@ const {
   resetPassword,
 } = require('../controllers/authController');
 const passport = require('../configs/passport');
+const { appUrl } = require('../configs/origins');
 
 
 // Auth Route 
@@ -34,7 +35,7 @@ AuthRoute.get('/google',
  
 AuthRoute.get('/google/callback', 
     passport.authenticate('google', { 
-        failureRedirect: `${process.env.CLIENT_URL}/login?error=oauth_failed`,
+        failureRedirect: appUrl('/login?error=oauth_failed'),
         session: false 
     }),
     oauthCallback

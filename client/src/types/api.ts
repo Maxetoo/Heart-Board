@@ -59,6 +59,11 @@ export interface UserDTO {
   bio?: string;
   isVerified?: boolean;
   displayName?: string;
+  /** Toggled from the settings drawer; merged server-side, never replaced. */
+  notificationPrefs?: {
+    heartTokenAlerts?: boolean;
+    trophyCaseUpdates?: boolean;
+  };
   createdAt?: string;
   updatedAt?: string;
 }

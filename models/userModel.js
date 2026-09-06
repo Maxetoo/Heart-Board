@@ -119,6 +119,12 @@ const UserSchema = new mongoose.Schema({
         default: 'personal'
     },
 
+    // Per-user notification preferences, toggled from the settings drawer.
+    notificationPrefs: {
+        heartTokenAlerts:   { type: Boolean, default: true },
+        trophyCaseUpdates:  { type: Boolean, default: true },
+    },
+
     // Profiles this user has liked (tracks who the viewer liked, not who liked them)
     likedProfiles: [{
         type: mongoose.Schema.Types.ObjectId,

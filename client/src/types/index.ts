@@ -53,6 +53,12 @@ export interface RegisteredUser {
   isEmailVerified?: boolean;
   country?: string;
   accountType?: 'personal' | 'enterprise';
+  /** 'google' accounts have no password, so password change is unavailable. */
+  oauthProvider?: 'google' | 'email';
+  notificationPrefs?: {
+    heartTokenAlerts?: boolean;
+    trophyCaseUpdates?: boolean;
+  };
 }
 
 export interface ReactionCounts {

@@ -465,9 +465,20 @@ and the new client uses a HashRouter with two routes.
     WHY THIS IS MANDATORY:
       - `app.js` already serves index.html for every non-/api path, so
         BrowserRouter works with zero server changes.
-      - `controllers/authController.js:203` redirects Google OAuth to
-        `${CLIENT_URL}` and `:187/:206` to `${CLIENT_URL}/login?error=auth_failed`
+      - `controllers/authController.js` redirects Google OAuth back into the SPA
         — a path, not a hash.
+
+        DONE (2026-09-06): those redirects used `CLIENT_URL`, which in this
+        checkout points at the API tunnel rather than the app. A successful
+        Google sign-in therefore landed the browser on the API host. They now
+        use `configs/origins.js -> appUrl()`, derived from ALLOWED_ORIGIN, which
+        is also the list CORS uses — one source of truth for "where the browser
+        app lives".
+
+        ENV RULE: ALLOWED_ORIGIN must be the origin the SPA is served from
+        (it may be a comma-separated list; the first entry is canonical).
+        CLIENT_URL is now only a fallback. If you move the SPA behind a tunnel
+        or a new domain, update ALLOWED_ORIGIN — not CLIENT_URL.
       - Email verification / password reset links carry `?verificationToken=` and
         `?token=` query params on paths. With HashRouter the router never sees
         them at the right place.

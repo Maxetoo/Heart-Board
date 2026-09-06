@@ -1278,7 +1278,19 @@ const App: React.FC = () => {
     // "send a message to @x") set their own state and have no address, so they
     // are unaffected — this effect no longer runs unless the path changes.
     setIsAuthModalOpen(isAuthPath);
-    if (isAuthPath) setAuthModalMode(path === '/signup' ? 'signup' : 'login');
+    if (isAuthPath) {
+      setAuthModalMode(path === '/signup' ? 'signup' : 'login');
+      // The OAuth callback bounces back to /login?error=... on failure. Without
+      // this the modal just reopens with no explanation.
+      const oauthError = new URLSearchParams(location.search).get('error');
+      if (oauthError) {
+        setAuthModalPrompt(
+          oauthError === 'oauth_failed'
+            ? 'Google sign-in was cancelled or failed. Try again, or sign in with your email.'
+            : 'Sign-in failed. Please try again.',
+        );
+      }
+    }
     setIsCreateModalOpen(isCreatePath);
 
     if (isCreatePath && !boardSubRoute) {

@@ -14,6 +14,12 @@ export async function getMyProfile() {
   return data.user;
 }
 
+/**
+ * PATCH /user/profile.
+ *
+ * `email` is NOT accepted — changing it has to go through the verification
+ * flow, and the server rejects the field outright.
+ */
 export async function updateProfile(payload: {
   username?: string;
   profileImage?: string;
@@ -21,6 +27,7 @@ export async function updateProfile(payload: {
   accountType?: 'personal' | 'enterprise';
   bio?: string;
   displayName?: string;
+  notificationPrefs?: { heartTokenAlerts?: boolean; trophyCaseUpdates?: boolean };
 }) {
   const { data } = await api.patch<{ message: string; user: UserDTO }>('/user/profile', payload);
   return data;
