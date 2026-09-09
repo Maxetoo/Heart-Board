@@ -1,1 +1,0 @@
-export const URL = import.meta.env.VITE_ORIGIN_URL || 'http://localhost:8080'

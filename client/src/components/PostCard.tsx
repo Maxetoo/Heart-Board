@@ -3,6 +3,7 @@ import React from 'react';
 import { Post } from '../types';
 import { ConfettiOverlay } from './ConfettiOverlay';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
+import { recipientOf } from '../lib/adapters';
 
 interface PostCardProps {
   post: Post & { 
@@ -72,7 +73,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onClick, disabled }) =
             content={post.content || (post as any).title}
             uploadedImage={post.imageUrl || post.mediaUrl}
             authorName={post.authorName}
-            recipient={Array.isArray((post as any).recipients) ? (post as any).recipients[0] : (post.recipientName || post.targetId)}
+            recipient={recipientOf(post)}
             selectedHearts={(post as any).selectedHearts || []}
             // CanvasReadOnlyCard only understands text | audio | video;
             // 'image', 'note' and 'heart_token' all render as a text card.

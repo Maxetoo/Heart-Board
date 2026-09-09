@@ -1004,7 +1004,8 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
   const displayPosts = matchedPosts.filter(post => {
     if (!query) return true;
     const author = (post.authorName || post.curatorName || post.creator || '').toLowerCase();
-    const recipient = (post.recipientName || post.targetId || '').toLowerCase();
+    // No targetId fallback: it is the board's slug, not a recipient.
+    const recipient = (post.recipientName || '').toLowerCase();
     const recipientsList = Array.isArray(post.recipients) ? post.recipients.join(' ').toLowerCase() : '';
     const hashtagsList = Array.isArray(post.hashtags) ? post.hashtags.join(' ').toLowerCase() : '';
     const content = (post.content || post.caption || post.title || '').toLowerCase();
@@ -2034,7 +2035,8 @@ const App: React.FC = () => {
     // Filter search query
     if (query) {
       const author = (post.authorName || '').toLowerCase();
-      const recipient = (post.recipientName || post.targetId || '').toLowerCase();
+      // No targetId fallback: it is the board's slug, not a recipient.
+      const recipient = (post.recipientName || '').toLowerCase();
       const recipientsList = Array.isArray(post.recipients) ? post.recipients.join(' ').toLowerCase() : '';
       const hashtagsList = Array.isArray(post.hashtags) ? post.hashtags.join(' ').toLowerCase() : '';
       const content = (post.content || '').toLowerCase();

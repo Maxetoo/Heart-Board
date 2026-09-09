@@ -283,6 +283,28 @@ function refOf(x: UserRefDTO | string | null | undefined): UserRefDTO | null {
 }
 
 /**
+ * Who a board is addressed to: '@handle', '#hashtag', or several joined — and
+ * undefined when it is addressed to nobody.
+ *
+ * NEVER falls back to `targetId`. Recipient fallbacks across the app used to end
+ * in `|| post.targetId`, inherited from the mock data where targetId held a
+ * handle ('bey', 'mickymouse'). On real data boardToPost puts the board's SLUG
+ * there, so those fallbacks addressed a board to its own id — the recipient row
+ * read '@jane-birthday-x7f2', and the composer then saved that as the
+ * recipient's name. A board with no recipient has none; undefined says so, and
+ * each caller decides what to show instead.
+ */
+export function recipientOf(post: {
+  recipients?: string[];
+  recipientHandle?: string;
+  recipientName?: string;
+}): string | undefined {
+  const addressed = (post.recipients ?? []).filter((r) => r && r !== '@you');
+  if (addressed.length > 0) return addressed.join(', ');
+  return post.recipientHandle || post.recipientName || undefined;
+}
+
+/**
  * Board -> Post.
  *
  * IMPORTANT: list endpoints (/board, /board/discover) use .select(...) and do
@@ -295,10 +317,17 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
   const isAnon = b.visibility === 'anonymous';
   const ownerName = owner?.displayName || owner?.username || 'Curator';
 
+  // Deduped: the recipient hashtag also lands in `tags` once the board has been
+  // edited (the composer re-sends its chips as the board's tags), so the two
+  // sources overlap and the chip would otherwise render twice.
   const tags = [
-    ...(b.tags ?? []),
-    ...(b.receipentHashtag ? [b.receipentHashtag] : []),
-  ].map((t) => (t.startsWith('#') ? t : `#${t}`));
+    ...new Set(
+      [
+        ...(b.tags ?? []),
+        ...(b.receipentHashtag ? [b.receipentHashtag] : []),
+      ].map((t) => (t.startsWith('#') ? t : `#${t}`).toLowerCase()),
+    ),
+  ];
 
   // The board's artwork lives on its face message. `preview` is the server's
   // denormalised snapshot of it, which is what lets a feed card render the real
@@ -313,6 +342,14 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
   const reactionCounts = toReactionCounts(b.reactionCounts);
   const countedReactions = totalReactions(reactionCounts);
 
+  // The board's recipient as the composer stores one: an '@handle', or a
+  // '#hashtag' when the board is addressed to a tag rather than a person.
+  const recipientHandle = recipient?.username
+    ? handleOf(recipient.username)
+    : b.receipentHashtag
+      ? `#${b.receipentHashtag}`
+      : undefined;
+
   return {
     id: b._id,
     slug: b.slug,
@@ -323,11 +360,15 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
     authorId: owner?._id,
 
     recipientName: recipient?.displayName || recipient?.username || b.receipentHashtag || undefined,
-    recipientHandle: recipient?.username
-      ? handleOf(recipient.username)
-      : b.receipentHashtag
-        ? `#${b.receipentHashtag}`
-        : undefined,
+    recipientHandle,
+    // The composer seeds its recipient chips from this list. It was never
+    // mapped, so opening a board in the editor showed no recipient at all —
+    // and the edit then wrote that emptiness back over the board's own.
+    //
+    // NOTE: the list endpoints .select() away `receipent`, so a board reached
+    // from the feed still arrives with none. Anything that edits a board has
+    // to treat an empty list as "unknown", never as "cleared".
+    recipients: recipientHandle ? [recipientHandle] : [],
     // Never mapped before, so every surface that showed a recipient's face
     // (the heart-token lists on the profile) fell through to a name-seeded
     // stand-in — a different face from the same person's profile page.

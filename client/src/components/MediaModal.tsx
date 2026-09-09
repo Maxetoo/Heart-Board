@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Post, Contribution, PostVisibility, ReactionCounts, ReactionType, RegisteredUser } from '../types';
-import { userFromHandle, avatarFromParts, usernameOf, toHandle, toUsername } from '../lib/adapters';
+import { userFromHandle, avatarFromParts, usernameOf, toHandle, toUsername, recipientOf } from '../lib/adapters';
 import {
   X,
   ChevronLeft,
@@ -30,22 +30,39 @@ import { ActionMenuModal } from './ActionMenuModal';
 import { motion, AnimatePresence } from 'motion/react';
 
 /**
- * The message swap inside a board frame.
+ * The message swap inside a board frame: a slide, the way a carousel moves.
  *
- * Deliberately small and quick: the outgoing message recedes and fades like a
- * card going to the back of a stack while the next one comes forward. The frame
- * around it never moves, so the board reads as a fixed object you are dealing
- * cards into rather than something being dragged around.
+ * The outgoing message travels a full card-width out of the frame while the
+ * next one arrives from the opposite edge. Percentages, not pixels, so the
+ * travel matches the frame at every breakpoint, and the frame's overflow-hidden
+ * clips both — the messages read as a filmstrip running behind a window.
+ *
+ * The frame itself still never moves: swiping changes which message sits in the
+ * board, so the board staying put is the point.
  */
+// 110%, not 100%: the card's own width is the frame's CONTENT box, so a 100%
+// slide parks it under the frame's padding and leaves a sliver of the next
+// message peeking inside the rounded edge. The extra 10% clears the padding at
+// every breakpoint (p-5 through p-7).
 const MESSAGE_CARD_VARIANTS = {
-  enter: (direction: 1 | -1) => ({ opacity: 0, scale: 0.94, x: direction * 28 }),
-  center: { opacity: 1, scale: 1, x: 0 },
-  exit: (direction: 1 | -1) => ({ opacity: 0, scale: 0.94, x: direction * -28 }),
+  enter: (direction: 1 | -1) => ({ x: `${direction * 110}%`, opacity: 0.6 }),
+  center: { x: '0%', opacity: 1 },
+  exit: (direction: 1 | -1) => ({ x: `${direction * -110}%`, opacity: 0.6 }),
 };
 
-/** How far the card follows the finger, and the cap that keeps it subtle. */
-const DRAG_FOLLOW_RATIO = 0.22;
-const DRAG_FOLLOW_MAX_PX = 26;
+/** How long that slide takes, and its easing. */
+const MESSAGE_SLIDE_TRANSITION = { duration: 0.28, ease: [0.22, 1, 0.36, 1] } as const;
+
+/**
+ * How far the card follows the finger mid-drag, and the cap on it.
+ *
+ * Damped rather than 1:1, and small: this offset is carried by the layer ABOVE
+ * the sliding card, and it resets to 0 the moment a swipe commits. Track the
+ * finger any further and that reset fights the incoming card, which slides the
+ * other way.
+ */
+const DRAG_FOLLOW_RATIO = 0.3;
+const DRAG_FOLLOW_MAX_PX = 40;
 
 interface MediaModalProps {
   post: Post & {
@@ -97,8 +114,16 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 }) => {
   // Toggle between 'main' (Main Board) and 'contributions' (Contributions by other curators)
   const [activeTab, setActiveTab] = useState<'main' | 'contributions'>('main');
-  // Index for navigating through multiple contribution messages
-  const [activeContributionIndex, setActiveContributionIndex] = useState(0);
+  /**
+   * Which of the board's messages is on screen: 0 is the board's OWN message,
+   * 1..n are the contributions in order.
+   *
+   * This used to index the contributions alone, which made a two-message board
+   * — the owner's message plus one contribution — un-navigable: there was only
+   * one contribution, so stepping had nowhere to go and no dots appeared, even
+   * though the board plainly had two messages to page through.
+   */
+  const [messagePosition, setMessagePosition] = useState(0);
 
   /**
    * The board's real per-reaction breakdown, aggregated server-side.
@@ -201,45 +226,90 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const canToggleContributions = !isSoloMode && contributions.length > 0;
   const effectiveActiveTab = canToggleContributions ? activeTab : 'main';
 
-  // ── The board's messages, as one flat sequence ──────────────────────────────
-  //
-  // Index 0 is the board's own face; 1..n are the contributed messages. Swiping
-  // walks this list and never leaves the board.
-  const messageCount = canToggleContributions ? contributions.length + 1 : 1;
-  const messageIndex = effectiveActiveTab === 'main' ? 0 : activeContributionIndex + 1;
-
   /** Which way the last change went: 1 forward, -1 back. Aims the card animation. */
   const [swipeDirection, setSwipeDirection] = useState<1 | -1>(1);
+
+  // ── Navigation model ────────────────────────────────────────────────────────
+  //
+  // The header's Main Board / Contributions buttons choose a MODE. Only a click
+  // on those buttons changes it — navigating never does:
+  //
+  //   Main Board mode    left/right move between BOARDS
+  //   Contributions mode left/right move between the MESSAGES ON THIS BOARD,
+  //                      wrapping at both ends, never leaving the board and
+  //                      never handing the tab back to Main Board
+  //
+  // "Left/right" means the chevrons, the arrow keys and a swipe alike: the same
+  // gesture on different hardware, so they must not disagree.
+  //
+  // The carousel covers EVERY message on the board — the board's own message at
+  // position 0, then each contribution. It used to cover the contributions
+  // alone, so the commonest board there is (someone's message, plus one reply)
+  // had a single-entry carousel: nothing to step to, and no dots, even though
+  // there were plainly two messages to read.
+  const boardMessageCount = canToggleContributions ? contributions.length + 1 : 1;
+
+  const isLockedToContributions = effectiveActiveTab === 'contributions';
+
+  /**
+   * The position actually on screen. Main Board mode always shows the board's
+   * own message; the stored position is clamped because a contribution can be
+   * deleted while it is being read.
+   */
+  const displayPosition = isLockedToContributions
+    ? Math.min(Math.max(messagePosition, 0), boardMessageCount - 1)
+    : 0;
+
+  /** True when what's on screen is the board's own message. */
+  const isShowingBoardMessage = displayPosition === 0;
+
+  /** Keys the card slide. */
+  const messageIndex = displayPosition;
+
+  /** Whether left/right has anywhere to go from here. */
+  const canNavigate = isLockedToContributions ? boardMessageCount > 1 : true;
 
   /**
    * How far the message card is nudged while a drag is in progress.
    *
-   * Damped and clamped, and zero on a board with only one message — there is
-   * nothing to swipe to, so the card should not suggest otherwise.
+   * Damped and clamped, and zero when there is nowhere to go — the card should
+   * not suggest a move that will not happen.
    */
-  const dragNudge =
-    messageCount > 1
-      ? Math.max(
-          -DRAG_FOLLOW_MAX_PX,
-          Math.min(DRAG_FOLLOW_MAX_PX, dragOffset * DRAG_FOLLOW_RATIO),
-        )
-      : 0;
+  const dragNudge = canNavigate
+    ? Math.max(
+        -DRAG_FOLLOW_MAX_PX,
+        Math.min(DRAG_FOLLOW_MAX_PX, dragOffset * DRAG_FOLLOW_RATIO),
+      )
+    : 0;
 
-  /**
-   * Moves to a message by flat index.
-   *
-   * No wrapping, and no falling through to the next board at the ends — the
-   * last message just holds, the way the top card of a stack does.
-   */
-  const goToMessage = (nextIndex: number) => {
-    if (nextIndex === messageIndex || nextIndex < 0 || nextIndex >= messageCount) return;
-    setSwipeDirection(nextIndex > messageIndex ? 1 : -1);
-    if (nextIndex === 0) {
-      setActiveTab('main');
-    } else {
-      setActiveTab('contributions');
-      setActiveContributionIndex(nextIndex - 1);
+  /** Jumps straight to one message on this board. The carousel dots. */
+  const goToPosition = (next: number) => {
+    if (next === displayPosition || next < 0 || next >= boardMessageCount) return;
+    setSwipeDirection(next > displayPosition ? 1 : -1);
+    setMessagePosition(next);
+  };
+
+  /** Steps one message, wrapping at both ends. A lone message just holds. */
+  const stepMessage = (delta: 1 | -1) => {
+    if (boardMessageCount < 2) return;
+    setSwipeDirection(delta);
+    setMessagePosition((displayPosition + delta + boardMessageCount) % boardMessageCount);
+  };
+
+  const handlePrevMessage = () => {
+    if (isLockedToContributions) {
+      stepMessage(-1);
+      return;
     }
+    onPrev();
+  };
+
+  const handleNextMessage = () => {
+    if (isLockedToContributions) {
+      stepMessage(1);
+      return;
+    }
+    onNext();
   };
 
   // Track previous post ID and contribution count to handle smooth contribution addition
@@ -254,21 +324,43 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       prevPostIdRef.current = post.id;
       prevContribCountRef.current = currentContribCount;
       setActiveTab('main');
-      setActiveContributionIndex(0);
+      setMessagePosition(0);
       setShowContributorDetails(false);
       setIsActionMenuOpen(false);
       setIsReactionPickerOpen(false);
       setReactionCounts(getInitialReactionCounts(post));
       setUserReactions(post.userReactions || []);
     } else if (currentContribCount > prevContribCountRef.current) {
-      // New contribution added to this same post -> immediately show contributions tab with the newest contribution
+      // The contributions list grew. That happens for two very different
+      // reasons, and only one of them should move the view:
+      //
+      //   1. THE VIEWER JUST CONTRIBUTED — jump to their message so they can
+      //      see it land. One new message, and it is theirs.
+      //   2. THE BOARD FINISHED LOADING — a feed card carries no messages, so
+      //      opening a board takes the list from 0 to all of them at once.
+      //
+      // Case 2 used to run the case 1 branch: every board opened pinned to its
+      // LAST contribution, with the tab switched for you. Worse, hydration
+      // often lands just after a click on Contributions, so it overwrote the
+      // index you had picked and the board looked stuck on the final message.
+      const added = currentContribCount - prevContribCountRef.current;
+      const newest = (post.contributions || [])[currentContribCount - 1];
+      const isOwnAddition = added === 1 && newest?.isCreatedByUser === true;
+
       prevContribCountRef.current = currentContribCount;
-      setActiveTab('contributions');
-      setActiveContributionIndex(currentContribCount - 1);
+      if (isOwnAddition) {
+        setActiveTab('contributions');
+        // Position 0 is the board's own message, so the newest contribution
+        // sits at `count`, not `count - 1`.
+        setMessagePosition(currentContribCount);
+      }
       setReactionCounts(getInitialReactionCounts(post));
       setUserReactions(post.userReactions || []);
     } else {
       prevContribCountRef.current = currentContribCount;
+      // A deleted contribution can leave the stored position past the end of
+      // the list. Pull it back so the carousel keeps pointing at a real message.
+      setMessagePosition((prev) => Math.min(prev, currentContribCount));
       setReactionCounts(getInitialReactionCounts(post));
       setUserReactions(post.userReactions || []);
     }
@@ -413,11 +505,15 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     setDragOffset(0);
 
     if (hasTriggered) {
-      // Swiping moves between the messages ON this board, and nothing else.
-      // Changing boards is the left/right chevrons' job, which is why they are
-      // desktop-only: on a phone a board is a place you swipe through, not a
-      // place you swipe out of.
-      goToMessage(messageIndex + (deltaX < 0 ? 1 : -1));
+      // A swipe is left/right on a touchscreen, so it obeys the same mode rule
+      // as the chevrons: this board's messages while Contributions is open,
+      // the next board while it is not. It must never be the one input that
+      // switches the active tab out from under you.
+      if (deltaX < 0) {
+        handleNextMessage();
+      } else {
+        handlePrevMessage();
+      }
     }
 
     // hasMovedRef is deliberately NOT cleared here. The click event fires after
@@ -432,20 +528,27 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowLeft') {
-        // Arrows mirror the on-screen chevrons: previous/next BOARD.
-        onPrev();
+        // Arrows mirror the on-screen chevrons, including the part where they
+        // stay on this board while Contributions is open.
+        handlePrevMessage();
       } else if (e.key === 'ArrowRight') {
-        onNext();
+        handleNextMessage();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, onPrev, onNext]);
+    // handlePrev/NextMessage are re-made every render; the values they close
+    // over (the active tab and index) are what this has to stay current with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, onPrev, onNext, isLockedToContributions, displayPosition, boardMessageCount]);
 
-  // Current active message depending on tab
-  const activeMessage = effectiveActiveTab === 'main'
+  // The message on screen. Position 0 is the board's own; the rest index the
+  // contributions. Keyed off the POSITION, not the tab: the Contributions
+  // carousel walks the board's own message too, and reading it there must not
+  // fall back to the board when the tab says 'contributions'.
+  const activeMessage = isShowingBoardMessage
     ? post
-    : (contributions[activeContributionIndex] || post);
+    : (contributions[displayPosition - 1] || post);
 
 
   // Frame Background resolution (reusing main curator's theme consistently)
@@ -471,11 +574,28 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
   const frameBgColor = getFrameBg();
 
+  /**
+   * The board's caption: the heading under the board, and the title the action
+   * menu shows for it.
+   *
+   * Board-level, so it stays put as you page through the messages — the caption
+   * belongs to the board, not to whichever message is on screen.
+   *
+   * `caption` is the board's title. It falls back to the board's own words when
+   * they are short enough to read as a title, because that is what the composer
+   * stores when someone publishes without writing a separate one.
+   */
+  const boardCaption =
+    post.caption ||
+    (post.content && post.content.length <= 40 ? post.content : undefined) ||
+    (post.recipientName ? `Tribute for ${post.recipientName}` : undefined) ||
+    `${post.authorName || 'Curator'}'s Board`;
+
   // Active message contributor details (for single-click contributor details overlay on the board)
-  const activeContributorName = effectiveActiveTab === 'main'
+  const activeContributorName = isShowingBoardMessage
     ? (post.authorName || 'Curator')
     : (activeMessage.authorName || 'Contributor');
-  const activeContributorAvatar = effectiveActiveTab === 'main'
+  const activeContributorAvatar = isShowingBoardMessage
     ? post.authorAvatar
     : activeMessage.authorAvatar;
 
@@ -490,9 +610,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
    */
   const activeAuthor = useMemo(() => {
     const source: { authorName?: string; authorHandle?: string; authorAvatar?: string } =
-      effectiveActiveTab === 'main' ? post : activeMessage;
+      isShowingBoardMessage ? post : activeMessage;
 
-    const name = source.authorName || (effectiveActiveTab === 'main' ? 'Curator' : 'Contributor');
+    const name = source.authorName || (isShowingBoardMessage ? 'Curator' : 'Contributor');
     const raw = (source.authorHandle || '').trim();
     const handle = raw
       ? (raw.startsWith('@') ? raw : `@${raw}`)
@@ -503,9 +623,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       handle,
       avatar: source.authorAvatar,
       // The board's face message is the owner's, so only that one is labelled.
-      isBoardOwner: effectiveActiveTab === 'main',
+      isBoardOwner: isShowingBoardMessage,
     };
-  }, [effectiveActiveTab, post, activeMessage]);
+  }, [isShowingBoardMessage, post, activeMessage]);
 
   // Resolve creator's profile object.
   // The post already carries the author fields populated by the server, so we
@@ -659,9 +779,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       addToken(post.recipientHandle);
     } else if (post.recipientName) {
       post.recipientName.split(',').forEach(r => addToken(r));
-    } else if (post.targetId) {
-      addToken(post.targetId);
     }
+    // No `post.targetId` fallback: that is the board's slug, and it rendered
+    // here as a recipient chip reading '@jane-birthday-x7f2'. A board with no
+    // recipient falls through to the @you / @creator case below.
 
     if (Array.isArray(post.hashtags)) {
       post.hashtags.forEach(h => addToken(h));
@@ -690,7 +811,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     }
 
     return tokens;
-  }, [post.recipients, post.recipientHandle, post.recipientName, post.targetId, post.hashtags, post.authorHandle, post.authorName, post.authorId, isViewerCreator, currentUser, creatorUser]);
+  }, [post.recipients, post.recipientHandle, post.recipientName, post.hashtags, post.authorHandle, post.authorName, post.authorId, isViewerCreator, currentUser, creatorUser]);
 
 
   // Reaction formatting helper
@@ -796,7 +917,12 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             onClick={() => {
               if (!canToggleContributions) return;
               setActiveTab('contributions');
-              setActiveContributionIndex(0);
+              // Position 1: the first CONTRIBUTION. Position 0 is the board's
+              // own message, which is what Main Board already shows — opening
+              // Contributions and seeing the same card would look like a
+              // no-op. The arrows and dots can still reach it from here.
+              setSwipeDirection(1);
+              setMessagePosition(1);
             }}
             className={`w-8 h-8 flex items-center justify-center rounded-full transition-all relative ${
               canToggleContributions
@@ -833,22 +959,22 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         </button>
       </header>
 
-      {/* Desktop-only chevrons: previous / next BOARD.
-          Messages within a board are reached by swiping the card instead, which
-          is why these stay hidden on mobile — a phone has no way to switch
-          boards from here, by design. */}
+      {/* Desktop-only chevrons. They move between BOARDS on the board's own
+          message, and between the MESSAGES on this board once Contributions is
+          open — see isLockedToContributions. On a phone the same two moves are
+          the swipe and the dots. */}
       <button
-        onClick={onPrev}
+        onClick={handlePrevMessage}
         className="hidden md:flex fixed left-4 sm:left-8 md:left-16 lg:left-24 xl:left-[192px] top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full hover:scale-105 active:scale-95 items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer"
-        aria-label="Previous board"
+        aria-label={isLockedToContributions ? 'Previous message on this board' : 'Previous board'}
       >
         <ChevronLeft className="w-6 h-6 text-white/60 hover:text-white transition-colors" />
       </button>
 
       <button
-        onClick={onNext}
+        onClick={handleNextMessage}
         className="hidden md:flex fixed right-4 sm:right-8 md:right-16 lg:right-24 xl:right-[192px] top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full hover:scale-105 active:scale-95 items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer"
-        aria-label="Next board"
+        aria-label={isLockedToContributions ? 'Next message on this board' : 'Next board'}
       >
         <ChevronRight className="w-6 h-6 text-white/60 hover:text-white transition-colors" />
       </button>
@@ -942,14 +1068,11 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
               }}
             >
-              {/* Only the message moves.
-                  While dragging it follows the finger a little — heavily damped
-                  and capped, so it reads as the card being nudged rather than
-                  thrown. On release it settles, and the swap itself is the card
-                  transition below. */}
-              {/* Both cards are absolutely stacked, so the one leaving and the
-                  one arriving overlap for the length of the transition instead
-                  of reflowing the frame. */}
+              {/* Only the message moves. While dragging it follows the finger a
+                  little; on release it settles and the slide below carries the
+                  swap. Both cards are absolutely stacked, so the one leaving and
+                  the one arriving cross over each other for the length of the
+                  transition instead of reflowing the frame. */}
               <AnimatePresence initial={false} custom={swipeDirection}>
                 <motion.div
                   key={messageIndex}
@@ -958,16 +1081,16 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  transition={MESSAGE_SLIDE_TRANSITION}
                   className="absolute inset-0 flex items-center justify-center"
                 >
                   <CanvasReadOnlyCard
-                canvasElements={activeMessage.canvasElements || (effectiveActiveTab === 'main' ? post.canvasElements : undefined) || []}
+                canvasElements={activeMessage.canvasElements || (isShowingBoardMessage ? post.canvasElements : undefined) || []}
                 content={activeMessage.content || post.content}
-                uploadedImage={activeMessage.imageUrl || activeMessage.mediaUrl || (effectiveActiveTab === 'main' ? (post.imageUrl || post.mediaUrl) : undefined)}
+                uploadedImage={activeMessage.imageUrl || activeMessage.mediaUrl || (isShowingBoardMessage ? (post.imageUrl || post.mediaUrl) : undefined)}
                 selectedConfetti={(activeMessage.confetti || post.confetti) as any}
                 authorName={activeMessage.authorName}
-                recipient={Array.isArray(post.recipients) ? post.recipients.filter(r => r !== '@you').join(', ') || post.recipients[0] : (post.recipientName || post.targetId)}
+                recipient={recipientOf(post)}
                 selectedHearts={(activeMessage as Post).selectedHearts || post.selectedHearts || []}
                 activeType={activeMessage.mediaType === 'audio' ? 'audio' : activeMessage.mediaType === 'video' ? 'video' : 'text'}
                 isCollaborative={!isSoloMode}
@@ -1000,7 +1123,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                       {activeContributorName}
                     </span>
                     <span className="text-[10px] sm:text-[11px] font-medium text-white/75 leading-tight mt-0.5">
-                      {effectiveActiveTab === 'main' ? 'Message Creator' : 'Contributor'}
+                      {isShowingBoardMessage ? 'Message Creator' : 'Contributor'}
                     </span>
                   </div>
                 </div>
@@ -1009,12 +1132,46 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           </div>
         )}
 
+        {/* 3. BOARD NAVIGATION: carousel dots below the board.
+            One per message ON the board — the board's own message first, then
+            each contribution — so a board with two messages gets two dots and
+            can be paged through. Shown while Contributions is the active mode,
+            at every screen size. */}
+        {isLockedToContributions && boardMessageCount > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-3.5 mb-1 z-20">
+            {Array.from({ length: boardMessageCount }).map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                // Through goToPosition, not setMessagePosition, so the card
+                // slides the way the jump goes rather than always forward.
+                onClick={() => goToPosition(idx)}
+                className={`transition-all duration-300 rounded-full cursor-pointer ${
+                  displayPosition === idx
+                    ? 'w-6 h-2 bg-white'
+                    : 'w-2 h-2 bg-white/30 hover:bg-white/60'
+                }`}
+                aria-label={idx === 0 ? "Jump to the board's own message" : `Jump to message ${idx + 1}`}
+                aria-current={displayPosition === idx}
+              />
+            ))}
+          </div>
+        )}
+
       </main>
 
       {/* 4. BELOW THE BOARD (Strictly permanent main board metadata) */}
       <footer className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] mx-auto px-0 pb-6 pt-1 flex flex-col items-start text-left gap-3 z-20 shrink-0">
 
-        {/* Tagged recipient(s) and hashtags. */}
+        {/* A. Caption — the board's own title, permanent across its messages. */}
+        <h2
+          className="w-full text-base sm:text-lg font-bold text-white tracking-tight leading-snug truncate"
+          title={boardCaption}
+        >
+          {boardCaption}
+        </h2>
+
+        {/* B. Tagged recipient(s) and hashtags. */}
         <p className="text-xs sm:text-sm font-semibold text-white/60 break-words flex flex-wrap items-center gap-x-2 gap-y-1">
           {displayTokens
             .map((token, idx) => (
@@ -1258,7 +1415,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             // the link from this. Passing the raw id produced a URL that only
             // worked by accident.
             boardId: post.slug || post.id,
-            boardTitle: post.caption || (post.content && post.content.length <= 40 ? post.content : undefined) || (post.recipientName ? `Tribute for ${post.recipientName}` : undefined) || `${post.authorName || 'Curator'}'s Board`,
+            boardTitle: boardCaption,
             boardThumbnail: post.imageUrl || post.mediaUrl || post.authorAvatar,
             boardTheme: post.theme || '#BEE27C',
             boardAuthorName: post.authorName,

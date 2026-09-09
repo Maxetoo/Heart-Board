@@ -87,6 +87,75 @@ const DEFAULT_TEXT_FONT = 'Nunito, sans-serif';
 const DEFAULT_TEXT_ALIGN = 'center' as const;
 
 /**
+ * Type scale for a message on the card, shared by the composer canvas and the
+ * published board so a message never changes size when it is saved.
+ *
+ * The saved-element renderer used to hardcode `text-sm` — 14px on a 254x350
+ * card that is then scaled down to fit a feed tile — which is why published
+ * messages read as tiny. Cursive was likewise a step smaller read-only
+ * (`text-xl`) than in the composer (`text-xl sm:text-2xl`), so handwriting
+ * shrank on publish too.
+ *
+ * Sized in tiers by length rather than one flat size: the card is fixed at
+ * 254x350 with overflow-hidden, so a size big enough to fill it with a short
+ * note would run a message near the 250-character cap off the bottom edge.
+ * Short messages get the display size; long ones step down only as far as they
+ * must to still fit. The thresholds come from the card's usable text box
+ * (~238px wide, ~310px tall) at `leading-snug`.
+ */
+const TEXT_SIZE_TIERS = [
+  'text-xl sm:text-2xl',
+  'text-lg sm:text-xl',
+  'text-base sm:text-lg',
+];
+const CURSIVE_TEXT_SIZE_TIERS = [
+  'text-2xl sm:text-3xl',
+  'text-xl sm:text-2xl',
+  'text-xl sm:text-2xl',
+];
+
+const textSizeTier = (text?: string) => {
+  const length = text?.trim().length ?? 0;
+  if (length > 200) return 2;
+  if (length > 120) return 1;
+  return 0;
+};
+
+/**
+ * The recipient line on the "Appreciation Sent" confirmation.
+ *
+ * Never reads `targetId`: that field carries the board's slug, so the
+ * confirmation printed the board's own id where the recipient belongs.
+ */
+const confirmationRecipientLabel = (post: any): string => {
+  const chips: string[] = Array.isArray(post?.recipients) ? post.recipients : [];
+  if (chips.length > 0) {
+    return chips
+      .map((r) => (r.startsWith('@') || r.startsWith('#') ? r : `@${r}`))
+      .join(' ');
+  }
+  if (post?.recipientHandle) return post.recipientHandle;
+  if (post?.recipientName) {
+    return `@${post.recipientName.replace(/\s+/g, '').toLowerCase()}`;
+  }
+  return '@you';
+};
+
+/** True when an element should render in the larger display/handwriting size. */
+const isCursiveElement = (el: CanvasElement) =>
+  Boolean(
+    el.isCursive ||
+      el.fontFamily?.includes('Playfair') ||
+      el.fontFamily?.includes('Caveat')
+  );
+
+/** The size class a text element renders at, on the canvas and on the board. */
+const textSizeClass = (el: CanvasElement) =>
+  (isCursiveElement(el) ? CURSIVE_TEXT_SIZE_TIERS : TEXT_SIZE_TIERS)[
+    textSizeTier(el.text)
+  ];
+
+/**
  * Centres a fixed 254x350 card inside any container at `scale`, WITHOUT letting
  * its layout box escape.
  *
@@ -248,25 +317,50 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
     };
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    e.stopPropagation();
+  /**
+   * The pointer position still waiting to be applied, and the frame that will
+   * apply it.
+   *
+   * Every pointermove used to call onUpdate directly, and onUpdate setStates the
+   * whole composer — a component with the toolbar, the panels and the preview in
+   * it. A finger emits moves faster than the screen paints (well past 60/s on a
+   * modern phone), so most of those renders were thrown away before anyone saw
+   * them, and the ones that survived arrived late. Coalescing to one update per
+   * animation frame does exactly as much work as there are frames to show it in.
+   */
+  const pendingPointRef = useRef<{ x: number; y: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  /** Applies the latest pointer position. Runs inside an animation frame. */
+  const flushPointer = () => {
+    rafRef.current = null;
+    const point = pendingPointRef.current;
+    if (!point) return;
+    pendingPointRef.current = null;
+
+    const start = startStateRef.current;
+    const deltaX = point.x - start.clientX;
+    const deltaY = point.y - start.clientY;
+
     if (isDraggingRef.current) {
-      const deltaX = e.clientX - startStateRef.current.clientX;
-      const deltaY = e.clientY - startStateRef.current.clientY;
-      onUpdate(el.id, {
-        x: startStateRef.current.initX + deltaX,
-        y: startStateRef.current.initY + deltaY,
-      });
+      onUpdate(el.id, { x: start.initX + deltaX, y: start.initY + deltaY });
     } else if (isScalingRef.current) {
-      const deltaX = e.clientX - startStateRef.current.clientX;
-      const deltaY = e.clientY - startStateRef.current.clientY;
       const delta = (deltaX + deltaY) / 100;
-      const newScale = Math.max(0.4, Math.min(3.5, startStateRef.current.initScale + delta));
+      const newScale = Math.max(0.4, Math.min(3.5, start.initScale + delta));
       onUpdate(el.id, { scale: Number(newScale.toFixed(2)) });
     } else if (isRotatingRef.current) {
-      const deltaX = e.clientX - startStateRef.current.clientX;
-      const newRot = Math.round((startStateRef.current.initRot + deltaX) % 360);
-      onUpdate(el.id, { rotation: newRot });
+      onUpdate(el.id, { rotation: Math.round((start.initRot + deltaX) % 360) });
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current && !isScalingRef.current && !isRotatingRef.current) {
+      return;
+    }
+    e.stopPropagation();
+    pendingPointRef.current = { x: e.clientX, y: e.clientY };
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(flushPointer);
     }
   };
 
@@ -275,10 +369,25 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch (_) {}
+
+    // Land on the last position the finger actually reached, rather than
+    // dropping a move that came in after the final painted frame.
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      flushPointer();
+    }
+
     isDraggingRef.current = false;
     isScalingRef.current = false;
     isRotatingRef.current = false;
   };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   return (
     <div
@@ -296,7 +405,12 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
         touchAction: 'none',
         userSelect: 'none',
       }}
-      className={`absolute pointer-events-auto flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform duration-75 select-none ${
+      // No transition on the transform. Every transform this element gets comes
+      // from a live finger — drag, pinch handle, rotate handle — so animating
+      // toward each new value put the element 75ms behind the touch and
+      // restarted that animation on every move event. That lag IS the rubbery,
+      // glitchy feel; the transform is already updated once per frame.
+      className={`absolute pointer-events-auto flex items-center justify-center cursor-grab active:cursor-grabbing select-none ${
         isSelected ? 'z-20' : 'hover:opacity-95 z-10'
       }`}
     >
@@ -350,11 +464,7 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
               textAlign: el.align || DEFAULT_TEXT_ALIGN,
               whiteSpace: 'pre-wrap',
             }}
-            className={`font-bold leading-snug break-words whitespace-pre-wrap ${
-              el.isCursive || el.fontFamily?.includes('Playfair') || el.fontFamily?.includes('Caveat') 
-                ? 'text-xl sm:text-2xl' 
-                : 'text-sm sm:text-base'
-            }`}
+            className={`font-bold leading-snug break-words whitespace-pre-wrap ${textSizeClass(el)}`}
           >
             {el.text}
           </p>
@@ -464,11 +574,7 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
               textAlign: el.align || DEFAULT_TEXT_ALIGN,
               whiteSpace: 'pre-wrap',
             }}
-            className={`font-bold leading-snug break-words whitespace-pre-wrap ${
-              el.isCursive || el.fontFamily?.includes('Playfair') || el.fontFamily?.includes('Caveat') 
-                ? 'text-xl' 
-                : 'text-sm'
-            }`}
+            className={`font-bold leading-snug break-words whitespace-pre-wrap ${textSizeClass(el)}`}
           >
             {el.text}
           </p>
@@ -633,7 +739,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
               {fallbackText ? (
                 <div className="w-full p-2 my-auto">
                   <p 
-                    className="text-base sm:text-lg font-bold leading-snug break-words whitespace-pre-wrap text-[#1A1B25]" 
+                    className={`${TEXT_SIZE_TIERS[textSizeTier(fallbackText)]} font-bold leading-snug break-words whitespace-pre-wrap text-[#1A1B25]`}
                     style={{ 
                       fontFamily: DEFAULT_TEXT_FONT,
                       textAlign: DEFAULT_TEXT_ALIGN,
@@ -1051,19 +1157,22 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [authorName, setAuthorName] = useState(() => {
     return editingContribution?.authorName || editingPost?.authorName || '';
   });
+  // NOTE: never fall back to `targetId`. On a real board that field holds the
+  // SLUG, so editing put 'jane-birthday-x7f2' in the recipient box and then
+  // saved it as the board's recipient name.
   const [recipient, setRecipient] = useState<string>(() => {
     if (editingPost) {
       if (Array.isArray(editingPost.recipients) && editingPost.recipients.length > 0) {
         return editingPost.recipients[0];
       }
-      return editingPost.targetId || '';
+      return editingPost.recipientHandle || '';
     }
     if (initialRecipient) return initialRecipient.handle || initialRecipient.name;
     if (parentBoard) {
       if (Array.isArray(parentBoard.recipients) && parentBoard.recipients.length > 0) {
         return parentBoard.recipients[0];
       }
-      return parentBoard.targetId || '';
+      return parentBoard.recipientHandle || '';
     }
     return '';
   });
@@ -1334,8 +1443,18 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   });
   const [isEventDropdownOpen, setIsEventDropdownOpen] = useState(false);
   const [recipients, setRecipients] = useState<string[]>(() => {
-    if (editingPost?.recipients && editingPost.recipients.length > 0) {
-      return editingPost.recipients;
+    if (editingPost) {
+      // A board's chips are its recipient AND its hashtags: both live in this
+      // one list, and submit re-sends the whole list as the board's tags. A
+      // hashtag missing from the seed is therefore a hashtag deleted from the
+      // board, so seed from both fields. The '@handle' stays first so the
+      // primary-recipient lookup below still picks a person over a tag.
+      const seeded: string[] = [];
+      for (const r of [...(editingPost.recipients ?? []), ...(editingPost.hashtags ?? [])]) {
+        if (!r || seeded.some((s) => s.toLowerCase() === r.toLowerCase())) continue;
+        seeded.push(r);
+      }
+      if (seeded.length > 0) return seeded;
     }
     const list: string[] = ['@you'];
     if (initialRecipient) {
@@ -1678,17 +1797,25 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           content: safeTextCheck,
           caption: caption.trim() || undefined,
           eventType: selectedEventType || editingPost.eventType || 'Appreciation',
-          recipients: recipients,
-          recipientName: recipients.filter(r => r !== '@you').join(', ') || recipient || editingPost.recipientName || 'Curator',
+          // Recipient identity is deliberately NOT rewritten here. PATCH /board
+          // does not accept `receipent`, so an edit cannot move a board to a
+          // different person — and deriving these from the composer's state
+          // wrote a wrong answer over the right one whenever the form had not
+          // been seeded with the board's recipient (a board opened from the
+          // feed carries none: the list endpoints .select() `receipent` away).
+          // recipientName then became the board's slug and targetId became
+          // '@you', so the board showed the wrong recipient until a reload.
+          recipients: editingPost.recipients ?? recipients,
           hashtags: extractedHashtags,
           boardCapacity: boardCapacity,
           maxCapacity: boardCapacity === 'solo' ? 1 : 20,
           type: activeType,
           mediaType: activeType === 'text' ? 'note' : activeType,
-          targetId: finalRecipientsString.replace('#', ''),
-          targetType: isHashtagRecipient ? EntityType.WALL : EntityType.BOARD,
+          // targetId and targetType come from the spread above. targetId is the
+          // board's SLUG — every link to the board is built from it — and the
+          // edit used to overwrite it with the recipient string.
           imageUrl: uploadedImage || undefined,
-          theme: selectedFrame.bgHex || (selectedFrame.id === 'slate' ? '#272835' : 
+          theme: selectedFrame.bgHex || (selectedFrame.id === 'slate' ? '#272835' :
                  selectedFrame.id === 'mint' ? '#ECEFE6' :
                  selectedFrame.id === 'sunset' ? '#FAF5E8' :
                  selectedFrame.id === 'lavender' ? '#EEF1FA' :
@@ -1887,7 +2014,12 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         contributions: [],
         type: activeType,
         mediaType: activeType === 'text' ? 'note' : activeType,
-        targetId: finalRecipientsString.replace('#', ''),
+        // The board's slug, filled in from the API response below — NOT the
+        // recipient. boardToPost puts the slug here for every board that comes
+        // back from the server, and links to a board are built from it; a
+        // freshly created post that carried the recipient string instead was
+        // the one post in the app where the field meant something else.
+        targetId: '',
         targetType: isHashtagRecipient ? EntityType.WALL : EntityType.BOARD,
         reactions: 0,
         isCreatedByUser: true,
@@ -1983,6 +2115,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       // Reconcile the optimistic object with what the server actually stored.
       newPost.id = board._id;
       newPost.slug = board.slug;
+      newPost.targetId = board.slug;
       newPost.createdAt = board.createdAt;
       newPost.tier = board.tier;
 
@@ -2049,7 +2182,12 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             backgroundColor: selectedFrame.bgHex,
             height: 'min(480px, 65vh)'
           }}
-          className="relative w-full max-w-[461px] rounded-[2rem] sm:rounded-[2.5rem] transition-all duration-300 flex items-center justify-center p-4 sm:p-6 select-none border border-transparent cursor-pointer group hover:scale-[1.01] active:scale-[0.99]"
+          // No hover/active scale. `:active` fires for a press on ANY descendant,
+          // so touching an element to drag it animated this whole container to
+          // 0.99 over 300ms — the element slid out from under the finger as it
+          // went, and every drag delta was then off by the container's scale,
+          // since the element's translate is in this box's local coordinates.
+          className="relative w-full max-w-[461px] rounded-[2rem] sm:rounded-[2.5rem] transition-colors duration-300 flex items-center justify-center p-4 sm:p-6 select-none border border-transparent cursor-pointer group"
           title="Click to expand into full workspace editor"
         >
           {/* Slanted background layers for collaborative boards strictly matching reference design */}
@@ -2393,7 +2531,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                           type: 'heart_token',
                           visibility: PostVisibility.PUBLIC,
                           createdAt: board.createdAt,
-                          targetId: username,
+                          // The board's slug, as boardToPost sets it — not the
+                          // recipient, who is already named above.
+                          targetId: board.slug,
                           targetType: EntityType.WALL,
                           reactions: 0,
                           theme: '#FAF0EC',
@@ -4282,20 +4422,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               <p className="text-sm sm:text-base font-normal text-[#666D80] max-w-sm mb-6 leading-relaxed">
                 Your heartfelt has been published and delivered to{' '}
                 <strong className="text-[#1A1B25] font-bold">
-                  {(() => {
-                    if (Array.isArray(createdPostConfirmation.recipients) && createdPostConfirmation.recipients.length > 0) {
-                      return createdPostConfirmation.recipients.map((r: string) => r.startsWith('@') || r.startsWith('#') ? r : `@${r}`).join(' ');
-                    }
-                    if (createdPostConfirmation.targetId) {
-                      return createdPostConfirmation.targetId.startsWith('@') || createdPostConfirmation.targetId.startsWith('#')
-                        ? createdPostConfirmation.targetId
-                        : `@${createdPostConfirmation.targetId}`;
-                    }
-                    if (createdPostConfirmation.recipientName) {
-                      return `@${createdPostConfirmation.recipientName.replace(/\s+/g, '').toLowerCase()}`;
-                    }
-                    return '@you @james';
-                  })()}
+                  {confirmationRecipientLabel(createdPostConfirmation)}
                 </strong>
               </p>
 
@@ -4304,20 +4431,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 <div className="flex items-center justify-between text-sm sm:text-base">
                   <span className="text-[#808897] font-medium">Recipient</span>
                   <span className="text-[#1A1B25] font-bold truncate max-w-[200px] text-right">
-                    {(() => {
-                      if (Array.isArray(createdPostConfirmation.recipients) && createdPostConfirmation.recipients.length > 0) {
-                        return createdPostConfirmation.recipients.map((r: string) => r.startsWith('@') || r.startsWith('#') ? r : `@${r}`).join(' ');
-                      }
-                      if (createdPostConfirmation.targetId) {
-                        return createdPostConfirmation.targetId.startsWith('@') || createdPostConfirmation.targetId.startsWith('#')
-                          ? createdPostConfirmation.targetId
-                          : `@${createdPostConfirmation.targetId}`;
-                      }
-                      if (createdPostConfirmation.recipientName) {
-                        return `@${createdPostConfirmation.recipientName.replace(/\s+/g, '').toLowerCase()}`;
-                      }
-                      return '@you @james';
-                    })()}
+                    {confirmationRecipientLabel(createdPostConfirmation)}
                   </span>
                 </div>
 

@@ -53,10 +53,10 @@ export const HashtagView: React.FC<HashtagViewProps> = ({
         return true;
       }
     }
-    // Check targetId
-    if (post.targetId && post.targetId.toLowerCase() === rawTag) {
-      return true;
-    }
+    // No targetId check: it holds the board's slug, so matching it against a
+    // tag only ever produced false positives (a board slugged '#birthday' is
+    // not a board tagged #birthday). The recipients and hashtags checks above
+    // are where a real tag lives.
     // Check content or caption
     const textToSearch = `${post.content || ''} ${post.caption || ''}`.toLowerCase();
     if (textToSearch.includes(`#${rawTag}`) || textToSearch.includes(rawTag)) {

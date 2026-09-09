@@ -45,7 +45,7 @@ import {
   requestNotificationPermission,
 } from '../lib/notifications';
 import { avatarDataUri, avatarPngFile, randomAvatarSeeds } from '../lib/avatars';
-import { avatarFromParts, usernameOf } from '../lib/adapters';
+import { avatarFromParts, usernameOf, recipientOf } from '../lib/adapters';
 import { useProfileHeartTokens, type HeartSpec } from '../hooks/useHeartTokens';
 import { useMyBoards, useProfileBoards } from '../hooks/useBoards';
 import { formatStatCount, plural } from '../lib/format';
@@ -1016,7 +1016,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const dynamicReceivedHearts = allHeartTokenPosts.filter((p: any) => {
     if (!isViewingOtherUser && p.isCreatedByUser === true) return false;
 
-    const rec = (p.recipientName || p.targetId || '').toLowerCase();
+    const rec = (p.recipientName || '').toLowerCase();
     const recH = usernameOf(p.recipientHandle);
     const recs = (p.recipients || []).map((r: string) => r.toLowerCase());
     const target = currentUserName.toLowerCase();
@@ -1073,7 +1073,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
         if (isMatch) {
           if (isSentFilter) {
             // In Sent mode, show recipient details
-            const recName = post.recipientName || post.targetId || 'Recipient';
+            const recName = post.recipientName || recipientOf(post) || 'Recipient';
             const recHandle = post.recipientHandle || post.recipients?.[0] || (post.recipientName ? `@${post.recipientName.toLowerCase().replace(/\s+/g, '')}` : '@recipient');
             const recAvatar = avatarFromParts({
               id: post.recipientId,
@@ -1203,7 +1203,6 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
       const recipientsList = (Array.isArray(it.recipients) ? it.recipients : []).map((r: string) => r.trim().toLowerCase());
       const recipientName = (it.recipientName || it.recipient || '').trim().toLowerCase();
       const recipientHandle = (it.recipientHandle || '').trim().toLowerCase().replace(/^@/, '');
-      const targetField = (it.targetId || '').trim().toLowerCase();
       const taggedList = (Array.isArray(it.taggedUsers) ? it.taggedUsers : []).map((u: string) => u.trim().toLowerCase());
 
       const inRecipientsList = recipientsList.some((r: string) => {
@@ -1215,11 +1214,15 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
         (recipientName && (recipientName.includes(targetNameClean) || recipientName.includes(targetHandleClean))) ||
         (recipientHandle && recipientHandle === targetHandleClean);
 
-      const matchesTargetId = targetField === targetHandleClean || targetField === targetNameNoSpaces || (targetId && targetField === targetId);
+      // No targetId matcher here. It held a handle in the mock data, but on a
+      // real board it is the SLUG — so this compared a board's id against a
+      // person's handle, and any board slugged after someone's username landed
+      // in their Tagged tab. The recipients / recipientHandle matchers above
+      // are the real test, now that boardToPost populates them.
       const inTaggedList = taggedList.some((u: string) => u.replace(/^@/, '') === targetHandleClean || u === targetNameClean);
       const isTaggedExplicit = isOwnProfile && (it.isTaggedForUser === true || it.section === 'tagged' || it.tab === 'tagged') && !it.isCreatedByUser;
 
-      return inRecipientsList || matchesRecipientName || matchesTargetId || inTaggedList || isTaggedExplicit;
+      return inRecipientsList || matchesRecipientName || inTaggedList || isTaggedExplicit;
     };
 
     // Helper: did the current target user CONTRIBUTE/curate a message on this board?
