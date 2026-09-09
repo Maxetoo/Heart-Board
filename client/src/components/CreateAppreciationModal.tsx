@@ -1727,12 +1727,46 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
     const safeTextCheck = textToWrite || (activeType === 'audio' ? "Audio appreciation tribute" : "Visual video tribute");
 
+    /**
+     * Text that is already saved has already been moderated.
+     *
+     * Moderation is a full LLM round trip (POST /ai/moderate -> Gemini), and it
+     * blocks the write behind it. Re-running it when someone edits only the
+     * colour, the confetti or the image spends a second or more re-approving a
+     * sentence the server approved when it was first posted. Any actual change
+     * to the words still goes through it.
+     */
+    const isEditing = Boolean(editingContribution || editingPost);
+    const savedText = (editingContribution?.content ?? editingPost?.content ?? '').trim();
+    const textIsUnchanged = isEditing && savedText.length > 0 && safeTextCheck.trim() === savedText;
+
     try {
-      const result = await moderateContent(safeTextCheck);
-      if (!result.isSafe) {
-        setModerationError(result.reason || "Please ensure the message matches our positive platform code.");
-        setIsModerating(false);
-        return;
+      if (!textIsUnchanged) {
+        const result = await moderateContent(safeTextCheck);
+        if (!result.isSafe) {
+          setModerationError(result.reason || "Please ensure the message matches our positive platform code.");
+          setIsModerating(false);
+          return;
+        }
+      }
+
+      /**
+       * A newly picked cover image, uploaded the same way the create paths
+       * below do it.
+       *
+       * The two edit paths skipped this entirely: `uploadedImage` is the
+       * FileReader data URL used for the preview, and it went straight into the
+       * PATCH body. A 10MB photo (the cap in upload.api.ts) becomes ~13MB of
+       * base64 — under the server's 15mb JSON limit, so it went through slowly
+       * instead of failing — and was then STORED as the image, so every later
+       * load of the board re-downloaded the whole photo as text.
+       */
+      let editedCover = uploadedImage;
+      let editedCoverPublicId: string | null = null;
+      if (isEditing && pendingCoverFile) {
+        const uploaded = await uploadFile(pendingCoverFile, 'image');
+        editedCover = uploaded.url;
+        editedCoverPublicId = uploaded.publicId;
       }
 
       const finalRecipientsString = recipients.join(', ') || '@you';
@@ -1759,8 +1793,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           caption: caption.trim() || undefined,
           type: activeType,
           mediaType: activeType === 'text' ? 'note' : activeType,
-          imageUrl: uploadedImage || undefined,
-          mediaUrl: uploadedImage || undefined,
+          imageUrl: editedCover || undefined,
+          mediaUrl: editedCover || undefined,
           sticker: selectedSticker ? selectedSticker.id : undefined,
           confetti: selectedConfetti || undefined,
           selectedHearts: [...selectedHearts],
@@ -1779,6 +1813,11 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             confetti: selectedConfetti || null,
           },
           canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
+          // Only when this save uploaded one. Sending null for an untouched
+          // image would clear the id Cloudinary cleanup relies on.
+          ...(editedCoverPublicId
+            ? { cloudinaryPublicId: editedCoverPublicId, fileType: 'image' }
+            : {}),
         });
 
         onUpdateContribution(parentBoard.id, updatedContrib);
@@ -1814,7 +1853,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           // targetId and targetType come from the spread above. targetId is the
           // board's SLUG — every link to the board is built from it — and the
           // edit used to overwrite it with the recipient string.
-          imageUrl: uploadedImage || undefined,
+          imageUrl: editedCover || undefined,
           theme: selectedFrame.bgHex || (selectedFrame.id === 'slate' ? '#272835' :
                  selectedFrame.id === 'mint' ? '#ECEFE6' :
                  selectedFrame.id === 'sunset' ? '#FAF5E8' :
@@ -1868,7 +1907,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             await editMessage(editingPost.faceMessageId, {
               content: {
                 text: safeTextCheck,
-                imageUrls: uploadedImage ? [uploadedImage] : [],
+                imageUrls: editedCover ? [editedCover] : [],
                 audioUrl: pendingAudioUrl ?? null,
                 hearts: selectedHearts,
                 // null clears it; undefined would be dropped by JSON.stringify
@@ -1876,6 +1915,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 confetti: selectedConfetti || null,
               },
               canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
+              // Only when this save uploaded one, for the same reason as above.
+              ...(editedCoverPublicId
+                ? { cloudinaryPublicId: editedCoverPublicId, fileType: 'image' }
+                : {}),
             });
           } catch {
             // The board's own fields already saved; do not lose those because

@@ -911,7 +911,32 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
   const serverBoards = isOwnProfileView ? myBoards.items : otherBoards.items;
   const serverBoardsLoading = isOwnProfileView ? myBoards.loading : otherBoards.loading;
-  const usingServerBoards = Boolean(serverBoardView && serverBoards);
+
+  /**
+   * Whether a board tab is expecting an answer from the server.
+   *
+   * Mirrors the `enabled` conditions on the two hooks above. `items` is null
+   * both before a fetch resolves AND while the hook is disabled, and those two
+   * mean opposite things: the first is "wait", the second is "there is nothing
+   * to ask for" (a signed-out visitor on /profile). Only the first should show
+   * a loading state; the second is genuinely empty.
+   */
+  const boardsEnabled =
+    Boolean(serverBoardView) &&
+    (isOwnProfileView ? Boolean(authUser) : Boolean(profileUser?.handle));
+  const serverBoardsPending = boardsEnabled && serverBoards === null;
+
+  /**
+   * True whenever a board tab's rows come from the server rather than from
+   * `posts`, so the client-side "is this theirs" filtering below is skipped.
+   *
+   * Keyed off the VIEW, not off whether the rows have arrived: the list is
+   * server-sourced (or empty) for the whole life of a board tab now, and the
+   * old `serverBoardView && serverBoards` form flipped to false mid-load, which
+   * re-enabled name matching over the discover feed for exactly the window this
+   * fix is about.
+   */
+  const usingServerBoards = Boolean(serverBoardView);
 
   // Helper to reliably identify heart token items vs message boards
   const isHeartPost = (item: any) => {
@@ -925,9 +950,19 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
   // A heart token IS a board underneath, so it would otherwise show up as a
   // card on the Board and Tagged tabs as well as under Hearts.
-  const allAvailableItems = (usingServerBoards ? (serverBoards as any[]) : posts).filter(
-    (item) => !isHeartPost(item),
-  );
+  //
+  // A board tab NEVER falls back to `posts`. `posts` is the discover feed —
+  // everyone's boards — and the old fallback fired whenever `serverBoards` was
+  // null, which is not only "still loading" but also every moment the fetch is
+  // disabled: during auth bootstrap, and again after any 401 anywhere clears
+  // the session. So opening your own Heartboard showed strangers' boards until
+  // the fetch landed, and a later 401 swapped your boards back out for the feed
+  // — boards appearing that are not yours, then yours vanishing. An empty list
+  // is the honest answer while we do not yet know; `serverBoardsPending` above
+  // makes that render as loading rather than as "you have no boards".
+  const allAvailableItems = (
+    serverBoardView ? (serverBoards ?? []) : posts
+  ).filter((item: any) => !isHeartPost(item));
 
   // ── Hearts, from the server ────────────────────────────────────────────────
   //
@@ -1702,9 +1737,11 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             ))}
           </div>
         )
-      ) : serverBoardsLoading && filteredItems.length === 0 ? (
+      ) : (serverBoardsLoading || serverBoardsPending) && filteredItems.length === 0 ? (
         // "No boards yet" while the request is still in flight reads as an
-        // empty account rather than as loading.
+        // empty account rather than as loading. `serverBoardsPending` covers
+        // the window before the request even starts — auth still bootstrapping
+        // — which `loading` alone reports as false.
         <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6 my-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <SkeletonBlock key={i} className="w-full aspect-[380/474]" rounded="rounded-2xl sm:rounded-[2.5rem]" />
