@@ -11,11 +11,22 @@ import * as boardApi from './services/board.api';
 import * as messageApi from './services/message.api';
 import * as userApi from './services/user.api';
 import { toApiError } from './lib/api';
-import { usernameOf, userFromHandle, boardToPost, userToRegisteredUser } from './lib/adapters';
+import {
+  usernameOf,
+  userFromHandle,
+  boardToPost,
+  userToRegisteredUser,
+  fromClientReactions,
+  toClientReactions,
+  toReactionCounts,
+  totalReactions,
+  postMatchesFeedTab,
+  type ClientReaction,
+} from './lib/adapters';
 import { formatCount, plural } from './lib/format';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
-import { CreateAppreciationModal } from './components/CreateAppreciationModal';
+import { CreateAppreciationModal, SEMANTIC_HEARTS } from './components/CreateAppreciationModal';
 import { FilterModal, FILTER_OPTIONS } from './components/FilterModal';
 import { HeartboardView } from './components/HeartboardView';
 import { HashtagView } from './components/HashtagView';
@@ -24,6 +35,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { EngagementPromptModal } from './components/EngagementPromptModal';
 import { useEngagementPrompt } from './hooks/useEngagementPrompt';
 import { useHeartboardNotifications } from './hooks/useHeartboardNotifications';
+import { useHeartRadar } from './hooks/useHeartRadar';
 import { HeroHeartAnimation } from './components/HeroHeartAnimation';
 import { HeartboardLogo } from './components/HeartboardLogo';
 import { EmailVerificationBanner } from './components/EmailVerificationBanner';
@@ -218,7 +230,10 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                 e.stopPropagation();
                 setSearchQuery('');
               }}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-all cursor-pointer"
+              // Square box + rounded-full, so it is a circle. Padding around an
+              // inline SVG is not: the icon's line box is taller than it is
+              // wide, which rounded the button into an egg.
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 aspect-square flex items-center justify-center text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-all cursor-pointer"
               aria-label="Clear search"
             >
               <X size={14} strokeWidth={2.5} />
@@ -305,7 +320,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                     {hasSearchInput && (
                       <button
                         onClick={() => setSearchQuery('')}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 bg-gray-200/80 hover:bg-gray-300 rounded-full p-1.5 transition-all cursor-pointer"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 aspect-square flex items-center justify-center text-gray-400 hover:text-gray-700 bg-gray-200/80 hover:bg-gray-300 rounded-full transition-all cursor-pointer"
                         aria-label="Clear text"
                       >
                         <X size={14} strokeWidth={2.5} />
@@ -565,72 +580,104 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
 };
 
 interface HeroPulseFeedProps {
-  posts?: any[];
   onGiftVouchClick: () => void;
 }
 
-const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchClick }) => {
+/**
+ * A person's name in the live ticker, linked to their Heartboard.
+ *
+ * The name is shown as written, without an "@" in front of it — the handle is
+ * only the address it points at. Falls back to plain text when we have no
+ * handle to link to, so a recipient the server did not resolve still reads
+ * correctly instead of leading nowhere.
+ */
+const TickerName: React.FC<{ name: string; handle?: string }> = ({ name, handle }) => {
+  if (!handle) {
+    return <span className="font-extrabold text-[#1A1B25]">{name}</span>;
+  }
+  return (
+    <Link
+      to={`/profile/${encodeURIComponent(handle)}`}
+      className="font-extrabold text-[#1A1B25] hover:text-[#FE6349] transition-colors cursor-pointer"
+    >
+      {name}
+    </Link>
+  );
+};
+
+/**
+ * How long one line stays on the radar.
+ *
+ * A FIXED clock, deliberately decoupled from how fast hearts are actually being
+ * blown. The rate people blow hearts at decides WHAT the radar has to show, and
+ * nothing else — twenty at once enlarges the pool, it does not make the ticker
+ * flicker through them.
+ */
+const RADAR_ROTATE_MS = 20_000;
+
+const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
   const [activeMessageIndex, setActiveMessageIndex] = useState(0);
 
-  // Derive live activities from user posts & blown hearts dynamically
-  const userHeartActivities = useMemo(() => {
-    const list: any[] = [];
-    posts.forEach((p) => {
-      if (p.isHeartToken || p.type === 'heart_token' || p.heartDetails) {
-        const hex = p.heartDetails?.bubbleColor || '#FE6349';
-        const label = p.heartDetails?.label || 'Loving';
-        const emoji = p.heartDetails?.emoji || '💖';
-        list.push({
-          sender: p.authorName || 'Curator',
-          heartType: `${label} Heart ${emoji}`,
-          receiver: (p.recipientName || p.targetId || 'Recipient').replace(/^@/, ''),
-          color: `text-[${hex}]`,
-          hexColor: hex,
-        });
-      } else if (p.isCreatedByUser) {
-        let hex = '#FE6349';
-        let label = 'Loving';
-        let emoji = '💖';
-        if (p.category === 'vouch') { hex = '#FFB800'; label = 'Loving'; emoji = '💛'; }
-        else if (p.category === 'tears') { hex = '#FF8A65'; label = 'Reliable'; emoji = '🧡'; }
-        else if (p.category === 'hype') { hex = '#FF53C0'; label = 'Visionary'; emoji = '💖'; }
-        list.push({
-          sender: p.authorName || 'You',
-          heartType: `${label} Heart ${emoji}`,
-          receiver: (p.recipientName || p.targetId || 'Recipient').replace(/^@/, ''),
-          color: `text-[${hex}]`,
-          hexColor: hex,
-        });
-      }
-    });
-    return list;
-  }, [posts]);
+  // Real hearts, platform-wide, refreshed in the background. This used to be
+  // derived from the discover feed, which no longer carries heart tokens at all
+  // — so the radar sat on "Be the first to blow a heart today" no matter how
+  // many had been blown. Its other branch was worse: it announced that someone
+  // "blew a Loving Heart" whenever they had merely created a board.
+  const { hearts: radarHearts } = useHeartRadar();
 
-  // This used to be padded with 6 fabricated activities ("Amino blew a
-  // Reliable Heart to Cristiano") that played forever regardless of whether
-  // anything real had happened. Real only now — the ticker is idle until
-  // someone actually blows a heart.
-  const liveActivities = userHeartActivities;
+  const liveActivities = useMemo(
+    () =>
+      radarHearts.map((h) => {
+        const spec = SEMANTIC_HEARTS.find((s) => s.id === h.heart) ?? SEMANTIC_HEARTS[0];
+        return {
+          sender: h.sender.name,
+          senderHandle: h.sender.username,
+          heartType: `${spec.label} Heart ${spec.emoji}`,
+          receiver: h.recipient.name,
+          receiverHandle: h.recipient.username,
+          hexColor: spec.bubbleColor,
+        };
+      }),
+    [radarHearts],
+  );
+
   const hasActivity = liveActivities.length > 0;
 
-  // When a user blows a new heart, reset active index to 0 so hero section updates immediately!
-  const lastUserCountRef = useRef(userHeartActivities.length);
-  useEffect(() => {
-    if (userHeartActivities.length > lastUserCountRef.current) {
-      setActiveMessageIndex(0);
-    }
-    lastUserCountRef.current = userHeartActivities.length;
-  }, [userHeartActivities.length]);
+  /**
+   * Read inside the interval WITHOUT being a dependency of it.
+   *
+   * If the effect below restarted whenever the pool changed, a refresh landing
+   * mid-cycle would cut the current line short — and with hearts arriving
+   * steadily the ticker would end up churning. The timer is started once and
+   * left alone; it looks up the current pool when it fires.
+   */
+  const activitiesRef = useRef(liveActivities);
+  activitiesRef.current = liveActivities;
 
   useEffect(() => {
     if (!hasActivity) return;
-    const timer = setInterval(() => {
-      setActiveMessageIndex((prev) => (prev + 1) % liveActivities.length);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, [liveActivities.length, hasActivity]);
 
-  const currentActivity = hasActivity ? (liveActivities[activeMessageIndex] || liveActivities[0]) : null;
+    const timer = setInterval(() => {
+      const total = activitiesRef.current.length;
+      if (total === 0) return;
+      // Random, not sequential: the radar is a sample of what is happening, not
+      // a list to be read in order. Never the line already showing, so a change
+      // is always visible.
+      setActiveMessageIndex((prev) => {
+        if (total === 1) return 0;
+        let next = Math.floor(Math.random() * (total - 1));
+        if (next >= prev % total) next += 1;
+        return next;
+      });
+    }, RADAR_ROTATE_MS);
+
+    return () => clearInterval(timer);
+  }, [hasActivity]);
+
+  // Modulo, because the pool can shrink under a held index between refreshes.
+  const currentActivity = hasActivity
+    ? liveActivities[activeMessageIndex % liveActivities.length]
+    : null;
 
   return (
     <div className="relative w-full overflow-hidden bg-white py-10 md:py-16 flex flex-col items-center justify-center min-h-[380px] md:min-h-[440px]">
@@ -653,10 +700,13 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchCl
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -15, scale: 0.95 }}
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#1A1B25] max-w-full truncate cursor-pointer hover:bg-[#ECEFF3] transition-colors"
-              onClick={onGiftVouchClick}
+              // No longer a create link. The pill names two people, and both are
+              // links now — wrapping them in a third click target meant tapping
+              // a name opened the composer instead of that person's profile.
+              // The animated heart above remains the way to start one.
+              className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#1A1B25] max-w-full truncate"
             >
-              <span className="font-extrabold text-[#1A1B25]">{currentActivity.sender}</span>
+              <TickerName name={currentActivity.sender} handle={currentActivity.senderHandle} />
               <span className="text-[#666D80]">blew a</span>
               <span
                 className="font-extrabold select-none flex items-center gap-0.5"
@@ -665,7 +715,7 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ posts = [], onGiftVouchCl
                 {currentActivity.heartType}
               </span>
               <span className="text-[#666D80]">to</span>
-              <span className="font-extrabold text-[#1A1B25]">@{currentActivity.receiver}</span>
+              <TickerName name={currentActivity.receiver} handle={currentActivity.receiverHandle} />
             </motion.div>
           ) : (
             <motion.div
@@ -1023,7 +1073,7 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
                 type="button"
                 onClick={() => setSearchQuery('')}
                 aria-label="Clear search"
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-all cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 aspect-square flex items-center justify-center text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-all cursor-pointer"
               >
                 <X size={14} strokeWidth={2.5} />
               </button>
@@ -1104,10 +1154,38 @@ const App: React.FC = () => {
     goToCreate({ mode: 'create_message' });
   };
 
+  /**
+   * Where to put the user back once they have signed in.
+   *
+   * Captured at the moment the sign-in was demanded, so reacting to a board at
+   * /board/:slug and then signing in returns to that board rather than dumping
+   * them on the feed.
+   */
+  const authReturnToRef = useRef<string | null>(null);
+
+  /**
+   * Sends the user to the real sign-in ROUTE.
+   *
+   * Every gated action used to flip a piece of local state instead, so the auth
+   * screen appeared at whatever address the user happened to be on: the back
+   * button did not dismiss it, a refresh threw the half-finished sign-in away,
+   * and /login could not be linked to from anywhere. /login and /signup are
+   * already routes — use them.
+   */
   const handleOpenAuth = (mode: 'login' | 'signup' = 'login', prompt?: string) => {
+    const target = mode === 'signup' ? '/signup' : '/login';
     setAuthModalMode(mode);
     setAuthModalPrompt(prompt);
-    setIsAuthModalOpen(true);
+
+    if (location.pathname === target) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    authReturnToRef.current = `${location.pathname}${location.search}`;
+    // pushView marks the entry as ours, so closing the auth screen goes back to
+    // whatever the user was doing rather than out of the app.
+    pushView(target);
   };
 
   // AuthContext already holds the session; this only resets local view state.
@@ -1115,6 +1193,9 @@ const App: React.FC = () => {
     setIsAuthModalOpen(false);
     setAuthModalPrompt(undefined);
     feed.reload();
+
+    const returnTo = authReturnToRef.current;
+    authReturnToRef.current = null;
 
     if (isNewRegistration) {
       // Return user to Home Page and show welcome popup
@@ -1126,9 +1207,14 @@ const App: React.FC = () => {
 
     // Signing in from /login or /signup has to leave that address, or the app
     // sits on an auth URL with the auth view already dismissed. Replace, so
-    // Back does not return to the sign-in page.
+    // Back does not return to the sign-in page. Land back on whatever the user
+    // was trying to do when they were asked to sign in.
     if (location.pathname === '/login' || location.pathname === '/signup') {
-      navigate('/', { replace: true });
+      const safeReturn =
+        returnTo && !returnTo.startsWith('/login') && !returnTo.startsWith('/signup')
+          ? returnTo
+          : '/';
+      navigate(safeReturn, { replace: true });
     }
   };
 
@@ -1284,7 +1370,53 @@ const App: React.FC = () => {
 
   // Server-paginated discover feed, replacing INITIAL_MOCK_POSTS.
   const feed = useDiscoverFeed({ currentUserId: currentUser?.id, enabled: authReady });
-  const { posts, setPosts, patchPost, removePost, prependPost } = feed;
+  const { posts: rawPosts, setPosts, patchPost, removePost, prependPost } = feed;
+
+  /**
+   * The signed-in user's own reactions, board id -> reactions.
+   *
+   * Kept apart from the feed rows because the board list responses are cached
+   * server-side with no viewer in the key and can only carry the totals. This
+   * is the viewer-dependent half, from GET /board/likes/me, and it is also the
+   * source of truth for optimistic toggles — merging it over the feed below
+   * means a reaction cannot be lost when a page reloads or the feed refreshes.
+   */
+  const [myReactions, setMyReactions] = useState<Record<string, ClientReaction[]>>({});
+
+  useEffect(() => {
+    if (!authReady || !currentUser) {
+      setMyReactions({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await boardApi.getMyReactions();
+        if (cancelled) return;
+        const mapped: Record<string, ClientReaction[]> = {};
+        Object.entries(map).forEach(([boardId, list]) => {
+          const picked = toClientReactions(list);
+          if (picked.length) mapped[boardId] = picked;
+        });
+        setMyReactions(mapped);
+      } catch {
+        // No reactions rendered as picked; toggling still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, currentUser?.id]);
+
+  const posts = useMemo(
+    () =>
+      rawPosts.map((p) => {
+        const mine = myReactions[p.id];
+        if (!mine && !(p.userReactions && p.userReactions.length)) return p;
+        return { ...p, userReactions: mine ?? [] };
+      }),
+    [rawPosts, myReactions],
+  );
 
   const [selectedFilterId, setSelectedFilterId] = useState<string>('moment');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -1429,7 +1561,10 @@ const App: React.FC = () => {
       }
     }
 
-    if (profileMatch) {
+    // Your own handle is not somebody else's profile — leave it to the redirect
+    // below, which swaps the address for /profile. Setting the view here first
+    // would paint the public copy of your own account for a frame on the way.
+    if (profileMatch && !isOwnProfileUrl) {
       const handle = decodeURIComponent(profileMatch[1]);
       // Only replace the object when the target actually changed, so a data
       // refresh does not clobber a richer profile already loaded.
@@ -1468,8 +1603,30 @@ const App: React.FC = () => {
   // twelve unrelated feed cards. The endpoints for both already existed and
   // were never called.
 
-  const profileHandle = profileMatch ? decodeURIComponent(profileMatch[1]) : null;
+  const profileHandleInUrl = profileMatch ? decodeURIComponent(profileMatch[1]) : null;
   const hashtagTag = hashtagMatch ? decodeURIComponent(hashtagMatch[1]) : null;
+
+  /**
+   * True when the signed-in user is looking at their OWN handle's public page.
+   *
+   * /profile/:username is the read-only view of somebody else — no settings, no
+   * private boards, no edit controls — so landing on your own there gives you a
+   * hollow copy of a page you already have. /profile is the real one. The
+   * redirect below sends you to it.
+   */
+  const isOwnProfileUrl = Boolean(
+    profileHandleInUrl &&
+      currentUser?.handle &&
+      usernameOf(currentUser.handle).toLowerCase() === profileHandleInUrl.toLowerCase(),
+  );
+
+  /**
+   * The handle to FETCH, which is nothing while we are bouncing to /profile.
+   *
+   * Kept separate from the URL so the redirect does not first spend a request
+   * on the public copy of your own account, nor flash it on screen.
+   */
+  const profileHandle = isOwnProfileUrl ? null : profileHandleInUrl;
 
   /** Boards owned by the profile on screen, from GET /user/profile/:username. */
   const [profileBoards, setProfileBoards] = useState<Post[] | null>(null);
@@ -1561,12 +1718,50 @@ const App: React.FC = () => {
   // empty "My Heartboard" on screen. Wait for the session check before
   // deciding — otherwise a reload bounces the signed-in user to /login.
   useEffect(() => {
-    if (!authReady) return;
-    if (path === '/profile' && !currentUser) {
+    if (!authReady || currentUser) return;
+
+    if (path === '/profile') {
+      authReturnToRef.current = '/profile';
+      setAuthModalPrompt('Please sign in or create an account to access your personal Heartboard.');
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    // The composer routes write on submit, so reaching one without a session —
+    // a shared /create link, a refresh after signing out — has to ask for one
+    // up front rather than at the end. The return path brings them straight
+    // back to the composer they were headed for.
+    if (path === '/create' || boardSubRoute) {
+      authReturnToRef.current = `${path}${location.search}`;
+      setAuthModalPrompt('Please sign in or create an account to post on Heartboard.');
       navigate('/login', { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, currentUser, path]);
+  }, [authReady, currentUser, path, boardSubRoute]);
+
+  /**
+   * Your own handle in the URL sends you to your own Heartboard.
+   *
+   * /profile/:username is the view OTHER people get: public boards only, no
+   * settings, no edit controls, and a "Heart" button you cannot press on
+   * yourself. Reaching it as its owner — from a share link, a bookmark, or your
+   * own name in a ticker — showed that stripped-down copy instead of the page
+   * you actually have at /profile.
+   *
+   * Waits for authReady, or a refresh would resolve the public page before the
+   * session lands. Replaces rather than pushes, so Back leaves cleanly instead
+   * of returning to a URL that immediately redirects again.
+   */
+  useEffect(() => {
+    if (!authReady || !isOwnProfileUrl) return;
+    // Drop the stub the URL sync built from the handle before navigating. On a
+    // cold load the session resolves AFTER that effect has already run, and the
+    // path is what it keys on — so without this the public view stays on screen
+    // until the redirect lands.
+    setViewingProfileUser(null);
+    navigate('/profile', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, isOwnProfileUrl]);
 
   // Cold load of /board/:slug/add-message or /board/:slug/edit: the composer
   // needs its parent board, which only exists once the board has resolved.
@@ -1766,18 +1961,11 @@ const App: React.FC = () => {
       (Array.isArray(newPost.selectedHearts) && newPost.selectedHearts.length > 0 && !newPost.mediaType && newPost.type !== 'image' && newPost.type !== 'audio' && newPost.type !== 'text')
     );
 
+    // A heart token is NOT a board and never belongs in the discover feed — it
+    // lives on the sender's and the recipient's Heartboards, and nowhere else.
+    // It used to be prepended here, which is why hearts turned up among the
+    // boards on the home page.
     if (isHeart) {
-      const heartPost = {
-        visibility: PostVisibility.PUBLIC,
-        targetType: newPost.targetType || EntityType.WALL,
-        ...newPost,
-        reactions: newPost.reactions ?? 1,
-        isHeartToken: true,
-        isCreatedByUser: true,
-        section: 'hearts',
-        type: 'heart_token'
-      };
-      prependPost(heartPost);
       recordUserCreatedMessageOrHeart();
       return;
     }
@@ -1813,17 +2001,16 @@ const App: React.FC = () => {
     recordUserCreatedMessageOrHeart();
   };
 
-  const MOMENT_REACTION_THRESHOLD = 50;
-
-  const isEligibleForMoment = (post: any) => {
-    if (!canViewPostPublicly(post)) return false;
-    if (post.isMomentEligible) return true;
-    if ((post.reactions || 0) >= MOMENT_REACTION_THRESHOLD) return true;
-    if (!post.isCreatedByUser && (post.reactions || 0) > 0) return true;
-    return false;
-  };
-
-  const momentPosts = posts.filter(isEligibleForMoment);
+  /**
+   * What the home feed is allowed to show.
+   *
+   * This used to also require a board to have picked up reactions — 50 of them,
+   * or at least one if somebody else made it — so a board nobody had reacted to
+   * yet was invisible on the feed the moment it was published. Which tab a
+   * board lands in is decided by its reactions below; whether it appears at all
+   * is just a visibility question.
+   */
+  const momentPosts = posts.filter(canViewPostPublicly);
 
   const query = searchQuery.trim().toLowerCase();
 
@@ -1835,8 +2022,13 @@ const App: React.FC = () => {
   const matchingUsersCount = appSearch.active ? appSearch.users.length : 0;
 
   const filteredPosts = momentPosts.filter(post => {
-    // Filter category
-    if (activeFilter !== 'all' && post.category !== activeFilter) {
+    // The four tabs ARE the reactions, read back off the board: hearts land it
+    // in Most Loved Today, claps and sads in This Moved People, sads in This
+    // Made People Cry, smileys and fires in Joyful Posts. A board can therefore
+    // sit in more than one, which is only honest — people reacted to it in more
+    // than one way. It used to filter on `category`, a bucket the composer
+    // guessed from the media type at publish time and nobody could change.
+    if (!postMatchesFeedTab(post.reactionCounts, activeFilter)) {
       return false;
     }
     // Filter search query
@@ -1959,8 +2151,7 @@ const App: React.FC = () => {
             {selectedFilterId === 'moment' ? (
               <>
                 {/* Concentric radar hero feed */}
-                <HeroPulseFeed 
-                  posts={momentPosts}
+                <HeroPulseFeed
                   onGiftVouchClick={() => {
                     if (!currentUser) {
                       handleOpenAuth('login', 'Please sign in or create an account to gift a vouch.');
@@ -2083,6 +2274,10 @@ const App: React.FC = () => {
               setEditMode(null);
             }} 
             onPostCreated={handleNewPost}
+            // The composer has always taken this prop and never been given it,
+            // so every contribution it posted was attributed to "@guest" and
+            // the send-heart flow had no idea who was blowing the heart.
+            currentUser={currentUser}
             initialRecipient={createModalRecipient}
             initialHashtag={createModalHashtag}
             initialMode={createModalMode}
@@ -2239,6 +2434,13 @@ const App: React.FC = () => {
             onSelectUser={(user) => handleSelectUser(user)}
             onSelectHashtag={(tag) => handleSelectHashtag(tag)}
             onAddContributionClick={(parentPost) => {
+              // Contributing writes a message, so it needs a session. Without
+              // this the composer opened for a guest and only failed with a 401
+              // after they had written the whole thing.
+              if (!currentUser) {
+                handleOpenAuth('login', 'Please sign in or create an account to add a message to this board.');
+                return;
+              }
               setContributionParentPost(parentPost);
               setCreateModalRecipient(undefined);
               setCreateModalHashtag(undefined);
@@ -2316,35 +2518,42 @@ const App: React.FC = () => {
                 }
               }
             }}
-            onReactionBlown={async (postId) => {
-              const snapshot = posts;
+            // Reacting is recorded for the engagement prompt only. Persisting
+            // the reaction is onUpdateReactions' job — this used to also call
+            // the like TOGGLE, so picking a second reaction quietly un-liked
+            // the board and the count went down instead of up.
+            onReactionBlown={() => recordUserCreatedMessageOrHeart()}
+            onUpdateReactions={async (postId, counts, userReactions) => {
+              const previousMine = myReactions[postId] ?? [];
+              const previousCounts = rawPosts.find((p) => p.id === postId)?.reactionCounts;
+              const previousTotal = rawPosts.find((p) => p.id === postId)?.reactions ?? 0;
+
+              // Optimistic: the picker should not wait on a round trip.
+              setMyReactions((prev) => ({ ...prev, [postId]: userReactions }));
               patchPost(postId, {
-                reactions: (posts.find((p) => p.id === postId)?.reactions || 0) + 1,
+                reactionCounts: counts,
+                reactions: totalReactions(counts),
               });
-              recordUserCreatedMessageOrHeart();
+
               try {
-                const { likeCount } = await boardApi.likeBoard(postId);
-                patchPost(postId, { reactions: likeCount });
+                // PATCH /board/:id/reaction replaces the whole set, so it is
+                // also how a reaction is REMOVED. Nothing persisted reactions
+                // at all before this — they lived in React state and were gone
+                // on the next refresh.
+                const saved = await boardApi.setReactions(postId, fromClientReactions(userReactions));
+                const serverCounts = toReactionCounts(saved.reactionCounts);
+                patchPost(postId, {
+                  reactionCounts: serverCounts,
+                  reactions: totalReactions(serverCounts) || saved.likeCount,
+                });
+                setMyReactions((prev) => ({ ...prev, [postId]: toClientReactions(saved.reactions) }));
               } catch (e) {
-                setPosts(snapshot);
+                setMyReactions((prev) => ({ ...prev, [postId]: previousMine }));
+                patchPost(postId, { reactionCounts: previousCounts, reactions: previousTotal });
                 if (toApiError(e).status === 401) {
                   handleOpenAuth('login', 'Sign in to react to this board.');
                 }
               }
-            }}
-            onUpdateReactions={(postId, counts, userReactions) => {
-              const total = (counts.clap || 0) + (counts.heart || 0) + (counts.smiley || 0) + (counts.fire || 0);
-              setPosts((prevPosts) =>
-                prevPosts.map((p) => {
-                  if (p.id !== postId) return p;
-                  return {
-                    ...p,
-                    reactionCounts: counts,
-                    userReactions: userReactions,
-                    reactions: total,
-                  };
-                })
-              );
             }}
           />
         )}

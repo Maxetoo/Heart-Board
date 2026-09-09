@@ -1,20 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, Lock, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import * as authApi from '../services/auth.api';
 import { toApiError } from '../lib/api';
 import { validatePassword } from '../components/AuthModal';
 
 /**
  * Landing page for the emailed password-reset link:
- *   ${CLIENT_URL}/reset-password?token=...
+ *   ${APP_ORIGIN}/reset-password?token=...
  * Submits PATCH /auth/reset-password (a PATCH, not a POST).
+ *
+ * The link is checked BEFORE the password fields appear. This used to render
+ * the form whatever the address said — with no token at all, or a spent one —
+ * and only admit the link was dead once the user had typed a new password
+ * twice and pressed the button.
  */
 export const ResetPasswordPage: React.FC = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get('token') ?? '';
 
+  const [linkState, setLinkState] = useState<'checking' | 'valid' | 'invalid'>('checking');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -22,14 +28,32 @@ export const ResetPasswordPage: React.FC = () => {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (!token) {
+      setLinkState('invalid');
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { valid } = await authApi.verifyResetToken(token);
+        if (!cancelled) setLinkState(valid ? 'valid' : 'invalid');
+      } catch {
+        // Treat a failed check as usable rather than locking someone out of a
+        // link that may well be fine — the reset itself re-validates anyway.
+        if (!cancelled) setLinkState('valid');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    if (!token) {
-      setError('This reset link is missing its token. Please use the link from your email.');
-      return;
-    }
 
     const problem = validatePassword(newPassword);
     if (problem) {
@@ -60,6 +84,46 @@ export const ResetPasswordPage: React.FC = () => {
           <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
           <h1 className="text-xl font-extrabold text-[#1A1B25] mb-2">Password updated</h1>
           <p className="text-sm text-[#666D80]">Taking you to sign in…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (linkState === 'checking') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FB] p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xs border border-[#ECEFF3] text-center">
+          <Loader2 className="w-12 h-12 text-[#FE6349] mx-auto mb-4 animate-spin" />
+          <h1 className="text-xl font-extrabold text-[#1A1B25] mb-2">Checking your link</h1>
+          <p className="text-sm text-[#666D80]">One moment…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // A reset link is good for one hour and one use. Send them back for a fresh
+  // one rather than showing a form that cannot go anywhere.
+  if (linkState === 'invalid') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FB] p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xs border border-[#ECEFF3] text-center">
+          <AlertCircle className="w-12 h-12 text-[#FE6349] mx-auto mb-4" />
+          <h1 className="text-xl font-extrabold text-[#1A1B25] mb-2">This link has expired</h1>
+          <p className="text-sm text-[#666D80] mb-6 leading-relaxed">
+            Password reset links last one hour and can only be used once. Ask for a new one and
+            we will email it straight over.
+          </p>
+          <Link
+            to="/forgot-password"
+            className="inline-block px-6 py-2.5 bg-[#FE6349] hover:bg-[#e05234] text-white font-bold rounded-full text-sm"
+          >
+            Send a new link
+          </Link>
+          <p className="text-center text-xs text-[#808897] mt-4">
+            <Link to="/login" className="font-bold text-[#1A1B25] hover:underline">
+              Back to sign in
+            </Link>
+          </p>
         </div>
       </div>
     );

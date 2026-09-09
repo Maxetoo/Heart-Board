@@ -33,13 +33,18 @@ export async function updateProfile(payload: {
   return data;
 }
 
-export async function getPublicProfile(username: string, view?: string) {
+/**
+ * `kind: 'heart'` switches `boards` from this account's message boards to its
+ * heart tokens. Omitted, heart tokens are excluded — they belong on the
+ * Heartboard tabs, not in a board list.
+ */
+export async function getPublicProfile(username: string, view?: string, kind?: 'heart') {
   const { data } = await api.get<{
     user: UserDTO;
     boards: BoardDTO[];
     view: string;
     summary: ProfileSummaryDTO;
-  }>(`/user/profile/${encodeURIComponent(username)}`, { params: cleanParams({ view }) });
+  }>(`/user/profile/${encodeURIComponent(username)}`, { params: cleanParams({ view, kind }) });
   return data;
 }
 

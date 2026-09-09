@@ -6,8 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#FE6349" />
 
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" href="/favicon.ico" />
+    <!--
+      The Heartboard mark, cropped square out of src/assets/heartboard logo.png.
+      That source is 611x408 with the mark occupying ~137px in the middle, so
+      pointing a favicon straight at it would render the artwork a few pixels
+      wide in the tab; these are cropped to the artwork and sized properly.
+      Largest first — browsers take the first one they can use.
+    -->
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <!-- Opaque on purpose: iOS composites a transparent touch icon on black. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
 
     <title>Heartboard | Share your appreciation</title>
@@ -20,7 +30,8 @@
         content="Create beautiful appreciation boards and share them with the people you love." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://heartboardapp.com" />
-    <meta property="og:image" content="https://heartboardapp.com/favicon.ico" />
+    <!-- A .ico here rendered as a blank box in most link previews. -->
+    <meta property="og:image" content="https://heartboardapp.com/favicon-512.png" />
     <meta property="og:image:alt" content="Heartboard Logo" />
 
     <!-- Canonical -->

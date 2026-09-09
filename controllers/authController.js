@@ -47,13 +47,14 @@ const register = async (req, res) => {
   createCookies(res, token);
 
   // send verification email
-  const protocol = req.protocol; 
-  const host = req.get('host'); 
-
-  const verification_url = `${protocol}://${host}/verify-email?verificationToken=${verificationToken}`;
+  //
+  // appUrl, not req.get('host'): the link is opened by a BROWSER and the page
+  // it needs lives in the SPA. Built from the request host it pointed at the
+  // API, which serves no such route, so every emailed link 404'd.
+  const verification_url = appUrl(`/verify-email?verificationToken=${verificationToken}`);
 
   const emailDetails = {
-      email, 
+      email,
       verification_url
   }
     
@@ -113,14 +114,13 @@ const resendVerificationEmail = async (req, res) => {
   user.emailVerificationExpiry = verificationExpiry;
   await user.save();
 
-  // send verification email
-  const protocol = req.protocol; 
-  const host = req.get('host'); 
-
-  const verification_url = `${protocol}://${host}/?verificationToken=${verificationToken}`;
+  // Same fix as in register(), plus the path: this one pointed at the site
+  // ROOT with the token dangling in the query, where nothing reads it. The page
+  // that redeems a verification token is /verify-email.
+  const verification_url = appUrl(`/verify-email?verificationToken=${verificationToken}`);
 
   const emailDetails = {
-      email, 
+      email,
       verification_url
     }
     
@@ -255,11 +255,11 @@ const forgotPassword = async (req, res) => {
 
   await user.save();
 
-  // send verification email
-  const protocol = req.protocol; 
-  const host = req.get('host'); 
-
-  const reset_url = `${protocol}://${host}/reset-password?token=${resetToken}`;
+  // The reset form is a page in the SPA, so the link has to address the app.
+  // Built from the API's own host — which is what req.get('host') is — it sent
+  // people to a route the API does not have, and the whole flow dead-ended in
+  // a 404 the moment they clicked the email.
+  const reset_url = appUrl(`/reset-password?token=${resetToken}`);
 
   const resetDetails = {
         email, 
@@ -274,6 +274,36 @@ const forgotPassword = async (req, res) => {
   res.status(StatusCodes.OK).json({ message: 'If that email exists, a reset link has been sent.' });
 };
 
+
+
+/** The hash actually stored on the user, from the raw token in the link. */
+const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+
+/**
+ * GET /auth/reset-password?token=…
+ *
+ * Says whether a reset link is still good, so the page can show the new-password
+ * fields only when there is something to submit them to. Without it a dead link
+ * — expired, already used, or truncated by a mail client — rendered the full
+ * form and only admitted the problem after the user had typed a password twice.
+ *
+ * Deliberately reveals nothing but valid/invalid: no email, no account state.
+ */
+const verifyResetToken = async (req, res) => {
+  const token = req.query.token;
+
+  if (!token) {
+    return res.status(StatusCodes.OK).json({ valid: false, reason: 'missing' });
+  }
+
+  const user = await User.findOne({
+    resetPasswordToken: hashResetToken(token),
+    resetPasswordExpiry: { $gt: Date.now() },
+  }).select('_id').lean();
+
+  res.status(StatusCodes.OK).json({ valid: Boolean(user), reason: user ? null : 'invalid' });
+};
 
 
 const resetPassword = async (req, res) => {
@@ -291,10 +321,8 @@ const resetPassword = async (req, res) => {
     throw new CustomError.BadRequestError('Passwords do not match.');
   }
 
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-
   const user = await User.findOne({
-    resetPasswordToken: hashedToken,
+    resetPasswordToken: hashResetToken(token),
     resetPasswordExpiry: { $gt: Date.now() },
   });
 
@@ -320,5 +348,6 @@ module.exports = {
   oauthCallback,
   logout,
   forgotPassword,
+  verifyResetToken,
   resetPassword,
 };

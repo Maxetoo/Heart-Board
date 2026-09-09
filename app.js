@@ -131,7 +131,15 @@ app.use('/api/v1/board/payments', BoardPaymentRouter);
 app.use('/api/v1/upload', UploadRouter);
 app.use('/api/v1/search', SearchRouter);
 app.use('/api/v1/ai', AiRouter);
-app.get('/api/v1/stats', SearchRouter.globalStats);
+// The SPA polls this every 60s from every open tab, and it is four
+// collection-wide counts — the most expensive request on the site per unit of
+// information. Identical for every caller, so one cache key serves everyone.
+const { cache: cacheResponse, TTL: CacheTTL, keys: cacheKeys } = require('./middlewares/cacheMiddleware');
+app.get(
+  '/api/v1/stats',
+  cacheResponse(CacheTTL.GLOBAL_STATS, () => cacheKeys.globalStats()),
+  SearchRouter.globalStats,
+);
 
 // Error handling middlewares
 const ErrorMiddleware    = require('./middlewares/errorMiddleware');

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Post, Contribution, PostVisibility, ReactionCounts, RegisteredUser } from '../types';
+import { Post, Contribution, PostVisibility, ReactionCounts, ReactionType, RegisteredUser } from '../types';
 import { userFromHandle, avatarFromParts, usernameOf, toHandle, toUsername } from '../lib/adapters';
 import {
   X,
@@ -16,6 +16,7 @@ import {
   HandsClapping,
   Heart as PhosphorHeart,
   Smiley as PhosphorSmiley,
+  SmileySad as PhosphorSmileySad,
   Fire as PhosphorFire,
   ShareFat,
   Flag as PhosphorFlag,
@@ -67,7 +68,7 @@ interface MediaModalProps {
   onNext: () => void;
   onAddContributionClick?: (post: Post) => void;
   onReactionBlown?: (postId: string) => void;
-  onUpdateReactions?: (postId: string, counts: ReactionCounts, userReactions: ('clap' | 'heart' | 'smiley' | 'fire')[]) => void;
+  onUpdateReactions?: (postId: string, counts: ReactionCounts, userReactions: ReactionType[]) => void;
   onEditBoard?: (post: Post) => void;
   onDeleteBoard?: (postId: string) => void;
   onEditMessage?: (post: Post, contribution?: Contribution) => void;
@@ -99,45 +100,25 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   // Index for navigating through multiple contribution messages
   const [activeContributionIndex, setActiveContributionIndex] = useState(0);
 
-  // Helper to get real initial reaction breakdown
-  const getInitialReactionCounts = (p: Post): { clap: number; heart: number; smiley: number; fire: number } => {
-    if (p.reactionCounts) {
-      return {
-        clap: p.reactionCounts.clap ?? 0,
-        heart: p.reactionCounts.heart ?? 0,
-        smiley: p.reactionCounts.smiley ?? 0,
-        fire: p.reactionCounts.fire ?? 0,
-      };
-    }
-    const total = p.reactions || 0;
-    if (total <= 0) return { clap: 0, heart: 0, smiley: 0, fire: 0 };
-    if (total >= 10000) {
-      return {
-        clap: 34,
-        heart: 11200,
-        smiley: 1,
-        fire: 64,
-      };
-    }
-    if (total >= 1000) {
-      return {
-        clap: Math.max(1, Math.floor(total * 0.05)),
-        heart: Math.floor(total * 0.88),
-        smiley: Math.max(1, Math.floor(total * 0.005)),
-        fire: Math.floor(total * 0.065),
-      };
-    }
-    return {
-      clap: Math.floor(total * 0.08),
-      heart: Math.floor(total * 0.82),
-      smiley: Math.max(0, Math.floor(total * 0.02)),
-      fire: Math.floor(total * 0.08),
-    };
-  };
+  /**
+   * The board's real per-reaction breakdown, aggregated server-side.
+   *
+   * This used to INVENT one when the board carried no breakdown — a board with
+   * 10k total reactions was shown as "34 claps, 11,200 hearts, 1 smiley, 64
+   * fires" regardless of what anyone had actually pressed. The counts drive the
+   * home feed's tabs now, so they have to be the real thing or nothing.
+   */
+  const getInitialReactionCounts = (p: Post): Required<ReactionCounts> => ({
+    clap: p.reactionCounts?.clap ?? 0,
+    heart: p.reactionCounts?.heart ?? 0,
+    smiley: p.reactionCounts?.smiley ?? 0,
+    sad: p.reactionCounts?.sad ?? 0,
+    fire: p.reactionCounts?.fire ?? 0,
+  });
 
   // Interactive reaction states
   const [reactionCounts, setReactionCounts] = useState(() => getInitialReactionCounts(post));
-  const [userReactions, setUserReactions] = useState<('clap' | 'heart' | 'smiley' | 'fire')[]>(() => post.userReactions || []);
+  const [userReactions, setUserReactions] = useState<ReactionType[]>(() => post.userReactions || []);
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -724,26 +705,37 @@ export const MediaModal: React.FC<MediaModalProps> = ({
     return count.toString();
   };
 
-  // Toggle specific reaction type
-  const handleToggleReaction = (type: 'clap' | 'heart' | 'smiley' | 'fire') => {
+  /**
+   * Picks a reaction. ONE per person per board.
+   *
+   * Pressing a different one moves your reaction across rather than adding a
+   * second: the old count comes down as the new one goes up. Pressing the one
+   * you already have takes it back.
+   *
+   * This used to accumulate — you could hold a clap, a heart and a fire on the
+   * same board at once — which made the count on a board larger than the number
+   * of people who had reacted to it, and let one person weight the home feed's
+   * tabs several ways at the same time.
+   */
+  const handleToggleReaction = (type: ReactionType) => {
     if (!currentUser && onRequireAuth) {
       setIsReactionPickerOpen(false);
       onRequireAuth('Please sign in or create an account to react and blow hearts.');
       return;
     }
 
-    const isAlreadySelected = userReactions.includes(type);
-    const newUserReactions = isAlreadySelected
-      ? userReactions.filter((r) => r !== type)
-      : [...userReactions, type];
+    const previous = userReactions[0] ?? null;
+    const isAlreadySelected = previous === type;
+    const newUserReactions: ReactionType[] = isAlreadySelected ? [] : [type];
 
-    const currentCount = reactionCounts[type] || 0;
-    const newCount = isAlreadySelected ? Math.max(0, currentCount - 1) : currentCount + 1;
-
-    const newCounts = {
-      ...reactionCounts,
-      [type]: newCount,
-    };
+    const newCounts = { ...reactionCounts };
+    // Give back whatever was held before, including when swapping.
+    if (previous) {
+      newCounts[previous] = Math.max(0, (newCounts[previous] || 0) - 1);
+    }
+    if (!isAlreadySelected) {
+      newCounts[type] = (newCounts[type] || 0) + 1;
+    }
 
     setUserReactions(newUserReactions);
     setReactionCounts(newCounts);
@@ -1092,7 +1084,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           {/* Top Floating Pill: Reaction Picker (Absolute overlay - zero layout shift) */}
           {isReactionPickerOpen && (
             <div
-              className="absolute bottom-[calc(100%+10px)] left-0 w-fit whitespace-nowrap flex items-center justify-start gap-4 bg-[#272835] rounded-full px-5 py-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
+              // Five reactions now rather than four, so the gap tightens on a
+              // phone to keep the pill inside the viewport once counts appear.
+              className="absolute bottom-[calc(100%+10px)] left-0 w-fit max-w-[calc(100vw-2rem)] whitespace-nowrap flex items-center justify-start gap-2.5 sm:gap-4 bg-[#272835] rounded-full px-4 sm:px-5 py-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
               onClick={(e) => e.stopPropagation()}
             >
               {/* 1. Clap */}
@@ -1152,7 +1146,26 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 )}
               </button>
 
-              {/* 4. Fire */}
+              {/* 4. Sad — the reaction behind "This made people cry". */}
+              <button
+                type="button"
+                onClick={() => handleToggleReaction('sad')}
+                className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
+                title="Sad / Moved to tears"
+              >
+                <PhosphorSmileySad
+                  size={24}
+                  weight={userReactions.includes('sad') ? "fill" : "bold"}
+                  color={userReactions.includes('sad') ? "#5B8DEF" : "#FFFFFF"}
+                />
+                {formatReactionCount(reactionCounts.sad) && (
+                  <span className="text-xs font-bold text-white tracking-tight ml-0.5">
+                    {formatReactionCount(reactionCounts.sad)}
+                  </span>
+                )}
+              </button>
+
+              {/* 5. Fire */}
               <button
                 type="button"
                 onClick={() => handleToggleReaction('fire')}

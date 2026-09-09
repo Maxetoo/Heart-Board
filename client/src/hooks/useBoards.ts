@@ -144,10 +144,16 @@ export function useDiscoverFeed(options: FeedOptions = {}): FeedState {
  * "asked and empty".
  */
 export function useMyBoards(
-  view: 'owned' | 'tagged',
-  options: { enabled?: boolean; currentUserId?: string; limit?: number } = {},
+  view: 'owned' | 'tagged' | 'collaboration',
+  options: {
+    enabled?: boolean;
+    currentUserId?: string;
+    limit?: number;
+    /** 'heart' asks for heart tokens instead of message boards. */
+    kind?: 'heart';
+  } = {},
 ) {
-  const { enabled = true, currentUserId, limit = 50 } = options;
+  const { enabled = true, currentUserId, limit = 50, kind } = options;
 
   const [items, setItems] = useState<Post[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -161,7 +167,7 @@ export function useMyBoards(
     setLoading(true);
     setError(null);
     try {
-      const data = await boardApi.getMyBoards({ view, limit });
+      const data = await boardApi.getMyBoards({ view, limit, kind });
       setItems(data.boards.map((b) => boardToPost(b, currentUserId)));
     } catch (e) {
       setError(toApiError(e).message);
@@ -169,7 +175,7 @@ export function useMyBoards(
     } finally {
       setLoading(false);
     }
-  }, [view, limit, enabled, currentUserId]);
+  }, [view, limit, enabled, currentUserId, kind]);
 
   useEffect(() => {
     void load();
@@ -192,10 +198,10 @@ export function useMyBoards(
  */
 export function useProfileBoards(
   username: string | undefined,
-  view: 'owned' | 'tagged',
-  options: { enabled?: boolean; currentUserId?: string } = {},
+  view: 'owned' | 'tagged' | 'collaboration',
+  options: { enabled?: boolean; currentUserId?: string; kind?: 'heart' } = {},
 ) {
-  const { enabled = true, currentUserId } = options;
+  const { enabled = true, currentUserId, kind } = options;
 
   const [items, setItems] = useState<Post[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -209,7 +215,7 @@ export function useProfileBoards(
     setLoading(true);
     setError(null);
     try {
-      const { user, boards } = await userApi.getPublicProfile(username, view);
+      const { user, boards } = await userApi.getPublicProfile(username, view, kind);
       const author = userToRegisteredUser(user);
       setItems(
         boards.map((b) => {
@@ -235,7 +241,7 @@ export function useProfileBoards(
     } finally {
       setLoading(false);
     }
-  }, [username, view, enabled, currentUserId]);
+  }, [username, view, enabled, currentUserId, kind]);
 
   useEffect(() => {
     void load();

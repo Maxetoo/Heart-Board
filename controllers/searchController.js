@@ -59,6 +59,10 @@ const search = async (req, res) => {
       ? Board.find({
           isActive: true,
           visibility: 'public',
+          // A heart token is stored as a board but is not one, and searching
+          // for a name would otherwise return every "Loving Heart 💛" ever
+          // blown at that person alongside their actual boards.
+          kind: { $ne: 'heart' },
           ...(browsing ? {} : { $or: [{ title: rx }, { description: rx }, { tags: rx }] }),
         })
           .populate('owner', 'username displayName profileImage isVerified')
@@ -74,6 +78,7 @@ const search = async (req, res) => {
             $match: {
               isActive: true,
               visibility: 'public',
+              kind: { $ne: 'heart' },
               ...(browsing ? { tags: { $exists: true, $ne: [] } } : { tags: rx }),
             },
           },
@@ -105,7 +110,9 @@ const search = async (req, res) => {
  */
 const globalStats = async (req, res) => {
   const [totalBoards, totalMessages, curatorAgg, reactionAgg] = await Promise.all([
-    Board.countDocuments({ isActive: true, visibility: 'public' }),
+    // Heart tokens are boards underneath; counting them would overstate how
+    // many boards the platform has by however many hearts have been blown.
+    Board.countDocuments({ isActive: true, visibility: 'public', kind: { $ne: 'heart' } }),
     Message.countDocuments({ context: 'board' }),
     Message.aggregate([
       { $match: { context: 'board' } },

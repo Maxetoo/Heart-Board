@@ -135,6 +135,13 @@ const TTL = {
   BOARD_MESSAGES: 2 * 60,
   MESSAGE:        5 * 60,
   MY_MESSAGES:    2 * 60,
+  // The hero counters. Four collection-wide scans, refetched by every client
+  // every 60s, for numbers nobody watches tick — so a long TTL costs nothing
+  // and takes the query off the hot path entirely.
+  GLOBAL_STATS:   5 * 60,
+  // The heart radar's pool. Short, because it is meant to feel live — and
+  // blowing a heart invalidates it outright, so this is only the ceiling.
+  RECENT_HEARTS:  60,
 };
 
 // ─── Readiness ────────────────────────────────────────────────────────────────
@@ -261,6 +268,9 @@ const keys = {
   boardMessages: (slug, qs)    => `boardMsgs:${slug}:${qs}`,
   message:       (id)          => `msg:${id}`,
   myMessages:    (userId, qs)  => `myMsgs:${userId}:${qs}`,
+  // Platform-wide totals. One key: the response is identical for everybody.
+  globalStats:   ()            => 'globalStats',
+  recentHearts:  (limit)       => `recentHearts:${limit}`,
 };
 
 module.exports = { cache, invalidate, invalidatePattern, cacheGet, cacheSet, keys, TTL };

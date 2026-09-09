@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
+import { Link } from 'react-router-dom';
+import {
   X, 
   PenLine, 
   Mic, 
@@ -1520,7 +1521,13 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [sendHeartConfirmation, setSendHeartConfirmation] = useState<{
     heart: SemanticHeart;
     recipient: string;
+    /** Who it actually went to, so the confirmation can link to their profile. */
+    recipients: { name: string; handle: string }[];
+    /** Handles that already had this heart category, so nothing was added. */
+    alreadySent: string[];
   } | null>(null);
+  /** Surfaced on the Send Heart panel when the blow could not be saved. */
+  const [sendHeartError, setSendHeartError] = useState<string | null>(null);
   const [createdPostConfirmation, setCreatedPostConfirmation] = useState<any | null>(null);
 
   // Real accounts from GET /search. There is no "browse all users" state —
@@ -2321,49 +2328,113 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               <button
                 type="button"
                 disabled={!selectedSendHeart || selectedSendHeartRecipients.length === 0 || isBlowingHeart}
-                onClick={() => {
+                // Blowing a heart now WRITES it.
+                //
+                // This used to build a plain object with an invented id, hand it
+                // to the local feed and stop there — nothing ever reached the
+                // API. The heart therefore disappeared on the next reload and
+                // never showed up on the recipient's Heartboard, because as far
+                // as the server was concerned it had never happened. Each heart
+                // is stored as a board with kind: 'heart', owner = sender,
+                // receipent = the person it was blown to.
+                onClick={async () => {
                   if (!selectedSendHeart || selectedSendHeartRecipients.length === 0) return;
-                  setIsBlowingHeart(true);
                   const chosenHeartObj = SEMANTIC_HEARTS.find(h => h.id === selectedSendHeart) || SEMANTIC_HEARTS[0];
-                  
-                  setTimeout(() => {
-                    setIsBlowingHeart(false);
-                    const recipientNames = selectedSendHeartRecipients.map(u => u.name).join(', ');
-                    const newHeartPost: any = {
-                      id: `heart-token-${Date.now()}`,
-                      authorName: authorName?.trim() || 'You',
-                      recipientName: recipientNames,
-                      content: `${chosenHeartObj.label} Heart ${chosenHeartObj.emoji} blown to ${recipientNames} with deepest appreciation!`,
-                      type: 'heart_token',
-                      visibility: PostVisibility.PUBLIC,
-                      createdAt: new Date().toISOString(),
-                      targetId: selectedSendHeartRecipients[0]?.handle || 'user',
-                      targetType: EntityType.WALL,
-                      reactions: 1,
-                      theme: '#FAF0EC',
-                      frameBg: '#FAF0EC',
-                      selectedHearts: [chosenHeartObj.id],
-                      heartDetails: {
-                        id: chosenHeartObj.id,
-                        label: chosenHeartObj.label,
-                        emoji: chosenHeartObj.emoji,
-                        bubbleColor: chosenHeartObj.bubbleColor
-                      },
-                      category: 'vouch',
-                      eventType: 'Moment',
-                      statusBadge: `${chosenHeartObj.emoji} HEART TOKEN`,
-                      isHeartToken: true,
-                      isCreatedByUser: true,
-                      section: 'hearts'
-                    };
-                    if (onPostCreated) {
-                      onPostCreated(newHeartPost);
+
+                  setSendHeartError(null);
+                  setIsBlowingHeart(true);
+
+                  try {
+                    const note = sendHeartNote.trim();
+                    const delivered: { name: string; handle: string }[] = [];
+                    const alreadyHad: string[] = [];
+
+                    // One token per recipient, so each person's Heartboard shows
+                    // the heart addressed to them rather than a shared row.
+                    //
+                    // No separate message is posted: a heart token IS the
+                    // statement, and one person gets exactly one token per heart
+                    // category. Writing a message onto it as well would let the
+                    // same category carry two entries from the same sender.
+                    for (const target of selectedSendHeartRecipients) {
+                      const username = usernameOf(target.handle);
+                      const body =
+                        note ||
+                        `${chosenHeartObj.label} Heart ${chosenHeartObj.emoji} blown to ${target.name} with deepest appreciation!`;
+
+                      const { board, alreadySent } = await createBoard({
+                        title: `${chosenHeartObj.label} Heart ${chosenHeartObj.emoji}`.slice(0, 80),
+                        description: body.slice(0, 300),
+                        visibility: 'public',
+                        receipent: username,
+                        kind: 'heart',
+                        style: {
+                          theme: '#FAF0EC',
+                          sticker: null,
+                          confetti: 'heart',
+                          hearts: [chosenHeartObj.id],
+                        },
+                      });
+
+                      if (alreadySent) alreadyHad.push(`@${username}`);
+                      delivered.push({ name: target.name, handle: target.handle });
+
+                      if (onPostCreated) {
+                        onPostCreated({
+                          id: board._id,
+                          slug: board.slug,
+                          authorName: currentUser?.name || authorName?.trim() || 'You',
+                          authorHandle: currentUser?.handle,
+                          authorId: currentUser?.id,
+                          recipientName: target.name,
+                          recipientHandle: target.handle,
+                          recipientId: target.id,
+                          content: body,
+                          type: 'heart_token',
+                          visibility: PostVisibility.PUBLIC,
+                          createdAt: board.createdAt,
+                          targetId: username,
+                          targetType: EntityType.WALL,
+                          reactions: 0,
+                          theme: '#FAF0EC',
+                          frameBg: '#FAF0EC',
+                          confetti: 'heart',
+                          selectedHearts: [chosenHeartObj.id],
+                          heartDetails: {
+                            id: chosenHeartObj.id,
+                            label: chosenHeartObj.label,
+                            emoji: chosenHeartObj.emoji,
+                            bubbleColor: chosenHeartObj.bubbleColor,
+                          },
+                          category: 'vouch',
+                          eventType: 'Moment',
+                          statusBadge: `${chosenHeartObj.emoji} HEART TOKEN`,
+                          isHeartToken: true,
+                          isCreatedByUser: true,
+                          section: 'hearts',
+                        });
+                      }
                     }
+
                     setSendHeartConfirmation({
                       heart: chosenHeartObj,
-                      recipient: recipientNames
+                      recipient: delivered.map((d) => d.name).join(', '),
+                      recipients: delivered,
+                      // Blowing a category you have already given someone is not
+                      // an error — they keep the one heart they already have —
+                      // but saying nothing would look like a second one landed.
+                      alreadySent: alreadyHad,
                     });
-                  }, 700);
+                  } catch (e) {
+                    const err = toApiError(e);
+                    setSendHeartError(
+                      err.status === 401
+                        ? 'Please sign in again to blow this heart.'
+                        : err.message || 'We could not blow that heart. Please try again.',
+                    );
+                  } finally {
+                    setIsBlowingHeart(false);
+                  }
                 }}
                 className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all shadow-none flex items-center justify-center gap-2 cursor-pointer ${
                   !selectedSendHeart || selectedSendHeartRecipients.length === 0 || isBlowingHeart
@@ -2388,6 +2459,14 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   </>
                 )}
               </button>
+
+              {/* The blow is a real write now, so it can fail — say so instead
+                  of showing a confirmation for something that never saved. */}
+              {sendHeartError && (
+                <p className="text-xs font-semibold text-[#E52E40] bg-red-50 border border-red-100 rounded-2xl px-4 py-3 -mt-1">
+                  {sendHeartError}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -2454,10 +2533,35 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
                 {/* Details Summary Container */}
                 <div className="w-full bg-[#FAF9F8] rounded-3xl p-5 sm:p-6 space-y-3.5 text-left">
-                  <div className="flex items-center justify-between text-sm sm:text-base">
-                    <span className="text-[#808897] font-medium">Recipient</span>
-                    <span className="text-[#1A1B25] font-bold truncate max-w-[200px] text-right">
-                      {sendHeartConfirmation.recipient.startsWith('@') ? sendHeartConfirmation.recipient : `@${sendHeartConfirmation.recipient}`}
+                  {/* Recipients, each a real link to their Heartboard — where
+                      the heart that was just blown is now waiting. They used to
+                      be inert text, so "check it landed" had no route out of
+                      this screen. */}
+                  <div className="flex items-start justify-between gap-3 text-sm sm:text-base">
+                    <span className="text-[#808897] font-medium shrink-0">Recipient</span>
+                    <span className="flex flex-wrap justify-end gap-x-2 gap-y-1 text-right">
+                      {sendHeartConfirmation.recipients.length > 0 ? (
+                        sendHeartConfirmation.recipients.map((r) => (
+                          <Link
+                            key={r.handle}
+                            to={`/profile/${encodeURIComponent(usernameOf(r.handle))}`}
+                            onClick={() => {
+                              setSendHeartConfirmation(null);
+                              setIsSendHeartOpen(false);
+                              onClose();
+                            }}
+                            className="text-[#FE6349] hover:text-[#e05234] font-bold underline decoration-transparent hover:decoration-current underline-offset-2 truncate max-w-[200px] cursor-pointer"
+                          >
+                            @{usernameOf(r.handle)}
+                          </Link>
+                        ))
+                      ) : (
+                        <span className="text-[#1A1B25] font-bold truncate max-w-[200px]">
+                          {sendHeartConfirmation.recipient.startsWith('@')
+                            ? sendHeartConfirmation.recipient
+                            : `@${sendHeartConfirmation.recipient}`}
+                        </span>
+                      )}
                     </span>
                   </div>
 
@@ -2480,6 +2584,14 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                       “{sendHeartConfirmation.heart.label} Heart Token”
                     </p>
                   </div>
+
+                  {sendHeartConfirmation.alreadySent.length > 0 && (
+                    <p className="text-xs font-semibold text-[#808897] leading-relaxed">
+                      {sendHeartConfirmation.alreadySent.join(', ')} already had your{' '}
+                      {sendHeartConfirmation.heart.label} Heart — one per person per category, so
+                      the one they have stands.
+                    </p>
+                  )}
                 </div>
               </div>
 

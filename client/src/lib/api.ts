@@ -44,13 +44,28 @@ export function toApiError(e: unknown): ApiError {
 
   return {
     status,
-    message:
-      data?.message ||
-      data?.msg ||
-      err?.message ||
-      'Network error occurred',
+    // The server's own message when it sent one — those are written for a
+    // person. Otherwise a plain sentence, NOT err.message: axios's version of
+    // that is "Request failed with status code 500" or "Network Error", which
+    // is our diagnostic wording leaking into the page.
+    message: data?.message || data?.msg || fallbackMessage(status),
     isNetworkError: status === 0,
   };
+}
+
+/** Plain-language stand-in for a response that carried no message of its own. */
+function fallbackMessage(status: number): string {
+  if (status === 0) {
+    return 'We could not reach Heartboard. Check your connection and try again.';
+  }
+  if (status === 401) return 'Please sign in to continue.';
+  if (status === 403) return 'You do not have access to that.';
+  if (status === 404) return 'We could not find that.';
+  if (status === 429) return 'That is a lot of requests. Please wait a moment and try again.';
+  if (status >= 500) {
+    return 'We are having trouble reaching our servers right now. Please try again in a moment.';
+  }
+  return 'Something went wrong. Please try again.';
 }
 
 /**

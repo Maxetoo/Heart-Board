@@ -15,6 +15,8 @@ const {
   flagBoard,
   unflagBoard,
   getBoardLikes,
+  getSentHearts,
+  getRecentHearts,
   getBoardsByHashtag,
 } = require('../controllers/boardController');
 
@@ -46,6 +48,19 @@ BoardRoute.get(
 );
 
 BoardRoute.route('/likes/me').get(authentication, getBoardLikes);
+
+// Heart tokens this account has blown at one person. Must sit above /:slug.
+BoardRoute.get('/hearts/sent', authentication, getSentHearts);
+
+// The hero radar's pool of recent public hearts. Public — the landing page
+// shows it signed out — and cached briefly, since every open tab polls it.
+// createBoard busts the key, so a heart blown now appears on the next poll
+// rather than waiting out the TTL.
+BoardRoute.get(
+  '/hearts/recent',
+  cache(TTL.RECENT_HEARTS, req => keys.recentHearts(req.query.limit || 'default')),
+  getRecentHearts
+);
 
 // Hashtag profile — all boards tagged with #tag
 BoardRoute.get('/hashtag/:tag', checkUser, getBoardsByHashtag);

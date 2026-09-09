@@ -31,8 +31,13 @@ const TAGGED_RECIPIENT_MATCH = (userId) => ({
     $or: [{ receipent: userId }, { receipentOriginal: userId }],
 });
 
+// Heart tokens are stored as boards, but they are not boards to the product and
+// must never reach a board statistic: blowing one is not creating a board, and
+// receiving one is not being tagged on a board.
+const NOT_A_HEART = { kind: { $ne: 'heart' } };
+
 async function computeLiveStats(userId) {
-    const ownedBoards = await Board.find({ owner: userId, isActive: true })
+    const ownedBoards = await Board.find({ owner: userId, isActive: true, ...NOT_A_HEART })
         .select('_id')
         .lean();
     const boardIds = ownedBoards.map(b => b._id);
@@ -70,12 +75,16 @@ async function computeLiveStats(userId) {
             // now, and so the field keeps working once it is populated.
             Board.countDocuments({
                 ...TAGGED_RECIPIENT_MATCH(userId),
-                // Same exclusion the tagged LIST applies, or the count and the
+                // Same exclusions the tagged LIST applies, or the count and the
                 // list disagree for anyone who addressed a board to themselves.
+                // Hearts are addressed to a person too, but being sent one is
+                // not being tagged on a board — they belong to the Hearts tab
+                // and to no board count.
                 owner:            { $ne: userId },
                 receipentFlagged: false,
                 isActive:         true,
                 visibility:       TAGGED_VISIBILITY,
+                ...NOT_A_HEART,
             }),
         ]);
 
@@ -110,7 +119,9 @@ async function getMostActiveBoard(userId) {
 
 async function getTopCurator(userId) {
     const uid = new mongoose.Types.ObjectId(userId.toString());
-    const ownedBoards = await Board.find({ owner: userId, isActive: true }).select('_id').lean();
+    const ownedBoards = await Board.find({ owner: userId, isActive: true, ...NOT_A_HEART })
+        .select('_id')
+        .lean();
     const boardIds = ownedBoards.map(b => b._id);
     if (!boardIds.length) return null;
 
@@ -246,8 +257,11 @@ const updateProfile = async (req, res) => {
 
 
 const getPublicProfile = async (req, res) => {
-    const { username } = req.params;
-    const { view }     = req.query;
+    const { username }  = req.params;
+    const { view, kind } = req.query;
+    // Heart tokens are boards underneath but belong only on the Hearts tabs, so
+    // every board list here excludes them unless ?kind=heart asks for them.
+    const kindMatch = kind === 'heart' ? { kind: 'heart' } : { kind: { $ne: 'heart' } };
 
     // displayName / isVerified / bio are what the profile header actually
     // renders; without them the client could only show the raw username.
@@ -257,7 +271,34 @@ const getPublicProfile = async (req, res) => {
     if (!user) throw new CustomError.NotFoundError(`No user found with username "@${username}".`);
 
     let boards;
-    if (view === 'tagged') {
+    if (view === 'collaboration') {
+        // Boards this account has left a MESSAGE on, made by somebody else —
+        // the Collaboration tab. The record of a collaboration is the message,
+        // so the board ids come from the Message collection; aggregate rather
+        // than .distinct(), which Stable API v1 does not allow.
+        const contributed = await Message.aggregate([
+            {
+                $match: {
+                    sender:  new mongoose.Types.ObjectId(user._id.toString()),
+                    context: 'board',
+                    board:   { $ne: null },
+                },
+            },
+            { $group: { _id: '$board' } },
+        ]);
+
+        boards = await Board.find({
+            _id:        { $in: contributed.map((r) => r._id) },
+            owner:      { $ne: user._id },
+            isActive:   true,
+            visibility: 'public',
+            ...kindMatch,
+        })
+            .select('title description slug stats tier tags kind owner receipent receipentHashtag coverImage event style preview createdAt visibility')
+            .populate('owner', 'username displayName profileImage')
+            .populate('receipent', 'username displayName profileImage')
+            .sort({ createdAt: -1 }).lean();
+    } else if (view === 'tagged') {
         // Boards SOMEONE ELSE created with this account as the recipient.
         // `owner: { $ne: user._id }` keeps a board the account addressed to
         // itself out of Tagged — that one belongs under Board.
@@ -267,8 +308,9 @@ const getPublicProfile = async (req, res) => {
             receipentFlagged: false,
             isActive: true,
             visibility: TAGGED_VISIBILITY,
+            ...kindMatch,
         })
-            .select('title description slug stats tier tags owner receipent receipentHashtag coverImage event style preview createdAt visibility')
+            .select('title description slug stats tier tags kind owner receipent receipentHashtag coverImage event style preview createdAt visibility')
             .populate('owner', 'username displayName profileImage')
             .populate('receipent', 'username displayName profileImage')
             .sort({ createdAt: -1 }).lean();
@@ -289,8 +331,10 @@ const getPublicProfile = async (req, res) => {
             owner: user._id,
             isActive: true,
             visibility: 'public',
+            ...kindMatch,
         })
-            .select('title description slug stats tier tags coverImage event style preview createdAt visibility')
+            .select('title description slug stats tier tags kind receipent receipentHashtag coverImage event style preview createdAt visibility')
+            .populate('receipent', 'username displayName profileImage')
             .sort({ createdAt: -1 }).lean();
     }
 

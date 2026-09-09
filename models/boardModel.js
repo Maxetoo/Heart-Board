@@ -76,6 +76,23 @@ const BoardSchema = new Schema({
     default: null,
   },
 
+  /**
+   * What this board IS: an ordinary message board, or a heart token blown at
+   * somebody.
+   *
+   * A heart token used to be a client-side object with an invented id that was
+   * pushed into the local feed and never sent anywhere, so it vanished on
+   * reload and never reached the recipient. Persisting it as a board with
+   * `kind: 'heart'` — the chosen heart lives in style.hearts, the recipient in
+   * receipent — gives it an owner, a recipient and an address, which is all the
+   * Hearts tab on either profile needs.
+   */
+  kind: {
+    type:    String,
+    enum:    ['board', 'heart'],
+    default: 'board',
+  },
+
   visibility: {
     type:    String,
     enum:    ['public', 'private', 'anonymous'],
@@ -136,7 +153,7 @@ const BoardSchema = new Schema({
 
   lastReaction: {
     type:    String,
-    enum:    ['clap', 'heart', 'thumbs', 'smile', 'fire', null],
+    enum:    ['clap', 'heart', 'thumbs', 'smile', 'sad', 'fire', null],
     default: null,
   },
 

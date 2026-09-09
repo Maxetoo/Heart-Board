@@ -1,4 +1,4 @@
-const sendCustomZeptoEmail = require('./emailConstruct');
+const sendEmail = require('./emailConstruct');
 
 const forgotPasswordEmail = (details) => {
     const { email, reset_url } = details;
@@ -34,6 +34,19 @@ const forgotPasswordEmail = (details) => {
             font-weight: bold;
             color: #FE6349;
         }
+        /* Sizing lives on the tag as well as here: Outlook renders through Word
+           and ignores most of this block, so the img carries its own width
+           attribute and inline styles. */
+        .header img {
+            display: block;
+            margin: 0 auto;
+            border: 0;
+            outline: none;
+            text-decoration: none;
+            width: 160px;
+            max-width: 160px;
+            height: auto;
+        }
         .content {
             margin: 20px 0;
             font-size: 16px;
@@ -59,7 +72,12 @@ const forgotPasswordEmail = (details) => {
 <body>
     <div class="container">
         <div class="header">
-            Heart Board
+            <!-- alt keeps the brand name visible in clients that block images
+                 by default, which is where the wordmark used to be. -->
+            <img src="https://res.cloudinary.com/dertr1bwm/image/upload/f_auto/q_auto/HeartBoard_Logo.jpg"
+                 alt="Heart Board"
+                 width="160"
+                 style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:160px;max-width:160px;height:auto;" />
         </div>
         <div class="content">
             <p>Hello,</p>
@@ -77,7 +95,7 @@ const forgotPasswordEmail = (details) => {
 `;
 
     const subject = "Password Reset";
-    return sendCustomZeptoEmail(email, 'User', subject, HTML_content);
+    return sendEmail(email, 'User', subject, HTML_content);
 }
 
 module.exports = forgotPasswordEmail;

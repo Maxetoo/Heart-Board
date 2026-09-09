@@ -1,15 +1,10 @@
 const { Worker } = require('bullmq');
 const bullConnection = require('../configs/bullMqConfig');
 
-const {
-  resetPasswordEmail,
-  resendVerificationEmail
-} = require('../email');
-
-const EMAIL_FUNCTIONS = {
-  resetPasswordEmail,
-  resendVerificationEmail
-};
+// The registry lives in email/index.js, so a new template is registered once
+// rather than here as well — the two lists could previously drift, and a
+// template missing from this copy failed every job that named it.
+const { templates: EMAIL_FUNCTIONS } = require('../email');
 
 const worker = new Worker(
   'email-sending-queue',

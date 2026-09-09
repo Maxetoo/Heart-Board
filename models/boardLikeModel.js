@@ -14,10 +14,29 @@ const LikeSchema = new Schema({
     ref: 'User',
     required: true,
   },
+  /**
+   * The primary reaction, kept as the first entry of `reactions`.
+   *
+   * Retained so documents written before multi-reaction support, and anything
+   * still reading a single value (Board.lastReaction), keep working.
+   */
   reaction: {
     type: String,
-    enum: ['clap', 'heart', 'thumbs', 'smile', 'fire'],
+    enum: ['clap', 'heart', 'thumbs', 'smile', 'sad', 'fire'],
     default: null,
+  },
+
+  /**
+   * Every reaction this user has put on this board.
+   *
+   * The board view has always let one person pick several (clap AND fire), but
+   * there was nowhere to store more than one — and nothing ever called the
+   * reaction endpoint at all, so a reaction lived only in React state and was
+   * gone on refresh.
+   */
+  reactions: {
+    type:    [{ type: String, enum: ['clap', 'heart', 'thumbs', 'smile', 'sad', 'fire'] }],
+    default: [],
   },
 }, { timestamps: true });
 

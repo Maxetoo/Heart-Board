@@ -8,6 +8,7 @@ const {
   oauthCallback,
   logout,
   forgotPassword,
+  verifyResetToken,
   resetPassword,
 } = require('../controllers/authController');
 const passport = require('../configs/passport');
@@ -21,7 +22,9 @@ AuthRoute.route('/resend-verification-email').post(resendVerificationEmail);
 AuthRoute.route('/login').post(login);
 AuthRoute.route('/logout').post(logout);
 AuthRoute.route('/forgot-password').post(forgotPassword);
-AuthRoute.route('/reset-password').patch(resetPassword);
+// GET checks the link is still live so the page can show the password fields
+// only when they lead somewhere; PATCH performs the reset.
+AuthRoute.route('/reset-password').get(verifyResetToken).patch(resetPassword);
 
 
 

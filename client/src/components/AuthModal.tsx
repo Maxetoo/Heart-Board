@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Globe
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { RegisteredUser } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { toApiError } from '../lib/api';
@@ -371,12 +372,19 @@ export const AuthView: React.FC<AuthModalProps> = ({
             </button>
           )}
 
-          <div className="flex items-center gap-2.5">
+          {/* The mark and the wordmark are the way home. They were a plain div,
+              so the one control every other page makes clickable did nothing
+              here — on a phone, where the "Back to Heartboard" label is hidden,
+              that left the small X as the only way out. A real <Link> also
+              means a visible href and cmd/middle-click. */}
+          <Link
+            to="/"
+            aria-label="Heartboard home"
+            className="flex items-center gap-2.5 cursor-pointer rounded-full transition-opacity hover:opacity-80"
+          >
             <HeartboardLogo className="w-8 h-8 shrink-0" />
-            <div>
-              <span className="font-extrabold text-base text-[#1A1B25] tracking-tight">Heartboard</span>
-            </div>
-          </div>
+            <span className="font-extrabold text-base text-[#1A1B25] tracking-tight">Heartboard</span>
+          </Link>
         </div>
 
         {/* Step Progress Pills for Onboarding / Verification */}
@@ -409,10 +417,16 @@ export const AuthView: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Exit / Return to Platform Button */}
+        {/* Cancel. On a phone the label is hidden, so the button collapses to
+            the X alone — it has to be a CIRCLE there, not the leftover pill
+            shape that the horizontal padding of the wide version produced. A
+            fixed square box plus rounded-full is what makes it exactly round;
+            padding around an inline icon never can, because the icon's line box
+            is taller than it is wide. */}
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F8F9FB] hover:bg-[#ECEFF3] text-[#666D80] hover:text-[#1A1B25] text-xs font-bold transition-colors cursor-pointer border border-[#ECEFF3]"
+          className="shrink-0 w-9 h-9 p-0 sm:w-auto sm:h-auto sm:px-3.5 sm:py-1.5 aspect-square sm:aspect-auto flex items-center justify-center gap-1.5 rounded-full bg-[#F8F9FB] hover:bg-[#ECEFF3] text-[#666D80] hover:text-[#1A1B25] text-xs font-bold transition-colors cursor-pointer border border-[#ECEFF3]"
           aria-label="Back to Heartboard"
         >
           <span className="hidden sm:inline">Back to Heartboard</span>
@@ -489,7 +503,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@domain.com"
-                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-4 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all"
+                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-4 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -497,16 +511,16 @@ export const AuthView: React.FC<AuthModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-bold text-[#666D80]">Password</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSuccessMessage('Password reset instructions sent to your email.');
-                      setErrorMessage(null);
-                    }}
+                  {/* Goes to the reset flow. It used to just print "Password
+                      reset instructions sent to your email" and send nothing —
+                      no request, no email, no way to reach the form that asks
+                      for an address. /forgot-password is that form. */}
+                  <Link
+                    to="/forgot-password"
                     className="text-[11px] font-bold text-[#FE6349] hover:underline cursor-pointer"
                   >
                     Forgot?
-                  </button>
+                  </Link>
                 </div>
                 <div className="relative">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
@@ -517,7 +531,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
-                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-10 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all"
+                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-10 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-colors"
                   />
                   <button
                     type="button"
@@ -604,7 +618,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="sarah@example.com"
-                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-4 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all"
+                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-4 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -620,7 +634,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Create a password (min 6 chars)"
-                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-10 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all"
+                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-10 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-colors"
                   />
                   <button
                     type="button"
@@ -802,7 +816,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
                       setErrorMessage(null);
                     }}
                     placeholder="yourname"
-                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3.5 pl-10 pr-32 text-sm font-bold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-all shadow-2xs"
+                    className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3.5 pl-10 pr-32 text-sm font-bold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-colors shadow-2xs"
                   />
 
                   {/* Real-time Indicator Pill */}

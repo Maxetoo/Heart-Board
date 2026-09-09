@@ -108,7 +108,11 @@ UserRoute.get(
   authentication,
   cache(TTL.PUBLIC_PROFILE, req => {
     const base = keys.publicProfile(req.params.username.toLowerCase());
-    return req.query.view ? `${base}:${req.query.view}` : base;
+    // `kind` selects between boards and heart tokens and so is part of the
+    // identity of the response — leaving it out of the key served one as the
+    // other for the rest of the TTL.
+    const suffix = [req.query.view, req.query.kind].filter(Boolean).join(':');
+    return suffix ? `${base}:${suffix}` : base;
   }),
   getPublicProfile
 );

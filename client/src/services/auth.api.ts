@@ -50,6 +50,21 @@ export async function forgotPassword(email: string) {
   return data;
 }
 
+/**
+ * GET /auth/reset-password?token=…
+ *
+ * Whether an emailed reset link is still live. The page asks before rendering
+ * the new-password fields, so a dead link says so instead of taking a password
+ * it cannot use.
+ */
+export async function verifyResetToken(token: string) {
+  const { data } = await api.get<{ valid: boolean; reason: string | null }>(
+    '/auth/reset-password',
+    { params: { token } },
+  );
+  return data;
+}
+
 /** PATCH (not POST) /auth/reset-password */
 export async function resetPassword(payload: {
   token: string;

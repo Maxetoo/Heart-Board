@@ -65,8 +65,12 @@ export interface ReactionCounts {
   clap?: number;
   heart?: number;
   smiley?: number;
+  sad?: number;
   fire?: number;
 }
+
+/** The reactions a board can carry, in the client's spelling. */
+export type ReactionType = 'clap' | 'heart' | 'smiley' | 'sad' | 'fire';
 
 export interface Contribution {
   id: string;
@@ -88,7 +92,7 @@ export interface Contribution {
   selectedHearts?: string[];
   reactions?: number;
   reactionCounts?: ReactionCounts;
-  userReactions?: ('clap' | 'heart' | 'smiley' | 'fire')[];
+  userReactions?: ReactionType[];
   isCreatedByUser?: boolean;
 }
 
@@ -119,7 +123,7 @@ export interface Post {
   targetType: EntityType;
   reactions: number;
   reactionCounts?: ReactionCounts;
-  userReactions?: ('clap' | 'heart' | 'smiley' | 'fire')[];
+  userReactions?: ReactionType[];
   canvasElements?: any[];
   /**
    * The message row holding this board's artwork.

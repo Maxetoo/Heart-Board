@@ -17,6 +17,7 @@ import {
   type Contribution,
   type Post,
   type ReactionCounts,
+  type ReactionType,
   type RegisteredUser,
 } from '../types';
 import type {
@@ -44,11 +45,11 @@ export function fromPostVisibility(v?: PostVisibility): BoardVisibility {
 }
 
 // ── Reactions ────────────────────────────────────────────────────────────────
-// The client offers clap | heart | smiley | fire.
-// The server enum is    clap | heart | thumbs | smile | fire.
+// The client offers clap | heart | smiley | sad | fire.
+// The server enum is    clap | heart | thumbs | smile | sad | fire.
 // 'smiley' <-> 'smile' is the only mismatch; 'thumbs' has no client equivalent.
 
-export type ClientReaction = 'clap' | 'heart' | 'smiley' | 'fire';
+export type ClientReaction = ReactionType;
 
 export function toClientReaction(r?: ReactionKey | null): ClientReaction | null {
   if (!r) return null;
@@ -69,8 +70,65 @@ export function toReactionCounts(
     clap: (counts.clap ?? 0) + (counts.thumbs ?? 0),
     heart: counts.heart ?? 0,
     smiley: counts.smile ?? 0,
+    sad: counts.sad ?? 0,
     fire: counts.fire ?? 0,
   };
+}
+
+/** A whole list of server reactions, in client spelling and de-duplicated. */
+export function toClientReactions(list?: ReactionKey[] | null): ClientReaction[] {
+  if (!Array.isArray(list)) return [];
+  const mapped = list
+    .map(toClientReaction)
+    .filter((r): r is ClientReaction => Boolean(r));
+  return [...new Set(mapped)];
+}
+
+export function fromClientReactions(list: ClientReaction[]): ReactionKey[] {
+  return [...new Set(list.map(fromClientReaction))];
+}
+
+export function totalReactions(counts: ReactionCounts): number {
+  return (
+    (counts.clap ?? 0) +
+    (counts.heart ?? 0) +
+    (counts.smiley ?? 0) +
+    (counts.sad ?? 0) +
+    (counts.fire ?? 0)
+  );
+}
+
+/**
+ * Which home-feed tab a board belongs to, by the reactions it has collected.
+ *
+ * The four tabs are not editorial buckets — they are the reactions themselves,
+ * read back:
+ *
+ *   ❤️  heart          -> Most Loved Today
+ *   👏  clap           -> This Moved People
+ *   😢  sad            -> This Moved People AND This Made People Cry
+ *   😀  smiley  🔥 fire -> Joyful Posts Around The World
+ *
+ * A board can therefore sit in several tabs at once, which is right: people
+ * reacted to it in several ways. Boards nobody has reacted to yet belong to no
+ * reaction, so they ride along in the default tab rather than being invisible.
+ */
+export const FEED_TAB_REACTIONS: Record<'all' | 'vouch' | 'tears' | 'hype', ReactionType[]> = {
+  all: ['heart'],
+  vouch: ['clap', 'sad'],
+  tears: ['sad'],
+  hype: ['smiley', 'fire'],
+};
+
+export function postMatchesFeedTab(
+  counts: ReactionCounts | undefined,
+  tab: 'all' | 'vouch' | 'tears' | 'hype',
+): boolean {
+  const c = counts ?? {};
+  if (FEED_TAB_REACTIONS[tab].some((r) => (c[r] ?? 0) > 0)) return true;
+  // Nothing has been reacted to it at all: keep it reachable on the default
+  // tab, or a board would be unfindable until a stranger happened to react.
+  return tab === 'all' && totalReactions(c) === 0;
 }
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -248,6 +306,13 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
   const previewElements = unwrapCanvasData(b.preview?.canvasData);
   const previewImage = b.preview?.imageUrl ?? undefined;
 
+  // A heart token is a board underneath. Everything that lists hearts — both
+  // Heartboard tabs, the hero ticker — keys off these three fields.
+  const isHeartToken = b.kind === 'heart';
+
+  const reactionCounts = toReactionCounts(b.reactionCounts);
+  const countedReactions = totalReactions(reactionCounts);
+
   return {
     id: b._id,
     slug: b.slug,
@@ -292,8 +357,13 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
     targetId: b.slug,
     targetType: b.receipentHashtag ? EntityType.WALL : EntityType.BOARD,
 
-    reactions: b.stats?.likes ?? 0,
-    reactionCounts: toReactionCounts(b.reactionCounts),
+    // Prefer the aggregated per-reaction totals; stats.likes only counts the
+    // PEOPLE who reacted, so a board with one person's clap+fire read as 1.
+    reactions: countedReactions || b.stats?.likes || 0,
+    reactionCounts,
+    // Which of them are the VIEWER'S cannot ride along on these responses —
+    // /discover and /:slug are cached with no viewer in the key. They come
+    // from GET /board/likes/me and are merged over the feed in App.tsx.
     userReactions: [],
 
     eventType: b.event ?? undefined,
@@ -307,7 +377,9 @@ export function boardToPost(b: BoardDTO, currentUserId?: string): Post {
 
     contributions: [],
     isCreatedByUser: Boolean(currentUserId && owner?._id === currentUserId),
-    section: 'board',
+    isHeartToken,
+    section: isHeartToken ? 'hearts' : 'board',
+    heartDetails: isHeartToken && b.style?.hearts?.[0] ? { id: b.style.hearts[0] } : undefined,
 
     messageCount: b.stats?.messages ?? 0,
     shareCount: b.stats?.shares ?? 0,

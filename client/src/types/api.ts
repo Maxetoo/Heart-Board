@@ -24,7 +24,7 @@ export type BoardEvent =
   | 'other';
 
 /** models/boardLikeModel.js — note 'smile', not 'smiley', and 'thumbs' exists. */
-export type ReactionKey = 'clap' | 'heart' | 'thumbs' | 'smile' | 'fire';
+export type ReactionKey = 'clap' | 'heart' | 'thumbs' | 'smile' | 'sad' | 'fire';
 
 export type MessageType = 'text' | 'audio' | 'emblem';
 export type MessageContext = 'board' | 'direct';
@@ -98,6 +98,13 @@ export interface BoardDTO {
   receipentFlagged?: boolean;
   receiprentFlagReason?: string | null;
   coverImage?: string | null;
+  /**
+   * Whether this row is an ordinary message board or a blown heart token.
+   * Heart tokens are stored as boards (owner = sender, receipent = who it went
+   * to, style.hearts = which heart), which is what makes them survive a reload
+   * and show up on the recipient's Heartboard.
+   */
+  kind?: 'board' | 'heart';
   event?: BoardEvent | null;
   visibility: BoardVisibility;
   tier: BoardTier;

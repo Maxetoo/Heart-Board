@@ -46,7 +46,7 @@ import {
 } from '../lib/notifications';
 import { avatarDataUri, avatarPngFile, randomAvatarSeeds } from '../lib/avatars';
 import { avatarFromParts, usernameOf } from '../lib/adapters';
-import { useLikedProfiles } from '../hooks/useLikedProfiles';
+import { useProfileHeartTokens, type HeartSpec } from '../hooks/useHeartTokens';
 import { useMyBoards, useProfileBoards } from '../hooks/useBoards';
 import { formatStatCount, plural } from '../lib/format';
 import { SkeletonBlock } from './SmartImage';
@@ -355,23 +355,60 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const canEditAccount = Boolean(authUser);
   const isOAuthAccount = authUser?.oauthProvider === 'google';
 
-  // Hearts the viewer has dropped on other people's profiles.
-  const likedProfiles = useLikedProfiles(authUser?.id);
+  // ── The profile heart button ───────────────────────────────────────────────
+  //
+  // It used to toggle POST /user/:id/like — a private counter that showed up
+  // nowhere. It now blows a real LOVING heart token at this person, which lands
+  // in the Loving category of their Heartboard, and pressing it again takes that
+  // token back. One token per category per pair of people, so the button is a
+  // straight on/off: given, or not given.
+  //
+  // The category itself is not a fixed list — it exists exactly as long as
+  // somebody's token is in it. Take back the last Loving heart on a profile and
+  // Loving stops being one of their categories.
+  const LOVING_HEART: HeartSpec = { id: 'loving', label: 'Loving', emoji: '💛', theme: '#FAF0EC' };
+
+  const viewedProfileHandle = usernameOf(profileUser?.handle);
   const viewedProfileId = profileUser?.id || undefined;
-  const hasHeartedProfile = likedProfiles.isLiked(viewedProfileId);
-  const heartPending = likedProfiles.isPending(viewedProfileId);
-  /** The server rejects hearting yourself, and a signed-out viewer has no set. */
-  const canHeartThisProfile = Boolean(authUser && viewedProfileId && viewedProfileId !== authUser.id);
+  const profileHearts = useProfileHeartTokens(
+    viewedProfileHandle || undefined,
+    authUser?.id,
+  );
+  const hasHeartedProfile = profileHearts.has(LOVING_HEART.id);
+  const heartPending = profileHearts.pending;
+  /** You cannot blow a heart at yourself, and a signed-out viewer has no set. */
+  const canHeartThisProfile = Boolean(
+    authUser && viewedProfileHandle && viewedProfileId !== authUser.id,
+  );
 
   const handleToggleProfileHeart = async () => {
     if (!authUser) {
-      showToast('Sign in to drop a heart');
+      // Reuses the gift-heart entry point purely for its auth gate: App sends
+      // the visitor to /login and brings them back here afterwards. Showing a
+      // toast and stopping left them with no way to act on the prompt.
+      if (onGiftHeart && profileUser) onGiftHeart(asRegisteredUser(profileUser));
+      else showToast('Sign in to blow a heart');
       return;
     }
     if (!canHeartThisProfile) return;
-    const result = await likedProfiles.toggle(viewedProfileId);
-    if (result === true) showToast(`You dropped a heart on ${profileUser?.name ?? 'this profile'}`);
-    else if (result === false) showToast('Heart removed');
+
+    const result = await profileHearts.toggle(LOVING_HEART);
+    if (result === true) {
+      showToast(`You blew a Loving Heart 💛 to ${profileUser?.name ?? 'this profile'}`);
+    } else if (result === false) {
+      showToast('Loving Heart removed');
+    } else {
+      showToast('That did not go through. Please try again.');
+      return;
+    }
+
+    // The heart it just wrote (or removed) belongs to this profile's Hearts tab,
+    // so whatever is on screen there is now one token out of date.
+    if (isOwnProfileView) {
+      myHeartsReceived.reload();
+    } else {
+      otherHeartsReceived.reload();
+    }
   };
 
   // File Input Ref
@@ -839,12 +876,26 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
    *   Board  = boards this person CREATED
    *   Tagged = boards someone ELSE created with this person as the recipient
    *
-   * Collaboration and Hearts have no server view, so they still derive from the
-   * `posts` this view was handed.
+   *   Collab = boards someone ELSE created that this person left a message on
+   *
+   * Hearts uses the owned/tagged views too — a blown heart is stored as a board
+   * with kind 'heart' — see the heart queries below.
+   *
+   * Collaboration used to have no server view and filtered the `posts` this
+   * component happened to be handed (the discover feed) for a contributor whose
+   * name matched. A board you wrote on is not in that list except by accident,
+   * so the tab was empty for almost everyone. The server answers it now, from
+   * the messages themselves.
    */
   const isOwnProfileView = !profileUser;
-  const serverBoardView: 'owned' | 'tagged' | null =
-    activeSubTab === 'board' ? 'owned' : activeSubTab === 'tagged' ? 'tagged' : null;
+  const serverBoardView: 'owned' | 'tagged' | 'collaboration' | null =
+    activeSubTab === 'board'
+      ? 'owned'
+      : activeSubTab === 'tagged'
+        ? 'tagged'
+        : activeSubTab === 'collaboration'
+          ? 'collaboration'
+          : null;
 
   // Own profile: GET /board?view=… (includes private and link-only boards).
   const myBoards = useMyBoards(serverBoardView ?? 'owned', {
@@ -861,17 +912,68 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const serverBoards = isOwnProfileView ? myBoards.items : otherBoards.items;
   const serverBoardsLoading = isOwnProfileView ? myBoards.loading : otherBoards.loading;
   const usingServerBoards = Boolean(serverBoardView && serverBoards);
-  const allAvailableItems = usingServerBoards ? (serverBoards as any[]) : posts;
 
   // Helper to reliably identify heart token items vs message boards
   const isHeartPost = (item: any) => {
     return Boolean(
-      item.isHeartToken || 
-      item.type === 'heart_token' || 
-      item.section === 'hearts' || 
+      item.isHeartToken ||
+      item.type === 'heart_token' ||
+      item.section === 'hearts' ||
       item.tab === 'hearts'
     );
   };
+
+  // A heart token IS a board underneath, so it would otherwise show up as a
+  // card on the Board and Tagged tabs as well as under Hearts.
+  const allAvailableItems = (usingServerBoards ? (serverBoards as any[]) : posts).filter(
+    (item) => !isHeartPost(item),
+  );
+
+  // ── Hearts, from the server ────────────────────────────────────────────────
+  //
+  // Sent hearts are boards this person owns; received hearts are boards
+  // addressed to them. Both were previously filtered out of whatever `posts`
+  // the view happened to be handed — the discover feed's first page on your own
+  // Heartboard, that person's public boards on someone else's — so a heart
+  // blown to you appeared only if it happened to be in that slice, and usually
+  // never appeared at all.
+  const heartsTabActive = activeSubTab === 'hearts';
+  const heartsEnabled =
+    heartsTabActive && (isOwnProfileView ? Boolean(authUser) : Boolean(profileUser?.handle));
+
+  const myHeartsSent = useMyBoards('owned', {
+    kind: 'heart',
+    enabled: heartsEnabled && isOwnProfileView,
+    currentUserId: authUser?.id,
+  });
+  const myHeartsReceived = useMyBoards('tagged', {
+    kind: 'heart',
+    enabled: heartsEnabled && isOwnProfileView,
+    currentUserId: authUser?.id,
+  });
+  const otherHeartsSent = useProfileBoards(usernameOf(profileUser?.handle), 'owned', {
+    kind: 'heart',
+    enabled: heartsEnabled && !isOwnProfileView,
+    currentUserId: authUser?.id,
+  });
+  const otherHeartsReceived = useProfileBoards(usernameOf(profileUser?.handle), 'tagged', {
+    kind: 'heart',
+    enabled: heartsEnabled && !isOwnProfileView,
+    currentUserId: authUser?.id,
+  });
+
+  const serverSentHearts = isOwnProfileView ? myHeartsSent.items : otherHeartsSent.items;
+  const serverReceivedHearts = isOwnProfileView ? myHeartsReceived.items : otherHeartsReceived.items;
+  // `items === null` covers the render between mount and the fetch effect, when
+  // `loading` is still false — otherwise the trophy case flashes "no hearts
+  // yet" before the first request has even been sent.
+  const heartsLoading =
+    heartsEnabled &&
+    (isOwnProfileView
+      ? myHeartsSent.loading || myHeartsReceived.loading ||
+        myHeartsSent.items === null || myHeartsReceived.items === null
+      : otherHeartsSent.loading || otherHeartsReceived.loading ||
+        otherHeartsSent.items === null || otherHeartsReceived.items === null);
 
   // Is this viewing another user's profile or own heartboard?
   const isViewingOtherUser = Boolean(profileUser);
@@ -904,25 +1006,47 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
     return p.isCreatedByUser === true || (p.authorName && p.authorName.toLowerCase() === userName.toLowerCase());
   });
 
-  // Dynamic user-received hearts: hearts sent TO the active user/profile
+  // Dynamic user-received hearts: hearts sent TO the active user/profile.
+  //
+  // The own-profile branch used to be "anything I did not create". That was
+  // harmless while `posts` only ever held tokens made in this browser session,
+  // but heart tokens are stored server-side now, so the discover feed carries
+  // everyone's — and every one of them would have counted as received by you.
+  // Match the recipient properly instead.
   const dynamicReceivedHearts = allHeartTokenPosts.filter((p: any) => {
-    if (isViewingOtherUser) {
-      const rec = (p.recipientName || p.targetId || '').toLowerCase();
-      const recH = (p.recipientHandle || '').toLowerCase();
-      const target = currentUserName.toLowerCase();
-      const targetH = currentUserHandle.toLowerCase();
-      const recs = (p.recipients || []).map((r: string) => r.toLowerCase());
-      return rec === target || recH === targetH || recs.includes(target) || recs.includes(targetH);
-    }
-    return p.isCreatedByUser !== true;
+    if (!isViewingOtherUser && p.isCreatedByUser === true) return false;
+
+    const rec = (p.recipientName || p.targetId || '').toLowerCase();
+    const recH = usernameOf(p.recipientHandle);
+    const recs = (p.recipients || []).map((r: string) => r.toLowerCase());
+    const target = currentUserName.toLowerCase();
+    const targetH = usernameOf(currentUserHandle);
+    const recipientId = (p.recipientId || '').toLowerCase();
+
+    return (
+      (Boolean(targetH) && (recH === targetH || recs.includes(`@${targetH}`) || recs.includes(targetH))) ||
+      (Boolean(target) && (rec === target || recs.includes(target))) ||
+      (Boolean(authUser?.id) && !isViewingOtherUser && recipientId === authUser!.id.toLowerCase()) ||
+      (Boolean(profileUser?.id) && isViewingOtherUser && recipientId === profileUser!.id.toLowerCase())
+    );
   });
 
-  // Heart tokens have no backend of their own yet (see CLIENT_MIGRATION_INSTRUCTIONS.txt) —
-  // "sent"/"received" here only reflects tokens created client-side this
-  // session, via posts. There is no fabricated history standing in for real
-  // data any more; an empty list means honestly zero, not "loading".
-  const allReceivedHearts = dynamicReceivedHearts;
-  const allSentHearts = dynamicSentHearts;
+  /**
+   * Server hearts first, with anything created in this session merged on top.
+   *
+   * The local half matters for the seconds between blowing a heart and the
+   * server list refetching — the newly created token is already in `posts`, and
+   * dropping it would make the heart look like it had not landed.
+   */
+  const mergeHearts = (fromServer: any[] | null, local: any[]) => {
+    const server = (fromServer ?? []).filter(isHeartPost);
+    if (!fromServer) return local;
+    const seen = new Set(server.map((p) => p.id));
+    return [...server, ...local.filter((p) => !seen.has(p.id))];
+  };
+
+  const allReceivedHearts = mergeHearts(serverReceivedHearts, dynamicReceivedHearts);
+  const allSentHearts = mergeHearts(serverSentHearts, dynamicSentHearts);
 
   // Dynamically calculate category stats strictly for the active filter (Received vs Sent)
   const buildCategoriesForDataset = (dataset: any[], isSentFilter: boolean): HeartCategoryCardData[] => {
@@ -930,47 +1054,21 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
       const matchedEntries: any[] = [];
 
       dataset.forEach((post) => {
-        let isMatch = false;
+        // A heart token carries the category it WAS SENT AS, and nothing else
+        // decides which category it belongs to.
+        //
+        // This used to fall back to scanning the token's text — "loving" in the
+        // body put it under Loving, "vision" under Visionary, and the default
+        // wording ("Loving Heart 💛 blown to X with deepest appreciation!")
+        // contains several of those words at once. So one heart could light up
+        // three categories, and a category could appear on a profile that had
+        // never been sent it. Every token has a real id now; use it.
+        const heartIds: string[] = [
+          ...(Array.isArray(post.selectedHearts) ? post.selectedHearts : []),
+          ...(post.heartDetails?.id ? [post.heartDetails.id] : []),
+        ].map((h: string) => String(h).toLowerCase());
 
-        // 1. Check selectedHearts array
-        if (Array.isArray(post.selectedHearts) && post.selectedHearts.length > 0) {
-          if (
-            post.selectedHearts.includes(spec.id) ||
-            post.selectedHearts.some((h: string) => h.toLowerCase().includes(spec.categoryName.toLowerCase()))
-          ) {
-            isMatch = true;
-          }
-        }
-
-        // 2. Check heartDetails object
-        if (!isMatch && post.heartDetails) {
-          const hId = (post.heartDetails.id || '').toLowerCase();
-          const hLabel = (post.heartDetails.label || '').toLowerCase();
-          if (hId === spec.id || hLabel.includes(spec.categoryName.toLowerCase()) || spec.categoryName.toLowerCase().includes(hLabel)) {
-            isMatch = true;
-          }
-        }
-
-        // 3. Check heart token type / section / content
-        if (!isMatch && (post.isHeartToken || post.section === 'hearts' || post.type === 'heart_token')) {
-          const content = (post.content || '').toLowerCase();
-          const badge = (post.statusBadge || '').toLowerCase();
-          const title = (post.title || '').toLowerCase();
-          const catNameLower = spec.categoryName.toLowerCase();
-
-          if (
-            content.includes(catNameLower) ||
-            badge.includes(catNameLower) ||
-            title.includes(catNameLower) ||
-            (spec.id === 'loving' && (content.includes('loving') || content.includes('love'))) ||
-            (spec.id === 'visionary' && content.includes('vision')) ||
-            (spec.id === 'leadership' && content.includes('leader')) ||
-            (spec.id === 'hardworking' && (content.includes('hard work') || content.includes('hardworking'))) ||
-            (spec.id === 'reliable' && content.includes('reliab'))
-          ) {
-            isMatch = true;
-          }
-        }
+        const isMatch = heartIds.includes(spec.id);
 
         if (isMatch) {
           if (isSentFilter) {
@@ -1327,12 +1425,14 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
             {/* Action buttons: Heart & Message */}
             <div className="flex items-center gap-3 mt-2">
-              {/* Drops a heart on the person (POST /user/:id/like). Distinct
-                  from "gift a heart token", which composes a board — that is
-                  the Message button's neighbour in the create flow. */}
+              {/* Blows a Loving heart token straight at this person — no
+                  composer, no form. Pressing it again takes that heart back
+                  off their Heartboard. */}
               <button
                 onClick={handleToggleProfileHeart}
-                disabled={heartPending || !canHeartThisProfile}
+                // Signed-out visitors keep the button live: pressing it routes
+                // them to sign-in. Only "this is you" makes it inert.
+                disabled={heartPending || Boolean(authUser && viewedProfileId === authUser.id)}
                 aria-pressed={hasHeartedProfile}
                 className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95 border-2 disabled:cursor-default disabled:opacity-60 ${
                   hasHeartedProfile
@@ -1551,6 +1651,15 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
       {activeSubTab === 'hearts' ? (
         displayHeartCategories.length === 0 ? (
           <div className="bg-white rounded-[2.5rem] p-12 text-center border border-gray-100 flex flex-col items-center justify-center my-6">
+            {/* Hearts are fetched now, so "none yet" must not be shown while
+                the request is still out — that reads as an empty trophy case. */}
+            {heartsLoading ? (
+              <>
+                <div className="w-6 h-6 border-2 border-[#FE6349] border-t-transparent rounded-full animate-spin mb-3" />
+                <p className="text-xs font-semibold text-gray-400">Loading hearts…</p>
+              </>
+            ) : (
+            <>
             <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mb-3 text-[#FE6349]">
               <Search className="w-6 h-6 stroke-[2]" />
             </div>
@@ -1564,6 +1673,8 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 ? `No ${heartFilter === 'received' ? 'received' : 'sent'} hearts match "${searchQuery}". Try searching for a category like "Loving" or a username.`
                 : `Heart tokens ${heartFilter === 'received' ? 'blown to you by other users' : 'you have blown to other users'} will appear here.`}
             </p>
+            </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-6 w-full">

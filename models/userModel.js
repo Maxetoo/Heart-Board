@@ -212,8 +212,12 @@ UserSchema.statics.findOrCreateOAuthUser = async function(profile, provider) {
 UserSchema.statics.recalculateStats = async function(userId) {
     const User = this;
 
-    // Only count active boards
-    const boards = await Board.find({ owner: userId, isActive: true }).select('_id').lean();
+    // Only count active boards — and a heart token is not one. Blowing a heart
+    // stores a board with kind 'heart', so without this exclusion every heart
+    // you sent inflated your "boards created" figure.
+    const boards = await Board.find({ owner: userId, isActive: true, kind: { $ne: 'heart' } })
+        .select('_id')
+        .lean();
     const boardIds = boards.map(b => b._id);
 
     const totalBoards = boards.length;

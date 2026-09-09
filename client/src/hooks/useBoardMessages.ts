@@ -66,6 +66,9 @@ export function useBoardMessages(
           patch.messageCount = full.messageCount;
           patch.shareCount = full.shareCount;
           patch.reactions = full.reactions;
+          // The per-reaction breakdown the picker renders. Without it the
+          // detail view reset every count to zero the moment it hydrated.
+          patch.reactionCounts = full.reactionCounts;
           patch.hashtags = full.hashtags;
         }
 
