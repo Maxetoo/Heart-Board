@@ -103,9 +103,16 @@ UserRoute.post('/:id/like', authentication, likeProfile);
 // controllers already deletes. The trade is that a ?view=tagged entry is not
 // invalidated on write and can be up to TTL stale; switch those calls to
 // invalidatePattern(`${key}*`) if that view ever ships.
+//
+// No authentication. A profile, its public boards and its public hearts are
+// meant to be readable by anyone holding the link. The handler never reads
+// req.user — every board query filters on visibility itself — so the response
+// is the same for every caller, which is also what makes the viewer-free cache
+// key safe. This used to require a session: a signed-out visitor got a 401 and
+// the client fell back to a placeholder built from the URL handle, with no
+// boards, no hearts, and a generated face instead of the owner's real picture.
 UserRoute.get(
   '/profile/:username',
-  authentication,
   cache(TTL.PUBLIC_PROFILE, req => {
     const base = keys.publicProfile(req.params.username.toLowerCase());
     // `kind` selects between boards and heart tokens and so is part of the

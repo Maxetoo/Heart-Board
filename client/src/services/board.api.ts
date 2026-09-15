@@ -156,6 +156,8 @@ export async function getBoardsByHashtag(tag: string, params: { page?: number; l
   const { data } = await api.get<{
     boards: BoardDTO[];
     total: number;
+    /** Messages across every board on the tag, not just this page. */
+    totalMessages?: number;
     page: number;
     pages: number;
   }>(`/board/hashtag/${encodeURIComponent(tag.replace(/^#/, ''))}`, {
@@ -164,6 +166,7 @@ export async function getBoardsByHashtag(tag: string, params: { page?: number; l
 
   return {
     boards: data.boards,
+    totalMessages: data.totalMessages ?? 0,
     pagination: {
       total: data.total,
       page: data.page,

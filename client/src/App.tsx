@@ -1642,6 +1642,13 @@ const App: React.FC = () => {
   const [profileLoading, setProfileLoading] = useState(false);
   /** Boards carrying the hashtag on screen, from GET /board/hashtag/:tag. */
   const [hashtagBoards, setHashtagBoards] = useState<Post[] | null>(null);
+  /**
+   * Totals for the whole tag, from the same response. The header states a
+   * count for the tag, so it cannot be read off the loaded page (which stops at
+   * 40 boards) — and it used to be hard-coded mock text, "1.2M Board | 800k
+   * Message", whatever the tag actually held.
+   */
+  const [hashtagStats, setHashtagStats] = useState<{ boards: number; messages: number } | null>(null);
 
   useEffect(() => {
     if (!profileHandle) {
@@ -1693,16 +1700,22 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!hashtagTag) {
       setHashtagBoards(null);
+      setHashtagStats(null);
       return;
     }
 
     let cancelled = false;
     setHashtagBoards(null);
+    // Never carry one tag's totals onto the next tag's page.
+    setHashtagStats(null);
 
     (async () => {
       try {
-        const { boards } = await boardApi.getBoardsByHashtag(hashtagTag, { limit: 40 });
-        if (!cancelled) setHashtagBoards(boards.map((b) => boardToPost(b, currentUser?.id)));
+        const { boards, pagination, totalMessages } = await boardApi.getBoardsByHashtag(hashtagTag, { limit: 40 });
+        if (!cancelled) {
+          setHashtagBoards(boards.map((b) => boardToPost(b, currentUser?.id)));
+          setHashtagStats({ boards: pagination.total, messages: totalMessages });
+        }
       } catch {
         // Fall back to filtering whatever the feed already has.
       }
@@ -1844,6 +1857,13 @@ const App: React.FC = () => {
   const handleGiftHeartForUser = (user: RegisteredUser) => {
     if (!currentUser) {
       handleOpenAuth('login', `Please sign in or create an account to gift a heart token to ${user.name}.`);
+      return;
+    }
+    // Never open the composer with yourself as the recipient.
+    if (
+      (user.id && user.id === currentUser.id) ||
+      usernameOf(user.handle).toLowerCase() === usernameOf(currentUser.handle).toLowerCase()
+    ) {
       return;
     }
     setCreateModalRecipient({
@@ -2095,6 +2115,7 @@ const App: React.FC = () => {
               hashtag={viewingHashtag}
               // Server results for this tag; the loaded feed until they arrive.
               posts={hashtagBoards ?? posts}
+              stats={hashtagStats}
               onBack={closeOverlay}
               onCreateBoard={handleCreateBoardForHashtag}
               onSelectUser={handleSelectUser}

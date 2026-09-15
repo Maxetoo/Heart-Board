@@ -343,7 +343,17 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   // Mirror the account onto local state whenever it changes (initial /user/me
   // resolving, or a save that returns an updated document).
   React.useEffect(() => {
-    if (!account) return;
+    if (!account) {
+      // Signed out while this view is mounted: drop the previous account's
+      // name, handle and picture. This used to return early and keep them, so
+      // a signed-out view went on showing whoever had last been signed in.
+      setUserName('You');
+      setUserHandle('@you');
+      setUserBio('');
+      setUserEmail('');
+      setProfileImage(null);
+      return;
+    }
     setUserName(account.name);
     setUserHandle(account.handle);
     setUserBio(account.bio ?? '');
@@ -376,10 +386,23 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   );
   const hasHeartedProfile = profileHearts.has(LOVING_HEART.id);
   const heartPending = profileHearts.pending;
-  /** You cannot blow a heart at yourself, and a signed-out viewer has no set. */
-  const canHeartThisProfile = Boolean(
-    authUser && viewedProfileHandle && viewedProfileId !== authUser.id,
+  /**
+   * True when the profile on screen belongs to the signed-in viewer.
+   *
+   * Matched on id OR username. The id alone was not enough: `profileUser`
+   * starts as a stub built from the URL handle with an empty id, so until the
+   * real profile loaded — or for good, if it never did — `'' !== authUser.id`
+   * read as "someone else" and the Heart button was live on your own page.
+   */
+  const isViewingSelf = Boolean(
+    authUser &&
+      profileUser &&
+      ((viewedProfileId && viewedProfileId === authUser.id) ||
+        (viewedProfileHandle &&
+          viewedProfileHandle.toLowerCase() === usernameOf(authUser.handle).toLowerCase())),
   );
+  /** You cannot blow a heart at yourself, and a signed-out viewer has no set. */
+  const canHeartThisProfile = Boolean(authUser && viewedProfileHandle && !isViewingSelf);
 
   const handleToggleProfileHeart = async () => {
     if (!authUser) {
@@ -1466,11 +1489,13 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
               {/* Blows a Loving heart token straight at this person — no
                   composer, no form. Pressing it again takes that heart back
                   off their Heartboard. */}
+              {!isViewingSelf && (
               <button
                 onClick={handleToggleProfileHeart}
                 // Signed-out visitors keep the button live: pressing it routes
-                // them to sign-in. Only "this is you" makes it inert.
-                disabled={heartPending || Boolean(authUser && viewedProfileId === authUser.id)}
+                // them to sign-in. It is not rendered at all on your own
+                // profile — see isViewingSelf.
+                disabled={heartPending}
                 aria-pressed={hasHeartedProfile}
                 className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95 border-2 disabled:cursor-default disabled:opacity-60 ${
                   hasHeartedProfile
@@ -1485,6 +1510,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
                 />
                 <span>{hasHeartedProfile ? 'Hearted' : 'Heart'}</span>
               </button>
+              )}
 
               <button 
                 onClick={() => onSendMessage && onSendMessage(asRegisteredUser(profileUser))}

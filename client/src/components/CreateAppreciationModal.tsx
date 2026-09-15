@@ -1613,8 +1613,22 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [isSendHeartOpen, setIsSendHeartOpen] = useState<boolean>(initialMode === 'send_heart');
   const [selectedSendHeart, setSelectedSendHeart] = useState<string | null>('loving');
   const [sendHeartSearchQuery, setSendHeartSearchQuery] = useState('');
+  /**
+   * Whether an account is the signed-in user. A heart goes to someone else.
+   *
+   * Matched on id or username, because a deep-linked recipient (?to=handle)
+   * can arrive as a stub that has no id yet.
+   */
+  const isSelfAccount = (u: { id?: string; handle?: string }) => {
+    if (!currentUser) return false;
+    if (u.id && currentUser.id && u.id === currentUser.id) return true;
+    const handle = usernameOf(u.handle).toLowerCase();
+    return Boolean(handle) && handle === usernameOf(currentUser.handle).toLowerCase();
+  };
+
   const [selectedSendHeartRecipients, setSelectedSendHeartRecipients] = useState<RegisteredUser[]>(() => {
-    if (!initialRecipient) return [];
+    // A ?to= link to your own handle must not preselect you.
+    if (!initialRecipient || isSelfAccount(initialRecipient)) return [];
     return [{
       id: initialRecipient.id || 'u-' + initialRecipient.name.toLowerCase().replace(/\s+/g, ''),
       name: initialRecipient.name,
@@ -1652,7 +1666,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   // Real accounts from GET /search. There is no "browse all users" state —
   // the empty-query case is handled explicitly in the empty-state UI below.
   const sendHeartSearch = useSearch(sendHeartSearchQuery);
-  const filteredSendHeartUsers = sendHeartSearch.users;
+  // You are never a heart recipient, so you never appear in the picker.
+  const filteredSendHeartUsers = sendHeartSearch.users.filter((u) => !isSelfAccount(u));
   
   // Moderation variables
   const [isModerating, setIsModerating] = useState(false);
@@ -2530,6 +2545,15 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                     const delivered: { name: string; handle: string }[] = [];
                     const alreadyHad: string[] = [];
 
+                    // The picker no longer offers you, but a selection made
+                    // before that must not reach the server either — which
+                    // rejects it as well.
+                    const heartTargets = selectedSendHeartRecipients.filter((t) => !isSelfAccount(t));
+                    if (heartTargets.length === 0) {
+                      setSendHeartError('You cannot send a heart to yourself.');
+                      return;
+                    }
+
                     // One token per recipient, so each person's Heartboard shows
                     // the heart addressed to them rather than a shared row.
                     //
@@ -2537,7 +2561,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                     // statement, and one person gets exactly one token per heart
                     // category. Writing a message onto it as well would let the
                     // same category carry two entries from the same sender.
-                    for (const target of selectedSendHeartRecipients) {
+                    for (const target of heartTargets) {
                       const username = usernameOf(target.handle);
                       const body =
                         note ||

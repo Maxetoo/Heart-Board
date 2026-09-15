@@ -7,7 +7,7 @@ const Sponsorship = require('../models/sponsporship');
 const CustomError = require('../error');
 const { StatusCodes } = require('http-status-codes');
 const Subscription = require('../models/subscription');
-const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMiddleware');
+const { invalidate, invalidatePattern, invalidatePublicProfile, keys } = require('../middlewares/cacheMiddleware');
 
 
 // ─── Helpers 
@@ -244,11 +244,18 @@ const updateProfile = async (req, res) => {
 
     await Promise.all([
         invalidate(keys.profile(userId)),
-        oldUsername ? invalidate(keys.publicProfile(oldUsername)) : Promise.resolve(),
+        // Every ?view/?kind variant, not just the bare key: each profile tab
+        // reads its own variant, and the `user` inside it carries the picture.
+        // Clearing only the bare key is what let a visitor keep seeing the old
+        // picture on those tabs after the owner had changed it.
+        oldUsername ? invalidatePublicProfile(oldUsername) : Promise.resolve(),
         // If the username changed, also bust the new username key
         normalisedUsername && normalisedUsername !== oldUsername
-            ? invalidate(keys.publicProfile(normalisedUsername))
+            ? invalidatePublicProfile(normalisedUsername)
             : Promise.resolve(),
+        // The owner's own tabs (GET /board?view=…) embed the same picture on
+        // the boards they populate.
+        invalidatePattern(`myBoards:${userId}:*`),
     ]);
  
     res.status(StatusCodes.OK).json({ message: 'Profile updated.', user });

@@ -231,6 +231,19 @@ async function invalidatePattern(pattern) {
   }
 }
 
+// ─── invalidatePublicProfile — every cached variant of one profile ──────────
+// GET /user/profile/:username is cached per ?view and ?kind as well
+// (publicProfile:<name>:<view>:<kind>, see routes/userRoute.js), and each
+// profile tab fetches its own variant. Deleting only the bare key left every
+// tab serving the pre-update `user` — old profile picture included — for the
+// rest of its TTL. `:*` rather than a bare `*` so clearing "bob" does not also
+// clear "bobby".
+async function invalidatePublicProfile(username) {
+  if (!username) return;
+  const base = keys.publicProfile(String(username).toLowerCase());
+  await Promise.all([invalidate(base), invalidatePattern(`${base}:*`)]);
+}
+
 // ─── cache() middleware ───────────────────────────────────────────────────────
 function cache(ttl, keyFn) {
   return async (req, res, next) => {
@@ -273,4 +286,4 @@ const keys = {
   recentHearts:  (limit)       => `recentHearts:${limit}`,
 };
 
-module.exports = { cache, invalidate, invalidatePattern, cacheGet, cacheSet, keys, TTL };
+module.exports = { cache, invalidate, invalidatePattern, invalidatePublicProfile, cacheGet, cacheSet, keys, TTL };

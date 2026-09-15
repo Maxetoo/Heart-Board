@@ -8,6 +8,7 @@ import {
 import { PostCard } from './PostCard';
 import { RegisteredUser, PostVisibility } from '../types';
 import { ShareProfileModal } from './ShareProfileModal';
+import { formatCount, plural } from '../lib/format';
 
 export interface HashtagViewProps {
   hashtag: string; // e.g. "#ronaldo" or "ronaldo"
@@ -16,6 +17,11 @@ export interface HashtagViewProps {
   onCreateBoard: (hashtag: string) => void;
   onPostClick?: (post: any) => void;
   onSelectUser?: (user: RegisteredUser) => void;
+  /**
+   * Totals for the whole tag, from GET /board/hashtag/:tag. Null until they
+   * arrive, or if that request failed — the view then counts what it has.
+   */
+  stats?: { boards: number; messages: number } | null;
 }
 
 export const HashtagView: React.FC<HashtagViewProps> = ({
@@ -23,7 +29,8 @@ export const HashtagView: React.FC<HashtagViewProps> = ({
   posts = [],
   onBack,
   onCreateBoard,
-  onPostClick
+  onPostClick,
+  stats = null,
 }) => {
   const [searchQuery] = useState('');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -74,11 +81,18 @@ export const HashtagView: React.FC<HashtagViewProps> = ({
     setIsShareModalOpen(true);
   };
 
-  // Mock engagement stats formatted like "1.2M Board | 800k Message | 30k Curator"
-  const totalBoardCount = Math.max(matchingPosts.length, 12) * 100000;
-  const boardsDisplay = matchingPosts.length > 5 ? `${(totalBoardCount / 1000000).toFixed(1)}M Board` : '1.2M Board';
-  const messagesDisplay = '800k Message';
-  const curatorsDisplay = '30k Curator';
+  // Real counts for this tag. These were mock text — "1.2M Board | 800k
+  // Message" — shown whatever the tag held, including a tag with one board.
+  //
+  // The server's totals cover the whole tag. Until they arrive, or if that
+  // request failed and the view is filtering the feed instead, count what is
+  // actually on screen — which is at least never invented.
+  const boardCount = stats?.boards ?? matchingPosts.length;
+  const messageCount =
+    stats?.messages ??
+    matchingPosts.reduce((sum, p) => sum + (Number(p.messageCount) || 0), 0);
+  const boardsDisplay = `${formatCount(boardCount)} ${plural(boardCount, 'Board')}`;
+  const messagesDisplay = `${formatCount(messageCount)} ${plural(messageCount, 'Message')}`;
 
   return (
     <div className="min-h-screen bg-white text-[#1A1B25] pt-4 pb-28 px-4 sm:px-6 md:px-8 max-w-7xl mx-auto font-sans antialiased select-none">

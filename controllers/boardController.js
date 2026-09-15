@@ -147,6 +147,15 @@ const createBoard = async (req, res) => {
       }
     }
 
+    // A heart is something you give someone ELSE. The profile page hides its
+    // Heart button on your own profile and the composer leaves you out of its
+    // picker, but a direct POST bypasses both, so the rule has to live here.
+    // Plain boards addressed to yourself stay allowed — getPublicProfile
+    // deliberately lists those under Board.
+    if (boardKind === 'heart' && receipentId && receipentId.toString() === userId.toString()) {
+      throw new CustomError.BadRequestError('You cannot send a heart to yourself.');
+    }
+
     // One heart per category per pair of people.
     //
     // A "Loving" heart is a statement, not a tally: you have either given this
@@ -799,7 +808,7 @@ const getBoardsByHashtag = async (req, res) => {
     ...kindFilter(),
   };
 
-  const [boards, total] = await Promise.all([
+  const [boards, total, messageTotals] = await Promise.all([
     Board.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -810,11 +819,25 @@ const getBoardsByHashtag = async (req, res) => {
       .select('title description slug stats tier tags kind owner coverImage event style preview createdAt')
       .lean(),
     Board.countDocuments(filter),
+    // Messages across EVERY board on the tag, not just this page. The hashtag
+    // header states a total for the tag, so summing the page the client loaded
+    // would undercount as soon as a tag outgrows one page. $match/$group are
+    // allowed under Stable API v1, as the other aggregates in this codebase use.
+    Board.aggregate([
+      { $match: filter },
+      { $group: { _id: null, messages: { $sum: { $ifNull: ['$stats.messages', 0] } } } },
+    ]),
   ]);
 
   await attachReactionCounts(boards);
 
-  res.status(StatusCodes.OK).json({ boards, total, page, pages: Math.ceil(total / limit) });
+  res.status(StatusCodes.OK).json({
+    boards,
+    total,
+    totalMessages: messageTotals[0]?.messages ?? 0,
+    page,
+    pages: Math.ceil(total / limit),
+  });
 };
 
 
