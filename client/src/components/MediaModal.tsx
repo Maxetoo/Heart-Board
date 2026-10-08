@@ -1011,7 +1011,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         // image drag, which cancels the pointer stream mid-gesture. Touch has
         // no such thing, so this too only ever bit on desktop.
         onDragStart={(e) => e.preventDefault()}
-        className={`w-full flex-1 flex flex-col items-center justify-center px-4 py-2 my-auto z-10 touch-pan-y select-none ${
+        className={`w-full flex-1 flex flex-col items-center justify-center px-0 sm:px-4 py-2 my-auto z-10 touch-pan-y select-none ${
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >
@@ -1060,8 +1060,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             // message sits inside it, so the board itself staying put is the
             // whole point. It used to translate and rotate with the finger,
             // which read as dragging the board away.
-            style={{ backgroundColor: frameBgColor }}
-            className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] h-[400px] sm:h-[450px] md:h-[474px] p-5 sm:p-6 md:p-7 flex items-center justify-center shadow-[0_20px_60px_rgba(0,0,0,0.45)] relative overflow-hidden cursor-pointer active:scale-[0.995] select-none will-change-transform"
+            // No frame: the viewer shows the message alone. Edge to edge on a
+            // phone; on larger screens the same size it had inside the old frame.
+            className="w-full sm:w-[290px] md:w-[300px] aspect-[254/350] flex items-center justify-center relative overflow-hidden cursor-pointer active:scale-[0.995] select-none will-change-transform"
             title="Single-click for contributor details, double-click for action menu"
           >
             {/* Confetti Overlay inside frame if enabled */}
@@ -1115,10 +1116,11 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 recipient={recipientOf(post)}
                 selectedHearts={(activeMessage as Post).selectedHearts || post.selectedHearts || []}
                 activeType={activeMessage.mediaType === 'audio' ? 'audio' : activeMessage.mediaType === 'video' ? 'video' : 'text'}
-                isCollaborative={!isSoloMode}
+                isCollaborative={false} // No stacked layers behind the message in the viewer
                 visibility={post.visibility}
                 showMetadata={false} // Strictly clean: No status pills, capacity info, or duplicate badges on the board!
                 square
+                fill
                   />
                 </motion.div>
               </AnimatePresence>
@@ -1158,7 +1160,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       </main>
 
       {/* 4. BELOW THE BOARD (Strictly permanent main board metadata) */}
-      <footer className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] mx-auto px-0 pb-6 pt-1 flex flex-col items-start text-left gap-3 z-20 shrink-0">
+      <footer className="w-full sm:max-w-[290px] md:max-w-[300px] mx-auto px-5 sm:px-0 pb-6 pt-1 flex flex-col items-start text-left gap-3 z-20 shrink-0">
 
         {/* A. Caption — the board's own title, permanent across its messages. */}
         <h2

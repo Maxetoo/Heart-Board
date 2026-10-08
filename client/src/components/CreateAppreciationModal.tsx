@@ -609,6 +609,8 @@ export interface CanvasReadOnlyCardProps {
   scale?: number;
   /** Square corners instead of the rounded card, for the full board viewer. */
   square?: boolean;
+  /** Fill the container edge to edge instead of insetting the card inside a frame. */
+  fill?: boolean;
 }
 
 export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
@@ -624,6 +626,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
   showMetadata = false,
   scale: externalScale,
   square = false,
+  fill = false,
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const cardRounding = square ? 'rounded-none' : 'rounded-[1.8rem]';
@@ -646,7 +649,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
         // min(w/W, h/H) fills the container's height exactly, so the card's
         // corners pressed into the frame's rounded corners and got shaved by
         // its overflow-hidden — the clipped bottom corners in the report.
-        const s = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT) * FIT_INSET;
+        const s = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT) * (fill ? 1 : FIT_INSET);
         setMeasuredScale(s);
       }
     };
@@ -655,7 +658,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
     const observer = new ResizeObserver(updateScale);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [externalScale]);
+  }, [externalScale, fill]);
 
   const effectiveScale = externalScale !== undefined ? externalScale : (measuredScale || 1);
 
@@ -699,7 +702,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
           height: `${BASE_HEIGHT}px`,
           ...CENTERED_SCALE_STYLE(effectiveScale),
         }}
-        className={`bg-white ${cardRounding} p-5 shadow-xs flex flex-col justify-between overflow-hidden shrink-0 z-10 select-none`}
+        className={`bg-white ${cardRounding} ${fill ? '' : 'shadow-xs'} p-5 flex flex-col justify-between overflow-hidden shrink-0 z-10 select-none`}
       >
         {/* Confetti Animation Overlay */}
         <ConfettiOverlay type={selectedConfetti || null} />
