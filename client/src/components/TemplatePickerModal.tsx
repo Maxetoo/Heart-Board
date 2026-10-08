@@ -7,9 +7,10 @@ import type { ConfettiType } from './ConfettiOverlay';
 /**
  * A ready-made message design: canvas elements laid out on the 254x350 card.
  *
- * Built from the same element types the composer edits (image, text and
- * vector), so a chosen template is an ordinary starting canvas — every piece of
- * it can be moved, resized, retyped, recoloured or deleted afterwards.
+ * Templates are scrapbook collages. Their photo slots start empty — tap one
+ * and pick a picture — and every label is ordinary text, so "Birthday!" or the
+ * date can be retyped like any other message. Stickers and paper scraps move
+ * like anything else; only the backdrop is fixed.
  */
 export interface MessageTemplate {
   id: string;
@@ -21,138 +22,152 @@ export interface MessageTemplate {
 const CURSIVE = 'Caveat, cursive';
 const SERIF = 'Playfair Display, serif';
 const MONO = 'Courier Prime, monospace';
-const SANS = 'Nunito, sans-serif';
 
-const vector = (
-  vectorId: string,
-  vectorColor: string,
+type Part = Omit<CanvasElement, 'id'>;
+
+/** The card-sized backdrop every collage sits on. */
+const backdrop = (bgHex: string): Part => ({ type: 'shape', bgHex, width: 254, height: 350, x: 0, y: 0, locked: true });
+
+/** An empty photo slot. */
+const photo = (
+  width: number,
+  height: number,
   x: number,
   y: number,
-  scale = 1,
-  rotation = 0,
-): Omit<CanvasElement, 'id'> => ({ type: 'vector', vectorId, vectorColor, x, y, scale, rotation });
+  rotation: number,
+  frame: 'torn' | 'polaroid',
+): Part => ({ type: 'image', imageUrl: '', placeholder: true, width, height, x, y, rotation, scale: 1, frame });
 
-const image = (
-  imageUrl: string,
-  x: number,
-  y: number,
-  scale = 1,
-  rotation = 0,
-): Omit<CanvasElement, 'id'> => ({ type: 'image', imageUrl, x, y, scale, rotation });
+/** Text on a paper label. */
+const label = (value: string, x: number, y: number, scale: number, labelBg = '#EFE6D2', color = '#1A1B25', rotation = 0): Part => ({
+  type: 'text', text: value, fontFamily: MONO, color, labelBg, align: 'center', x, y, scale, rotation,
+});
 
-const text = (
-  value: string,
-  fontFamily: string,
-  color: string,
-  x: number,
-  y: number,
-  scale = 1,
-  rotation = 0,
-): Omit<CanvasElement, 'id'> => ({
-  type: 'text',
-  text: value,
-  fontFamily,
-  isCursive: fontFamily === CURSIVE,
-  color,
-  align: 'center',
-  x,
-  y,
-  scale,
-  rotation,
+/** Free text. */
+const words = (value: string, fontFamily: string, color: string, x: number, y: number, scale: number, rotation = 0): Part => ({
+  type: 'text', text: value, fontFamily, isCursive: fontFamily === CURSIVE, color, align: 'center', x, y, scale, rotation,
+});
+
+const emoji = (char: string, x: number, y: number, scale: number, rotation = 0): Part => ({
+  type: 'vector', vectorId: 'emoji', emoji: char, x, y, scale, rotation,
+});
+
+const sticker = (vectorId: string, vectorColor: string, x: number, y: number, scale: number, rotation = 0): Part => ({
+  type: 'vector', vectorId, vectorColor, x, y, scale, rotation,
+});
+
+const tape = (bgHex: string, x: number, y: number, rotation: number): Part => ({
+  type: 'shape', bgHex, width: 46, height: 14, x, y, rotation, scale: 1,
 });
 
 export const MESSAGE_TEMPLATES: MessageTemplate[] = [
   {
-    // Image format, and deliberately FIRST: a full-card photo collage.
-    //
-    // The artwork lives in client/public/templates, not src/assets, so its URL
-    // is stable. A template image is saved into the message's canvasData when
-    // someone posts, and a hashed build asset would get a new URL on the next
-    // build and break every message already posted with it.
-    //
-    // The canvas renderer caps image elements at 220px. At the cap this
-    // collage (aspect ~0.745) is 164x220; scale 1.6 takes it to 262x352, just
-    // past the 254x350 card on both axes, so it fills the card edge to edge.
-    id: 'birthday-collage',
-    name: 'Birthday Collage',
-    elements: [image('/templates/birthday-collage.jpg', 0, 0, 1.6)],
-  },
-  {
-    id: 'birthday',
-    name: 'Happy Birthday',
+    id: 'birthday-scrapbook',
+    name: 'Birthday Scrapbook',
     confetti: 'celebration',
     elements: [
-      vector('balloon', '#F28B82', -82, -120, 0.9, -12),
-      vector('balloon', '#F6C177', 84, -112, 0.8, 10),
-      vector('cake', '#E8735A', 0, -78, 1.3),
-      text('Happy\nBirthday!', MONO, '#1A1B25', 0, 18, 1.15),
-      text('Wishing you the brightest year yet', SANS, '#666D80', 0, 112, 0.7),
-      vector('sparkle', '#B4A3F5', -90, 120, 0.6),
-      vector('gift', '#5FB3A1', 90, 118, 0.7, 8),
+      backdrop('#CFC4B2'),
+      photo(150, 118, -38, -108, -4, 'torn'),
+      photo(118, 132, 58, -6, 3, 'torn'),
+      photo(104, 150, -68, 48, -2, 'torn'),
+      photo(150, 104, 52, 118, 2, 'torn'),
+      label('December 30', 62, -128, 0.55),
+      sticker('heart', '#E46E5C', 98, -72, 0.8, 10),
+      emoji('🎉', -102, -150, 0.7),
+      emoji('🎁', -8, 84, 0.7, -8),
+      label('Happy', -82, 92, 0.6),
+      label('Birthday!', -62, 126, 0.6),
+      words('Olivia', CURSIVE, '#B5452F', -62, 154, 1.25, -6),
     ],
   },
   {
-    id: 'love-note',
-    name: 'Love Note',
+    id: 'love-polaroids',
+    name: 'Love Polaroids',
     elements: [
-      vector('heart', '#F9C9C1', -70, -110, 0.6, -14),
-      vector('heart', '#E8735A', 0, -88, 1.4),
-      vector('heart', '#F9C9C1', 76, -60, 0.45, 12),
-      text('Your kindness means so much to me. I’m grateful for you always. Love you', CURSIVE, '#272835', 0, 52, 0.95),
+      backdrop('#F6D9D5'),
+      photo(110, 110, -50, -90, -6, 'polaroid'),
+      photo(110, 110, 52, -30, 5, 'polaroid'),
+      photo(120, 96, -30, 70, -2, 'polaroid'),
+      tape('#F3E3B8', -50, -160, -8),
+      tape('#F3E3B8', 56, -100, 6),
+      label('you + me', 74, 80, 0.55, '#FFF6EE'),
+      words('Forever & always', CURSIVE, '#B83B5E', 22, 146, 1.05, -4),
+      sticker('heart', '#E8506E', 96, -142, 0.7, 12),
+      sticker('heart', '#F49AAE', -102, 18, 0.5, -10),
+      emoji('💌', -96, 146, 0.7, -6),
     ],
   },
   {
-    id: 'thank-you',
-    name: 'Thank You',
-    elements: [
-      vector('sparkle', '#F6C177', -78, -112, 0.7),
-      vector('sparkle', '#F6C177', 82, -96, 0.5),
-      text('Thank you', CURSIVE, '#FE6349', 0, -40, 1.5, -4),
-      text('for everything you do', SERIF, '#272835', 0, 30, 0.85),
-      vector('heart', '#FE6349', 0, 108, 0.8),
-    ],
-  },
-  {
-    id: 'congrats',
-    name: 'Congratulations',
+    id: 'graduation',
+    name: 'Graduation',
     confetti: 'simple',
     elements: [
-      vector('trophy', '#F2B33D', 0, -92, 1.5),
-      text('Congratulations!', SERIF, '#1A1B25', 0, 12, 1),
-      text('You earned every bit of this', SANS, '#666D80', 0, 70, 0.75),
-      vector('star', '#F2B33D', -88, 118, 0.6, -10),
-      vector('star', '#F2B33D', 88, 118, 0.6, 10),
+      backdrop('#1F2A44'),
+      photo(170, 150, -10, -62, -2, 'torn'),
+      photo(90, 90, 62, 82, 6, 'polaroid'),
+      words('Congrats,\nGrad!', SERIF, '#F5D27A', -55, 58, 0.85),
+      label('Class of 2026', -55, 114, 0.55, '#F5D27A', '#1F2A44'),
+      emoji('🎓', 90, -150, 0.8, 8),
+      sticker('star', '#F5D27A', -100, -150, 0.5),
+      sticker('star', '#F5D27A', -98, 152, 0.4),
+      sticker('sparkle', '#F5D27A', 100, 146, 0.5),
     ],
   },
   {
-    id: 'well-done',
-    name: 'Well Done',
-    confetti: 'clap',
+    id: 'best-friends',
+    name: 'Best Friends',
     elements: [
-      vector('hand_clapping', '#F2B33D', 0, -90, 1.4),
-      text('Well done!', MONO, '#1A1B25', 0, 0, 1.2),
-      text('So proud of you', CURSIVE, '#4CB993', 0, 64, 1.1),
-      vector('medal', '#E8735A', 0, 124, 0.7),
+      backdrop('#D5EADF'),
+      photo(82, 82, -58, -98, -4, 'polaroid'),
+      photo(82, 82, 58, -90, 4, 'polaroid'),
+      photo(82, 82, -55, 40, 3, 'polaroid'),
+      photo(82, 82, 60, 48, -5, 'polaroid'),
+      label('best friends', 0, -24, 0.6, '#FFFFFF'),
+      words('since forever', CURSIVE, '#2F7D62', 0, 138, 1.3),
+      emoji('🌸', 100, -150, 0.6),
+      sticker('sparkle', '#F2B33D', -100, 150, 0.5),
     ],
   },
   {
-    id: 'cheers',
-    name: 'Cheers',
+    id: 'thank-you-note',
+    name: 'Thank You Note',
     elements: [
-      vector('wine', '#8B5CF6', 0, -88, 1.4),
-      text('Cheers to you', SERIF, '#1A1B25', 0, 8, 1.1),
-      text('Here’s to many more wins', CURSIVE, '#8B5CF6', 0, 72, 1),
-      vector('sparkle', '#B4A3F5', -84, -118, 0.6),
-      vector('sparkle', '#B4A3F5', 86, 116, 0.6),
+      backdrop('#FBF1E1'),
+      photo(180, 170, 0, -55, -2, 'torn'),
+      tape('#F2C6B4', -80, -140, -30),
+      tape('#F2C6B4', 82, -140, 30),
+      words('Thank you', CURSIVE, '#E8603C', 0, 76, 1.8, -3),
+      label('for everything', 0, 124, 0.55, '#FFFFFF'),
+      sticker('sparkle', '#F2B33D', -96, 150, 0.5),
+      sticker('sparkle', '#F2B33D', 100, 62, 0.45),
+    ],
+  },
+  {
+    id: 'anniversary',
+    name: 'Anniversary',
+    elements: [
+      backdrop('#E9E1F2'),
+      photo(100, 120, -50, -70, -5, 'polaroid'),
+      photo(100, 120, 52, -50, 5, 'polaroid'),
+      words('Happy\nAnniversary', SERIF, '#4B3A6B', 0, 88, 0.8),
+      label('June 14', 0, 148, 0.5, '#FFFFFF'),
+      emoji('💍', 96, -150, 0.7, 10),
+      sticker('heart', '#B07CC6', -100, -150, 0.55),
+      sticker('heart', '#D8A7E0', -100, 140, 0.45),
     ],
   },
 ];
 
-/** A template's elements with fresh ids, ready to drop onto the canvas. */
-export const instantiateTemplate = (template: MessageTemplate): CanvasElement[] =>
+/**
+ * A template's elements with fresh ids, ready to drop onto the canvas.
+ *
+ * The part before "~" is stable per slot, so a torn photo edge is cut the same
+ * way in the picker and on the canvas.
+ */
+export const instantiateTemplate = (template: MessageTemplate, stamp: string | number = Date.now()): CanvasElement[] =>
   template.elements.map((el, i) => ({
     ...el,
-    id: `${el.type}-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
+    id: `${template.id}-${i}~${stamp}`,
   }));
 
 interface TemplatePickerModalProps {
@@ -202,7 +217,7 @@ export const TemplatePickerModal: React.FC<TemplatePickerModalProps> = ({ onUseT
                   aria-label={`${template.name} template`}
                 >
                   <CanvasReadOnlyCard
-                    canvasElements={instantiateTemplate(template)}
+                    canvasElements={instantiateTemplate(template, 'preview')}
                     selectedConfetti={null}
                     showMetadata={false}
                     square
