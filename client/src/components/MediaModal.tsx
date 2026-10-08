@@ -148,6 +148,8 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [showContributorDetails, setShowContributorDetails] = useState(false);
+  /** The action bar stays out of the way until the message is tapped. */
+  const [showActions, setShowActions] = useState(false);
   const [showFlagToast, setShowFlagToast] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -326,6 +328,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       setActiveTab('main');
       setMessagePosition(0);
       setShowContributorDetails(false);
+      setShowActions(false);
       setIsActionMenuOpen(false);
       setIsReactionPickerOpen(false);
       setReactionCounts(getInitialReactionCounts(post));
@@ -393,6 +396,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       clickTimerRef.current = setTimeout(() => {
         clickTimerRef.current = null;
         setShowContributorDetails((prev) => !prev);
+        setShowActions((prev) => {
+          if (prev) setIsReactionPickerOpen(false);
+          return !prev;
+        });
       }, 240);
     }
   };
@@ -1159,7 +1166,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 left. Its own taps never reach the board underneath, which would
                 otherwise read them as a click on the card or the start of a swipe. */}
             <div
-              className="absolute left-5 bottom-5 z-40 w-fit flex flex-col items-start"
+              className={`absolute left-5 bottom-5 z-40 w-fit flex flex-col items-start transition-all duration-200 ${
+                showActions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
+              }`}
+              aria-hidden={!showActions}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
