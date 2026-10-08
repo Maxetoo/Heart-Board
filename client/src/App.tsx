@@ -60,6 +60,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { HandHeart } from '@phosphor-icons/react';
 import { SmartImage, SkeletonBlock } from './components/SmartImage';
 
 export function canViewPostPublicly(post: any) {
@@ -726,12 +727,12 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
                 <TickerName name={currentActivity.sender} handle={currentActivity.senderHandle} />
               </span>
               <span
-                className="select-none shrink-0"
+                className="shrink-0 flex items-center"
                 role="img"
                 aria-label={`blew a ${currentActivity.heartType} to`}
                 title={currentActivity.heartType}
               >
-                🫶
+                <HandHeart size={24} weight="bold" color="#F2B33D" />
               </span>
               <span className="truncate min-w-0">
                 <TickerName

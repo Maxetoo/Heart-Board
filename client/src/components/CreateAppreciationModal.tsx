@@ -76,6 +76,16 @@ import { VectorPicker, PHOSPHOR_VECTORS } from './VectorPicker';
 import { ChooseColor } from './ColorPicker';
 import { ConfettiOverlay, ConfettiType } from './ConfettiOverlay';
 import { ConfettiPickerModal } from './ConfettiPickerModal';
+import { TemplatePickerModal, instantiateTemplate } from './TemplatePickerModal';
+import type { MessageTemplate } from './TemplatePickerModal';
+import {
+  FlowerLotus,
+  Image as PhImage,
+  TextAUnderline,
+  ScribbleLoop,
+  Palette as PhPalette,
+  Confetti as PhConfetti,
+} from '@phosphor-icons/react';
 
 /**
  * Defaults every text element starts from, and the fallback wherever an older
@@ -1211,6 +1221,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     return (editingContribution?.confetti || editingPost?.confetti || null) as ConfettiType;
   });
   const [isConfettiPickerOpen, setIsConfettiPickerOpen] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [selectedHearts, setSelectedHearts] = useState<string[]>(() => {
     // Contributions carry their own hearts (message content.hearts); only fall
     // back to the board's when editing the board itself.
@@ -1384,6 +1395,20 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     setCanvasElements(prev => [...prev, newEl]);
     setSelectedElementId(newEl.id);
     setEditingElementId(newEl.id);
+  };
+
+  /**
+   * Replaces the canvas with a template's design. Anything already on the
+   * canvas would be lost, so that case asks first.
+   */
+  const handleUseTemplate = (template: MessageTemplate) => {
+    const hasWork = canvasElements.some(hasElementContent);
+    if (hasWork && !window.confirm('Replace what is on your message with this template?')) return;
+    setCanvasElements(instantiateTemplate(template));
+    if (template.confetti) setSelectedConfetti(template.confetti);
+    setSelectedElementId(null);
+    setEditingElementId(null);
+    setIsTemplatePickerOpen(false);
   };
 
   const handleDeleteElement = (id: string) => {
@@ -3345,42 +3370,53 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           {activeType === 'text' && (
             <div className="w-full pb-8 pt-2 px-6 flex flex-col items-center gap-3 shrink-0">
               
-              {/* Row of tool buttons with equal width, height, and space distribution matching message board width */}
-              <div className="grid grid-flow-col auto-cols-fr items-center justify-center gap-2 sm:gap-2.5 w-full max-w-[380px] py-1 px-0">
-                {/* 1. Image */}
+              {/* Tool row: plain icons, spread across the width of the board. */}
+              <div className="flex items-center justify-between w-full max-w-[400px] px-1">
+                {/* 1. Template */}
+                <button
+                  type="button"
+                  onClick={() => setIsTemplatePickerOpen(true)}
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                  title="Choose a template"
+                  aria-label="Choose a template"
+                >
+                  <FlowerLotus size={30} />
+                </button>
+
+                {/* 2. Image */}
                 <button
                   type="button"
                   onClick={handleAddImageElement}
-                  className="w-full h-[58px] bg-white border border-dashed border-gray-200/80 hover:bg-gray-50 rounded-2xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 text-[#1A1B25]"
-                  title="Add new Image element"
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                  title="Add an image"
+                  aria-label="Add an image"
                 >
-                  <ImageIcon className="w-4 h-4 text-[#1A1B25]" />
-                  <span className="text-[11px] font-medium text-gray-700">Image</span>
+                  <PhImage size={30} />
                 </button>
 
-                {/* 2. Text */}
+                {/* 3. Text */}
                 <button
                   type="button"
                   onClick={handleAddTextElement}
-                  className="w-full h-[58px] bg-white border border-dashed border-gray-200/80 hover:bg-gray-50 rounded-2xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 text-[#1A1B25]"
-                  title="Add new Text element"
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                  title="Add text"
+                  aria-label="Add text"
                 >
-                  <Type className="w-4 h-4 text-[#1A1B25]" />
-                  <span className="text-[11px] font-medium text-gray-700">Text</span>
+                  <TextAUnderline size={30} />
                 </button>
 
-                {/* 3. Vector */}
+                {/* 4. Vector */}
                 <button
                   type="button"
                   onClick={handleAddVectorElement}
-                  className="w-full h-[58px] bg-white border border-dashed border-gray-200/80 hover:bg-gray-50 rounded-2xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 text-[#1A1B25]"
-                  title="Add new Vector element"
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                  title="Add a sticker"
+                  aria-label="Add a sticker"
                 >
-                  <Sparkles className="w-4 h-4 text-[#1A1B25]" />
-                  <span className="text-[11px] font-medium text-gray-700">Vector</span>
+                  <ScribbleLoop size={30} />
                 </button>
 
-                {/* 4. BG — the board's own setting, so it belongs to board
+                {/* 5. BG — the board's own setting, so it belongs to board
                        creation and board editing only. A message written onto
                        someone's board does not get to repaint it, whether it is
                        a new contribution or an edit of an existing message. */}
@@ -3388,25 +3424,23 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   <button
                     type="button"
                     onClick={handleAddBgElement}
-                    className="w-full h-[58px] bg-white border border-dashed border-gray-200/80 hover:bg-gray-50 rounded-2xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 text-[#1A1B25]"
-                    title="Add new BG element"
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                    title="Change the background"
+                    aria-label="Change the background"
                   >
-                    <Palette className="w-4 h-4 text-[#1A1B25]" />
-                    <span className="text-[11px] font-medium text-gray-700">BG</span>
+                    <PhPalette size={30} />
                   </button>
                 )}
 
-                {/* 5. Confetti / Pop */}
+                {/* 6. Confetti */}
                 <button
                   type="button"
                   onClick={() => setIsConfettiPickerOpen(true)}
-                  className="w-full h-[58px] bg-white border border-dashed border-gray-200/80 hover:bg-gray-50 rounded-2xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 text-[#1A1B25]"
-                  title="Choose Confetti Animation"
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                  title="Choose a confetti animation"
+                  aria-label="Choose a confetti animation"
                 >
-                  <PartyPopper className="w-4 h-4 text-[#1A1B25]" />
-                  <span className="text-[11px] font-medium text-gray-700">
-                    pop
-                  </span>
+                  <PhConfetti size={30} />
                 </button>
               </div>
 
@@ -3942,6 +3976,13 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       />
 
       {/* CONFETTI PICKER POP-UP MODAL */}
+      {isTemplatePickerOpen && (
+        <TemplatePickerModal
+          onUseTemplate={handleUseTemplate}
+          onClose={() => setIsTemplatePickerOpen(false)}
+        />
+      )}
+
       {isConfettiPickerOpen && (
         <ConfettiPickerModal
           selectedConfetti={selectedConfetti}
