@@ -60,7 +60,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onClick, disabled }) =
         No shadow, clean filled style.
       */}
       <div 
-        className={`relative overflow-hidden rounded-2xl sm:rounded-[2.5rem] p-2 sm:p-5 aspect-[380/474] flex flex-col justify-between ${getBgClass('bg-[#FAF0EC]')}`}
+        className={`relative overflow-hidden rounded-[2.5rem] p-5 aspect-[380/474] flex flex-col justify-between ${getBgClass('bg-[#FAF0EC]')}`}
         style={getBgStyle()}
       >
         {/* 
