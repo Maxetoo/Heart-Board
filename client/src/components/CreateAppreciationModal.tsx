@@ -607,6 +607,8 @@ export interface CanvasReadOnlyCardProps {
   visibility?: PostVisibility;
   showMetadata?: boolean;
   scale?: number;
+  /** Square corners instead of the rounded card, for the full board viewer. */
+  square?: boolean;
 }
 
 export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
@@ -621,8 +623,10 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
   visibility,
   showMetadata = false,
   scale: externalScale,
+  square = false,
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const cardRounding = square ? 'rounded-none' : 'rounded-[1.8rem]';
   const [measuredScale, setMeasuredScale] = React.useState<number>(1);
 
   const BASE_WIDTH = 254;
@@ -683,8 +687,8 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
           }}
           className="pointer-events-none"
         >
-          <div className="absolute inset-0 w-full h-full bg-white/20 rounded-[1.8rem] -rotate-[3.5deg] transform origin-center" />
-          <div className="absolute inset-0 w-full h-full bg-white/20 rounded-[1.8rem] rotate-[3.5deg] transform origin-center" />
+          <div className={`absolute inset-0 w-full h-full bg-white/20 ${cardRounding} -rotate-[3.5deg] transform origin-center`} />
+          <div className={`absolute inset-0 w-full h-full bg-white/20 ${cardRounding} rotate-[3.5deg] transform origin-center`} />
         </div>
       )}
 
@@ -695,7 +699,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
           height: `${BASE_HEIGHT}px`,
           ...CENTERED_SCALE_STYLE(effectiveScale),
         }}
-        className="bg-white rounded-[1.8rem] p-5 shadow-xs flex flex-col justify-between overflow-hidden shrink-0 z-10 select-none"
+        className={`bg-white ${cardRounding} p-5 shadow-xs flex flex-col justify-between overflow-hidden shrink-0 z-10 select-none`}
       >
         {/* Confetti Animation Overlay */}
         <ConfettiOverlay type={selectedConfetti || null} />

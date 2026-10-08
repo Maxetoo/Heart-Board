@@ -885,7 +885,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       style={{ backgroundColor: '#1A1B25' }}
     >
       {/* 1. TOP BAR */}
-      <header className="w-full px-4 sm:px-8 md:px-16 lg:px-24 xl:px-[192px] pt-5 pb-3 flex items-center justify-between z-30 shrink-0">
+      <header className="relative w-full px-4 sm:px-8 md:px-16 lg:px-24 xl:px-[192px] pt-5 pb-3 flex items-center justify-between z-30 shrink-0">
 
         {/* Top-Left: Toggle / Switch Component (Main Board vs. Contributions) */}
         <div className="flex items-center bg-[#272835] p-1 rounded-full">
@@ -948,6 +948,28 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           </button>
         </div>
 
+        {/* Top-Centre: carousel dots. One per message ON the board — the
+            board's own message first, then each contribution — so a board with
+            two messages gets two dots and can be paged through. Shown while
+            Contributions is the active mode, at every screen size. */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center gap-1.5">
+          {isLockedToContributions && boardMessageCount > 1 &&
+            Array.from({ length: boardMessageCount }).map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                // Through goToPosition, not setMessagePosition, so the card
+                // slides the way the jump goes rather than always forward.
+                onClick={() => goToPosition(idx)}
+                className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 cursor-pointer ${
+                  displayPosition === idx ? 'bg-white' : 'bg-white/30 hover:bg-white/60'
+                }`}
+                aria-label={idx === 0 ? "Jump to the board's own message" : `Jump to message ${idx + 1}`}
+                aria-current={displayPosition === idx}
+              />
+            ))}
+        </div>
+
         {/* Top-Right: Close Button */}
         <button
           type="button"
@@ -1003,9 +1025,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               transition: isDragging ? 'none' : 'transform 0.24s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.24s ease',
               opacity: isDragging ? Math.max(0.72, 1 - Math.abs(dragOffset) / 500) : 1
             }}
-            className="w-full max-w-[340px] sm:max-w-[380px] h-[380px] sm:h-[430px] rounded-[2.5rem] p-6 flex flex-col items-center justify-center text-center shadow-2xl relative select-none will-change-transform"
+            className="w-full max-w-[340px] sm:max-w-[380px] h-[380px] sm:h-[430px] p-6 flex flex-col items-center justify-center text-center shadow-2xl relative select-none will-change-transform"
           >
-            <div className="bg-white rounded-3xl w-full h-full p-6 flex flex-col items-center justify-center text-center shadow-xs">
+            <div className="bg-white w-full h-full p-6 flex flex-col items-center justify-center text-center shadow-xs">
               <div className="w-14 h-14 rounded-full bg-rose-50 flex items-center justify-center text-[#FE6349] mb-3">
                 <Sparkles className="w-7 h-7" />
               </div>
@@ -1039,7 +1061,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             // whole point. It used to translate and rotate with the finger,
             // which read as dragging the board away.
             style={{ backgroundColor: frameBgColor }}
-            className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] h-[400px] sm:h-[450px] md:h-[474px] rounded-[2.2rem] sm:rounded-[2.5rem] p-5 sm:p-6 md:p-7 flex items-center justify-center shadow-[0_20px_60px_rgba(0,0,0,0.45)] relative overflow-hidden cursor-pointer active:scale-[0.995] select-none will-change-transform"
+            className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[380px] h-[400px] sm:h-[450px] md:h-[474px] p-5 sm:p-6 md:p-7 flex items-center justify-center shadow-[0_20px_60px_rgba(0,0,0,0.45)] relative overflow-hidden cursor-pointer active:scale-[0.995] select-none will-change-transform"
             title="Single-click for contributor details, double-click for action menu"
           >
             {/* Confetti Overlay inside frame if enabled */}
@@ -1096,13 +1118,14 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 isCollaborative={!isSoloMode}
                 visibility={post.visibility}
                 showMetadata={false} // Strictly clean: No status pills, capacity info, or duplicate badges on the board!
+                square
                   />
                 </motion.div>
               </AnimatePresence>
 
               {/* Single Click — Contributor Details Overlay */}
               {showContributorDetails && (
-                <div className="absolute inset-x-0 bottom-0 pt-16 pb-3.5 px-4 sm:px-5 bg-gradient-to-t from-black/85 via-black/45 to-transparent rounded-b-[1.8rem] sm:rounded-b-[2rem] md:rounded-b-3xl flex items-center gap-2.5 z-30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
+                <div className="absolute inset-x-0 bottom-0 pt-16 pb-3.5 px-4 sm:px-5 bg-gradient-to-t from-black/85 via-black/45 to-transparent flex items-center gap-2.5 z-30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
                   <div className="w-8 h-8 rounded-full bg-[#FAF0EC] border border-white/30 flex items-center justify-center text-xs font-extrabold text-[#FE6349] shrink-0 overflow-hidden shadow-xs">
                     {activeContributorAvatar ? (
                       <SmartImage
@@ -1129,32 +1152,6 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 </div>
               )}
             </div>
-          </div>
-        )}
-
-        {/* 3. BOARD NAVIGATION: carousel dots below the board.
-            One per message ON the board — the board's own message first, then
-            each contribution — so a board with two messages gets two dots and
-            can be paged through. Shown while Contributions is the active mode,
-            at every screen size. */}
-        {isLockedToContributions && boardMessageCount > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-3.5 mb-1 z-20">
-            {Array.from({ length: boardMessageCount }).map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                // Through goToPosition, not setMessagePosition, so the card
-                // slides the way the jump goes rather than always forward.
-                onClick={() => goToPosition(idx)}
-                className={`transition-all duration-300 rounded-full cursor-pointer ${
-                  displayPosition === idx
-                    ? 'w-6 h-2 bg-white'
-                    : 'w-2 h-2 bg-white/30 hover:bg-white/60'
-                }`}
-                aria-label={idx === 0 ? "Jump to the board's own message" : `Jump to message ${idx + 1}`}
-                aria-current={displayPosition === idx}
-              />
-            ))}
           </div>
         )}
 

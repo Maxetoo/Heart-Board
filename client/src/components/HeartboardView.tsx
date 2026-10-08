@@ -1768,7 +1768,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
         // empty account rather than as loading. `serverBoardsPending` covers
         // the window before the request even starts — auth still bootstrapping
         // — which `loading` alone reports as false.
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6 my-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6 my-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <SkeletonBlock key={i} className="w-full aspect-[380/474]" rounded="rounded-2xl sm:rounded-[2.5rem]" />
           ))}
@@ -1804,7 +1804,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 sm:gap-6 w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 sm:gap-6 w-full">
           {filteredItems.map((item) => (
             <HeartboardCard 
               key={item.id} 

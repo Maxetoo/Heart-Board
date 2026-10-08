@@ -1,5 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  HEARTBOARD_LOGO_VIEWBOX,
+  HEARTBOARD_BUBBLE_PATH,
+  HEARTBOARD_HEART_PATH,
+} from './HeartboardLogo';
 
 // Semantic Heart Spectrum Colors strictly adhering to Heartboard's design system
 export const SEMANTIC_HEART_COLORS = [
@@ -55,7 +60,6 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
 }) => {
   const [burstParticles, setBurstParticles] = useState<BurstParticle[]>([]);
   const [interactiveHearts, setInteractiveHearts] = useState<AmbientHeart[]>([]);
-  const [isWinking, setIsWinking] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Generate a continuous, beautifully balanced organic set of ambient floating hearts
@@ -150,8 +154,6 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
     }
 
     setBurstParticles(newBurst);
-    setIsWinking(true);
-    const winkTimer = setTimeout(() => setIsWinking(false), 800);
 
     const cleanupTimer = setTimeout(() => {
       setBurstParticles([]);
@@ -159,7 +161,6 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
 
     return () => {
       clearTimeout(cleanupTimer);
-      clearTimeout(winkTimer);
     };
   }, [activeActivityKey, activeColor]);
 
@@ -191,8 +192,6 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
     }
 
     setInteractiveHearts((prev) => [...prev.slice(-10), ...clicks]);
-    setIsWinking(true);
-    setTimeout(() => setIsWinking(false), 900);
 
     setTimeout(() => {
       setInteractiveHearts((prev) => prev.filter((h) => !clicks.some((c) => c.id === h.id)));
@@ -462,79 +461,34 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
             tabIndex={0}
             aria-label="Interactive Hero Heart"
           >
-            {/* Subtle soft radiant shadow behind the speech bubble */}
-            <motion.div
-              animate={{
-                boxShadow: `0 14px 40px ${activeColor}4D`,
-                backgroundColor: activeColor,
-              }}
+            {/* The Heartboard mark itself — speech bubble and smiling heart drawn
+                from the logo's own paths, so the tail stays joined to the bubble
+                at every size. It used to be a circle with a rotated square for a
+                tail, which came apart from the bubble on some screens. */}
+            <motion.svg
+              viewBox={HEARTBOARD_LOGO_VIEWBOX}
+              animate={{ filter: `drop-shadow(0 14px 28px ${activeColor}4D)` }}
               transition={{ duration: 0.8, ease: 'easeInOut' }}
-              className="w-[140px] h-[140px] md:w-[170px] md:h-[170px] rounded-full flex items-center justify-center relative transition-transform duration-300 group-hover:scale-105 group-active:scale-95 shadow-lg"
+              className="w-[150px] h-[150px] md:w-[180px] md:h-[180px] overflow-visible relative transition-transform duration-300 group-hover:scale-105 group-active:scale-95"
+              aria-hidden="true"
             >
-              {/* Speech bubble tail pointer */}
-              <motion.div
-                animate={{ backgroundColor: activeColor }}
+              <motion.path
+                d={HEARTBOARD_BUBBLE_PATH}
+                animate={{ fill: activeColor }}
                 transition={{ duration: 0.8, ease: 'easeInOut' }}
-                className="absolute -bottom-1.5 -left-1 w-9 h-9 rounded-br-2xl transform rotate-12"
               />
-
-              {/* Inner White Smiling Heart */}
-              <motion.div
+              {/* Heart, with the face punched out so the bubble shows through.
+                  Heartbeat double-pulse on new activity, about its own centre. */}
+              <motion.path
                 key={activeActivityKey}
+                d={HEARTBOARD_HEART_PATH}
+                fill="#FFFFFF"
+                style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
                 initial={{ scale: 0.94 }}
-                animate={{
-                  // Heartbeat double-pulse on new activity
-                  scale: [0.94, 1.14, 0.98, 1.06, 1.0],
-                }}
-                transition={{
-                  duration: 0.9,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                className="w-20 h-20 md:w-24 md:h-24 fill-white flex items-center justify-center relative z-20"
-              >
-                <svg className="w-full h-full text-white fill-current drop-shadow-xs" viewBox="0 0 24 24">
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                </svg>
-
-                {/* Friendly smiling face inside the heart with interactive eye expressions */}
-                <motion.div
-                  animate={{ color: activeColor }}
-                  transition={{ duration: 0.8, ease: 'easeInOut' }}
-                  className="absolute top-[32%] md:top-[34%] left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none select-none"
-                >
-                  <div className="flex gap-2 items-center">
-                    {/* Left Eye */}
-                    <motion.span
-                      animate={{
-                        backgroundColor: activeColor,
-                        scaleY: isWinking ? 0.2 : 1,
-                      }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="w-2 h-2 rounded-full inline-block"
-                    />
-                    {/* Right Eye (winks on pulse or click) */}
-                    <motion.span
-                      animate={{
-                        backgroundColor: activeColor,
-                        scaleY: isWinking ? 0.2 : 1,
-                      }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="w-2 h-2 rounded-full inline-block"
-                    />
-                  </div>
-
-                  {/* Warm Smile Curve */}
-                  <svg className="w-7 h-4 fill-none" viewBox="0 0 20 10">
-                    <path
-                      d="M2,2 Q10,11 18,2"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </motion.div>
-              </motion.div>
-            </motion.div>
+                animate={{ scale: [0.94, 1.14, 0.98, 1.06, 1.0] }}
+                transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+              />
+            </motion.svg>
           </motion.div>
         </motion.div>
       </div>
