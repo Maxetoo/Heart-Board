@@ -1159,7 +1159,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 left. Its own taps never reach the board underneath, which would
                 otherwise read them as a click on the card or the start of a swipe. */}
             <div
-              className="absolute left-3 bottom-3 sm:left-4 sm:bottom-4 z-40 w-fit flex flex-col items-start"
+              className="absolute left-5 bottom-5 z-40 w-fit flex flex-col items-start"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
@@ -1178,14 +1178,14 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 <div
                   // Five reactions now rather than four, so the gap tightens on a
                   // phone to keep the pill inside the viewport once counts appear.
-                  className="absolute bottom-[calc(100%+10px)] left-0 w-fit max-w-[calc(100vw-2rem)] whitespace-nowrap flex items-center justify-start gap-1 sm:gap-1.5 bg-[#272835] rounded-full px-3.5 sm:px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
+                  className="absolute bottom-[calc(100%+5px)] left-0 w-fit whitespace-nowrap flex items-center justify-start gap-3 bg-[#272835] rounded-full px-3.5 h-[58px] animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* 1. Clap */}
                   <button
                     type="button"
                     onClick={() => handleToggleReaction('clap')}
-                    className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
                     title="Clap"
                   >
                     <HandsClapping
@@ -1194,7 +1194,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                       color={userReactions.includes('clap') ? "#00D09C" : "#FFFFFF"}
                     />
                     {formatReactionCount(reactionCounts.clap) && (
-                      <span className="text-xs font-bold text-white tracking-tight ml-0.5">
+                      <span className="text-xs font-bold text-white tracking-tight">
                         {formatReactionCount(reactionCounts.clap)}
                       </span>
                     )}
@@ -1204,7 +1204,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleToggleReaction('heart')}
-                    className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
                     title="Heart / Love"
                   >
                     <PhosphorHeart
@@ -1213,7 +1213,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                       color={userReactions.includes('heart') ? "#FF3838" : "#FFFFFF"}
                     />
                     {formatReactionCount(reactionCounts.heart) && (
-                      <span className="text-xs font-bold text-white tracking-tight ml-0.5">
+                      <span className="text-xs font-bold text-white tracking-tight">
                         {formatReactionCount(reactionCounts.heart)}
                       </span>
                     )}
@@ -1223,7 +1223,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleToggleReaction('smiley')}
-                    className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
                     title="Smiley"
                   >
                     <PhosphorSmiley
@@ -1232,7 +1232,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                       color={userReactions.includes('smiley') ? "#FFC72C" : "#FFFFFF"}
                     />
                     {formatReactionCount(reactionCounts.smiley) && (
-                      <span className="text-xs font-bold text-white tracking-tight ml-0.5">
+                      <span className="text-xs font-bold text-white tracking-tight">
                         {formatReactionCount(reactionCounts.smiley)}
                       </span>
                     )}
@@ -1242,7 +1242,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleToggleReaction('sad')}
-                    className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
                     title="Sad / Moved to tears"
                   >
                     <PhosphorSmileySad
@@ -1251,7 +1251,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                       color={userReactions.includes('sad') ? "#5B8DEF" : "#FFFFFF"}
                     />
                     {formatReactionCount(reactionCounts.sad) && (
-                      <span className="text-xs font-bold text-white tracking-tight ml-0.5">
+                      <span className="text-xs font-bold text-white tracking-tight">
                         {formatReactionCount(reactionCounts.sad)}
                       </span>
                     )}
@@ -1261,7 +1261,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleToggleReaction('fire')}
-                    className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
                     title="Fire"
                   >
                     <PhosphorFire
@@ -1270,7 +1270,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                       color={userReactions.includes('fire') ? "#FF7629" : "#FFFFFF"}
                     />
                     {formatReactionCount(reactionCounts.fire) && (
-                      <span className="text-xs font-bold text-white tracking-tight ml-0.5">
+                      <span className="text-xs font-bold text-white tracking-tight">
                         {formatReactionCount(reactionCounts.fire)}
                       </span>
                     )}
@@ -1279,13 +1279,13 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               )}
 
               {/* Bottom Pill: Action Bar */}
-              <div className="w-fit flex items-center justify-center gap-4 bg-[#272835] rounded-full px-4 py-2 relative z-30">
+              <div className="w-fit flex items-center justify-center gap-5 bg-[#272835] rounded-full px-6 h-[58px] relative z-30">
 
                 {/* 1. Reaction Button (Smiley) - Default State has no count, only icon */}
                 <button
                   type="button"
                   onClick={() => setIsReactionPickerOpen((prev) => !prev)}
-                  className={`flex items-center justify-center p-1 rounded-full active:scale-95 transition-all cursor-pointer ${
+                  className={`flex items-center justify-center p-1 -m-1 rounded-full active:scale-95 transition-all cursor-pointer ${
                     isReactionPickerOpen ? 'bg-white/15 text-white' : 'text-white/90 hover:text-white'
                   }`}
                   title="Reactions"
@@ -1297,7 +1297,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsShareModalOpen(true)}
-                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer p-1"
+                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
                   title="Share board link & image"
                 >
                   <ShareFat size={24} weight="bold" color="#FFFFFF" />
@@ -1307,7 +1307,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 <button
                   type="button"
                   onClick={handleFlagClick}
-                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer p-1"
+                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
                   title="Flag / Report this board"
                 >
                   <PhosphorFlag size={24} weight="bold" color="#FFFFFF" />
@@ -1318,7 +1318,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onAddContributionClick(post)}
-                    className="text-white hover:text-[#FE6349] active:scale-95 transition-all cursor-pointer p-1 flex items-center justify-center"
+                    className="text-white hover:text-[#FE6349] active:scale-95 transition-all cursor-pointer flex items-center justify-center"
                     title="Add a message to this board"
                   >
                     <PhosphorPlus size={24} weight="bold" color="#FFFFFF" />
@@ -1334,18 +1334,18 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       </main>
 
       {/* 4. BELOW THE BOARD (Strictly permanent main board metadata) */}
-      <footer className="w-full sm:max-w-[300px] md:max-w-[340px] lg:max-w-[360px] mx-auto mb-auto px-5 sm:px-0 pb-6 pt-3.5 flex flex-col items-start text-left gap-3 z-20 shrink-0">
+      <footer className="w-full sm:max-w-[300px] md:max-w-[340px] lg:max-w-[360px] mx-auto mb-auto px-5 sm:px-0 pb-6 pt-[30px] flex flex-col items-start text-left z-20 shrink-0">
 
         {/* A. Caption — the board's own title, permanent across its messages. */}
         <h2
-          className="w-full text-base sm:text-lg font-bold text-white tracking-tight leading-snug truncate"
+          className="w-full text-xl leading-7 font-bold text-white truncate"
           title={boardCaption}
         >
           {boardCaption}
         </h2>
 
         {/* B. Tagged recipient(s) and hashtags. */}
-        <p className="text-xs sm:text-sm font-semibold text-white/60 break-words flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="mt-[5px] text-sm leading-5 font-medium text-white/60 break-words flex flex-wrap items-center gap-x-2 gap-y-1">
           {displayTokens
             .map((token, idx) => (
             <button
@@ -1375,10 +1375,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         <button
           type="button"
           onClick={() => handleUserClick(activeAuthor.handle)}
-          className="flex items-center gap-2 group cursor-pointer text-left transition-opacity hover:opacity-95"
+          className="mt-[10px] flex items-center gap-[11px] group cursor-pointer text-left transition-opacity hover:opacity-95"
           title={`View ${activeAuthor.handle}'s Heartboard`}
         >
-          <div className="w-6 h-6 rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
+          <div className="w-[30px] h-[30px] rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
             {activeAuthor.avatar ? (
               <SmartImage
                 src={activeAuthor.avatar}
@@ -1393,7 +1393,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               activeAuthor.name.charAt(0).toUpperCase()
             )}
           </div>
-          <span className="text-xs sm:text-sm font-semibold text-white/60 group-hover:text-white group-hover:underline transition-colors">
+          <span className="text-sm leading-5 font-medium text-white/60 group-hover:text-white group-hover:underline transition-colors">
             {activeAuthor.handle}
             {activeAuthor.isBoardOwner && ' (Curator)'}
           </span>
