@@ -726,13 +726,16 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
               <span className="truncate min-w-0">
                 <TickerName name={currentActivity.sender} handle={currentActivity.senderHandle} />
               </span>
+              {/* Same colour as the big hero icon above, which takes
+                  currentActivity.hexColor — so the two always match as the
+                  ticker rotates through heart types. */}
               <span
                 className="shrink-0 flex items-center"
                 role="img"
                 aria-label={`blew a ${currentActivity.heartType} to`}
                 title={currentActivity.heartType}
               >
-                <HandHeart size={24} weight="bold" color="#F2B33D" />
+                <HandHeart size={24} weight="bold" color={currentActivity.hexColor ?? '#FE6349'} />
               </span>
               <span className="truncate min-w-0">
                 <TickerName
@@ -1276,6 +1279,22 @@ const App: React.FC = () => {
 
   // Profile and Hashtag view states
   const [viewingProfileUser, setViewingProfileUser] = useState<RegisteredUser | null>(null);
+
+  /**
+   * A transient in-app message. The replacement for window.alert().
+   *
+   * The delete handlers below roll their optimistic removal back when the
+   * server refuses, and they reported that with a native alert(): a dialog the
+   * browser styles, that blocks the whole page and has to be clicked away. This
+   * is the same dark pill the Heartboard view already uses for its messages.
+   */
+  const [appToast, setAppToast] = useState<string | null>(null);
+  const showAppToast = (message: string) => {
+    setAppToast(message);
+    window.setTimeout(() => {
+      setAppToast((prev) => (prev === message ? null : prev));
+    }, 3200);
+  };
   const [viewingHashtag, setViewingHashtag] = useState<string | null>(null);
   const [createModalRecipient, setCreateModalRecipient] = useState<{ id?: string; name: string; handle: string; avatar?: string } | undefined>(undefined);
   const [createModalHashtag, setCreateModalHashtag] = useState<string | undefined>(undefined);
@@ -2376,7 +2395,7 @@ const App: React.FC = () => {
                 await boardApi.deleteBoard(postId);
               } catch (e) {
                 setPosts(snapshot);
-                window.alert(toApiError(e).message);
+                showAppToast(toApiError(e).message);
               }
             }}
             onDeleteContribution={(parentBoardId, contribId) => {
@@ -2517,7 +2536,7 @@ const App: React.FC = () => {
                 await boardApi.deleteBoard(postId);
               } catch (e) {
                 setPosts(snapshot);
-                window.alert(toApiError(e).message);
+                showAppToast(toApiError(e).message);
               }
             }}
             onEditMessage={(targetPost, targetContribution) => {
@@ -2557,7 +2576,7 @@ const App: React.FC = () => {
                   }
                 } catch (e) {
                   setPosts(snapshot);
-                  window.alert(toApiError(e).message);
+                  showAppToast(toApiError(e).message);
                 }
               } else {
                 removePost(targetPost.id);
@@ -2566,7 +2585,7 @@ const App: React.FC = () => {
                   await boardApi.deleteBoard(targetPost.id);
                 } catch (e) {
                   setPosts(snapshot);
-                  window.alert(toApiError(e).message);
+                  showAppToast(toApiError(e).message);
                 }
               }
             }}
@@ -2624,6 +2643,18 @@ const App: React.FC = () => {
           onClose={handleDismissEngagementPrompt}
           onSendLoveOrHeart={handleEngagementPromptSendLove}
         />
+
+        {/* Transient messages — what replaced window.alert(). Announced to
+            screen readers, and it never blocks the page. */}
+        {appToast && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[3000] max-w-[90vw] bg-[#1A1B25] text-white text-xs sm:text-sm font-medium px-4 py-2.5 rounded-full shadow-lg text-center animate-in fade-in slide-in-from-bottom-2"
+          >
+            {appToast}
+          </div>
+        )}
       </div>
     </>
   );

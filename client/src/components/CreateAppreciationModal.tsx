@@ -1398,12 +1398,14 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   };
 
   /**
-   * Replaces the canvas with a template's design. Anything already on the
-   * canvas would be lost, so that case asks first.
+   * Replaces the canvas with a template's design.
+   *
+   * No confirmation prompt. Picking a template from the picker IS the
+   * instruction to use it, and a native confirm() dialog is a jarring stop in
+   * the middle of designing — the undo for a template you did not want is to
+   * pick a different one, or clear the canvas.
    */
   const handleUseTemplate = (template: MessageTemplate) => {
-    const hasWork = canvasElements.some(hasElementContent);
-    if (hasWork && !window.confirm('Replace what is on your message with this template?')) return;
     setCanvasElements(instantiateTemplate(template));
     if (template.confetti) setSelectedConfetti(template.confetti);
     setSelectedElementId(null);

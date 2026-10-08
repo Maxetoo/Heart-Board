@@ -7,9 +7,9 @@ import type { ConfettiType } from './ConfettiOverlay';
 /**
  * A ready-made message design: canvas elements laid out on the 254x350 card.
  *
- * Built from the same element types the composer edits (text and vector), so a
- * chosen template is an ordinary starting canvas — every piece of it can be
- * moved, retyped, recoloured or deleted afterwards.
+ * Built from the same element types the composer edits (image, text and
+ * vector), so a chosen template is an ordinary starting canvas — every piece of
+ * it can be moved, resized, retyped, recoloured or deleted afterwards.
  */
 export interface MessageTemplate {
   id: string;
@@ -31,6 +31,14 @@ const vector = (
   scale = 1,
   rotation = 0,
 ): Omit<CanvasElement, 'id'> => ({ type: 'vector', vectorId, vectorColor, x, y, scale, rotation });
+
+const image = (
+  imageUrl: string,
+  x: number,
+  y: number,
+  scale = 1,
+  rotation = 0,
+): Omit<CanvasElement, 'id'> => ({ type: 'image', imageUrl, x, y, scale, rotation });
 
 const text = (
   value: string,
@@ -54,6 +62,21 @@ const text = (
 });
 
 export const MESSAGE_TEMPLATES: MessageTemplate[] = [
+  {
+    // Image format, and deliberately FIRST: a full-card photo collage.
+    //
+    // The artwork lives in client/public/templates, not src/assets, so its URL
+    // is stable. A template image is saved into the message's canvasData when
+    // someone posts, and a hashed build asset would get a new URL on the next
+    // build and break every message already posted with it.
+    //
+    // The canvas renderer caps image elements at 220px. At the cap this
+    // collage (aspect ~0.745) is 164x220; scale 1.6 takes it to 262x352, just
+    // past the 254x350 card on both axes, so it fills the card edge to edge.
+    id: 'birthday-collage',
+    name: 'Birthday Collage',
+    elements: [image('/templates/birthday-collage.jpg', 0, 0, 1.6)],
+  },
   {
     id: 'birthday',
     name: 'Happy Birthday',
