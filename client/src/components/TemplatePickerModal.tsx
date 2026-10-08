@@ -60,6 +60,22 @@ const tape = (bgHex: string, x: number, y: number, rotation: number): Part => ({
   type: 'shape', bgHex, width: 46, height: 14, x, y, rotation, scale: 1,
 });
 
+/** A sheet of paper that can be moved: a sticky note, a card, a block of colour. */
+const paper = (bgHex: string, width: number, height: number, x: number, y: number, rotation = 0, cornerRadius = 0): Part => ({
+  type: 'shape', bgHex, width, height, x, y, rotation, scale: 1, cornerRadius,
+});
+
+/** A fixed line on the backdrop, e.g. notebook ruling. */
+const rule = (bgHex: string, width: number, height: number, x: number, y: number): Part => ({
+  type: 'shape', bgHex, width, height, x, y, locked: true,
+});
+
+/** Ruled notebook paper with a red margin line. */
+const notebookLines = (): Part[] => [
+  ...Array.from({ length: 11 }, (_, i) => rule('#CFE0F3', 254, 1, 0, -122 + i * 28)),
+  rule('#F2A7A0', 1, 350, -96, 0),
+];
+
 export const MESSAGE_TEMPLATES: MessageTemplate[] = [
   {
     id: 'birthday-scrapbook',
@@ -77,7 +93,6 @@ export const MESSAGE_TEMPLATES: MessageTemplate[] = [
       emoji('🎁', -8, 84, 0.7, -8),
       label('Happy', -82, 92, 0.6),
       label('Birthday!', -62, 126, 0.6),
-      words('Olivia', CURSIVE, '#B5452F', -62, 154, 1.25, -6),
     ],
   },
   {
@@ -154,6 +169,93 @@ export const MESSAGE_TEMPLATES: MessageTemplate[] = [
       emoji('💍', 96, -150, 0.7, 10),
       sticker('heart', '#B07CC6', -100, -150, 0.55),
       sticker('heart', '#D8A7E0', -100, 140, 0.45),
+    ],
+  },
+
+  // ── Text-only templates: no photos needed ─────────────────────────────────
+  {
+    id: 'notebook-note',
+    name: 'Notebook Note',
+    elements: [
+      backdrop('#FFFDF7'),
+      ...notebookLines(),
+      sticker('heart', '#E8735A', -50, -128, 0.9, -8),
+      words('I love you!\nHappy retirement,\nyour cousin', CURSIVE, '#1A1B25', 6, -10, 1.05),
+      words('— with all my heart', CURSIVE, '#8C8178', 14, 120, 0.8),
+    ],
+  },
+  {
+    id: 'sticky-notes',
+    name: 'Sticky Notes',
+    elements: [
+      backdrop('#C9A27A'),
+      paper('#FFE680', 100, 100, -56, -104, -6),
+      paper('#FFB8C9', 100, 100, 56, -34, 5),
+      paper('#B5E3F0', 100, 100, -52, 44, 3),
+      paper('#C8F0B5', 100, 100, 56, 112, -4),
+      words('You\nrock!', CURSIVE, '#1A1B25', -56, -102, 1.05, -6),
+      words('Thank\nyou', CURSIVE, '#1A1B25', 56, -32, 1.05, 5),
+      words('Proud of\nyou', CURSIVE, '#1A1B25', -52, 46, 0.95, 3),
+      words('Never\nchange', CURSIVE, '#1A1B25', 56, 114, 0.95, -4),
+      emoji('📌', -56, -150, 0.55),
+      emoji('📌', 56, -80, 0.55),
+      emoji('📌', -52, -2, 0.55),
+      emoji('📌', 56, 66, 0.55),
+    ],
+  },
+  {
+    id: 'bold-statement',
+    name: 'Bold Statement',
+    confetti: 'celebration',
+    elements: [
+      backdrop('#FE6349'),
+      words('YOU\nDID\nIT!', SERIF, '#FFFFFF', 0, -20, 2),
+      label('so proud of you', 0, 128, 0.6, '#FFFFFF', '#FE6349'),
+      sticker('star', '#FFE08A', -96, -146, 0.6, -12),
+      sticker('star', '#FFE08A', 98, 72, 0.5, 14),
+      sticker('sparkle', '#FFFFFF', 92, -140, 0.55),
+    ],
+  },
+  {
+    id: 'typewriter-letter',
+    name: 'Typewriter Letter',
+    elements: [
+      backdrop('#F4EEE1'),
+      paper('#FFFFFF', 210, 290, 0, 6, -1.5),
+      tape('#E9D8B4', 0, -140, -3),
+      words('Dear you,\n\nThank you for\nall the little\nthings you do.\n\nLove, me', MONO, '#2B2B2B', 0, 4, 0.7),
+      sticker('heart', '#C0392B', 74, 126, 0.75, 8),
+    ],
+  },
+  {
+    id: 'sunshine',
+    name: 'Sunshine',
+    elements: [
+      backdrop('#FFF3C4'),
+      paper('#FFE07A', 220, 220, 0, -40, 0, 110),
+      sticker('sun', '#F2A33D', 0, -88, 1.6),
+      words('You are my\nsunshine', SERIF, '#7A4B12', 0, 36, 1),
+      words('on every cloudy day', CURSIVE, '#B5651D', 0, 128, 1),
+      sticker('sparkle', '#F2A33D', -96, 150, 0.5),
+      sticker('sparkle', '#F2A33D', 98, -146, 0.5),
+    ],
+  },
+  {
+    id: 'reach-for-the-stars',
+    name: 'Reach for the Stars',
+    confetti: 'simple',
+    elements: [
+      backdrop('#14213D'),
+      emoji('🌙', 82, -132, 0.9, -10),
+      sticker('star', '#F5D27A', -90, -140, 0.45),
+      sticker('star', '#F5D27A', -30, -110, 0.3),
+      sticker('star', '#F5D27A', 30, -150, 0.35),
+      sticker('star', '#F5D27A', 100, 30, 0.3),
+      sticker('star', '#F5D27A', -104, 60, 0.35),
+      sticker('sparkle', '#FFFFFF', 90, 150, 0.4),
+      words('Reach for\nthe stars', SERIF, '#FFFFFF', 0, -10, 1.1),
+      label('Good luck!', 0, 90, 0.6, '#F5D27A', '#14213D'),
+      words('the sky is yours', CURSIVE, '#F5D27A', 0, 140, 1),
     ],
   },
 ];
