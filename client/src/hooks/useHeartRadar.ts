@@ -21,8 +21,9 @@ const POLL_MS = 30_000;
  *
  * Works signed out — the landing page shows the radar to visitors.
  */
-export function useHeartRadar(limit = 25): { hearts: RadarHeart[]; loading: boolean } {
+export function useHeartRadar(limit = 25): { hearts: RadarHeart[]; total: number | null; loading: boolean } {
   const [hearts, setHearts] = useState<RadarHeart[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const mounted = useRef(true);
@@ -38,8 +39,11 @@ export function useHeartRadar(limit = 25): { hearts: RadarHeart[]; loading: bool
 
     const load = async () => {
       try {
-        const list = await boardApi.getRecentHearts(limit);
-        if (mounted.current) setHearts(list);
+        const res = await boardApi.getRecentHearts(limit);
+        if (mounted.current) {
+          setHearts(res.hearts);
+          setTotal(res.total);
+        }
       } catch {
         // Keep whatever is already on the radar; a failed refresh must not
         // blank a ticker that is happily rotating.
@@ -78,5 +82,5 @@ export function useHeartRadar(limit = 25): { hearts: RadarHeart[]; loading: bool
     };
   }, [limit]);
 
-  return { hearts, loading };
+  return { hearts, total, loading };
 }

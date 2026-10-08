@@ -465,7 +465,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({
                       {activeSearchTab === 'all' ? 'Hot Boards' : 'Boards'}
                     </h2>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-6">
                       {matchingBoards.map((post) => (
                         <div key={post.id} className="w-full">
                           <PostCard
@@ -593,12 +593,12 @@ interface HeroPulseFeedProps {
  */
 const TickerName: React.FC<{ name: string; handle?: string }> = ({ name, handle }) => {
   if (!handle) {
-    return <span className="font-extrabold text-[#1A1B25]">{name}</span>;
+    return <span>{name}</span>;
   }
   return (
     <Link
       to={`/profile/${encodeURIComponent(handle)}`}
-      className="font-extrabold text-[#1A1B25] hover:text-[#FE6349] transition-colors cursor-pointer"
+      className="hover:text-[#1A1B25] transition-colors cursor-pointer"
     >
       {name}
     </Link>
@@ -623,7 +623,7 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
   // — so the radar sat on "Be the first to blow a heart today" no matter how
   // many had been blown. Its other branch was worse: it announced that someone
   // "blew a Loving Heart" whenever they had merely created a board.
-  const { hearts: radarHearts } = useHeartRadar();
+  const { hearts: radarHearts, total: heartsTotal } = useHeartRadar();
 
   const liveActivities = useMemo(
     () =>
@@ -632,6 +632,7 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
         return {
           sender: h.sender.name,
           senderHandle: h.sender.username,
+          senderAvatar: h.sender.avatar ?? null,
           heartType: `${spec.label} Heart ${spec.emoji}`,
           receiver: h.recipient.name,
           receiverHandle: h.recipient.username,
@@ -690,8 +691,8 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
         />
       </div>
 
-      {/* Highly Animated Real-Time Ticker */}
-      <div className="mt-4 sm:mt-6 relative min-h-[52px] h-auto w-full max-w-md overflow-hidden flex items-center justify-center px-4 z-20">
+      {/* Real-Time Ticker: who blew a heart at whom, and the running total */}
+      <div className="mt-4 sm:mt-6 relative min-h-[52px] h-auto w-full max-w-md flex flex-col items-center justify-center gap-3 px-4 z-20">
         <AnimatePresence mode="wait">
           {currentActivity ? (
             <motion.div
@@ -704,18 +705,40 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
               // links now — wrapping them in a third click target meant tapping
               // a name opened the composer instead of that person's profile.
               // The animated heart above remains the way to start one.
-              className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#1A1B25] max-w-full truncate"
+              className="bg-white shadow-[0_6px_24px_rgba(26,27,37,0.08)] py-2 pl-2 pr-5 rounded-full flex items-center gap-2 text-sm sm:text-base font-bold text-[#808897] max-w-full min-w-0"
             >
-              <TickerName name={currentActivity.sender} handle={currentActivity.senderHandle} />
-              <span className="text-[#666D80]">blew a</span>
-              <span
-                className="font-extrabold select-none flex items-center gap-0.5"
-                style={{ color: currentActivity.hexColor }}
-              >
-                {currentActivity.heartType}
+              <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden shrink-0 bg-[#FFEBE8] flex items-center justify-center">
+                {currentActivity.senderAvatar ? (
+                  <SmartImage
+                    src={currentActivity.senderAvatar}
+                    alt={currentActivity.sender}
+                    rounded="rounded-full"
+                    instant
+                    wrapperClassName="w-full h-full"
+                    className="w-full h-full object-cover"
+                    fallback={<span className="text-xs font-bold text-gray-500">{currentActivity.sender.charAt(0).toUpperCase()}</span>}
+                  />
+                ) : (
+                  <span className="text-xs font-bold text-gray-500">{currentActivity.sender.charAt(0).toUpperCase()}</span>
+                )}
               </span>
-              <span className="text-[#666D80]">to</span>
-              <TickerName name={currentActivity.receiver} handle={currentActivity.receiverHandle} />
+              <span className="truncate min-w-0">
+                <TickerName name={currentActivity.sender} handle={currentActivity.senderHandle} />
+              </span>
+              <span
+                className="select-none shrink-0"
+                role="img"
+                aria-label={`blew a ${currentActivity.heartType} to`}
+                title={currentActivity.heartType}
+              >
+                🫶
+              </span>
+              <span className="truncate min-w-0">
+                <TickerName
+                  name={`@${(currentActivity.receiverHandle || currentActivity.receiver).replace(/^@/, '')}`}
+                  handle={currentActivity.receiverHandle}
+                />
+              </span>
             </motion.div>
           ) : (
             <motion.div
@@ -724,13 +747,18 @@ const HeroPulseFeed: React.FC<HeroPulseFeedProps> = ({ onGiftVouchClick }) => {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -15, scale: 0.95 }}
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="bg-[#F8F9FB] border border-[#ECEFF3] shadow-2xs py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-xs sm:text-sm text-[#666D80] max-w-full truncate cursor-pointer hover:bg-[#ECEFF3] transition-colors"
+              className="bg-white shadow-[0_6px_24px_rgba(26,27,37,0.08)] py-3 px-5 rounded-full flex items-center justify-center gap-1.5 text-sm font-bold text-[#808897] max-w-full truncate cursor-pointer hover:text-[#1A1B25] transition-colors"
               onClick={onGiftVouchClick}
             >
               <span>Be the first to blow a heart today</span>
             </motion.div>
           )}
         </AnimatePresence>
+        {heartsTotal != null && heartsTotal > 0 && (
+          <p className="text-xs sm:text-sm font-semibold text-[#A4ABB8]">
+            {formatCount(heartsTotal)} {plural(heartsTotal, 'heart')} blown
+          </p>
+        )}
       </div>
     </div>
   );
@@ -875,7 +903,7 @@ const MasonryFeed = ({
         // Skeleton grid. The feed previously rendered "No heartfelt notes or
         // boards found." while the very first request was still in flight,
         // which read as an empty account rather than as loading.
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8">
           {Array.from({ length: 8 }).map((_, i) => (
             <SkeletonBlock key={i} className="w-full aspect-[3/4]" rounded="rounded-2xl sm:rounded-[2.5rem]" />
           ))}
@@ -906,7 +934,7 @@ const MasonryFeed = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8">
           {posts.map((post, index) => (
             <motion.div 
               key={post.id} 
@@ -1117,7 +1145,7 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8">
             {displayPosts.map((post) => {
               const globalIndex = posts.findIndex(p => p.id === post.id);
               return (

@@ -724,26 +724,33 @@ const getBoardLikes = async (req, res) => {
 const getRecentHearts = async (req, res) => {
   const limit = Math.min(50, parseInt(req.query.limit) || 25);
 
-  const boards = await Board.find({
+  const filter = {
     kind:             'heart',
     isActive:         true,
     visibility:       'public',
     receipentFlagged: false,
     receipent:        { $ne: null },
-  })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .populate('owner', 'username displayName')
-    .populate('receipent', 'username displayName')
-    .select('slug style owner receipent createdAt')
-    .lean();
+  };
+
+  const [boards, total] = await Promise.all([
+    Board.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('owner', 'username displayName profileImage')
+      .populate('receipent', 'username displayName profileImage')
+      .select('slug style owner receipent createdAt')
+      .lean(),
+    // Shown under the ticker as "N hearts blown".
+    Board.countDocuments({ kind: 'heart', isActive: true }),
+  ]);
 
   const person = (u) =>
     u && u.username
-      ? { name: u.displayName || u.username, username: u.username }
+      ? { name: u.displayName || u.username, username: u.username, avatar: u.profileImage || null }
       : null;
 
   res.status(StatusCodes.OK).json({
+    total,
     hearts: boards
       .map((b) => ({
         id:        b._id,

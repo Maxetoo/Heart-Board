@@ -187,8 +187,8 @@ export interface RadarHeart {
   /** Semantic Heart Spectrum id, e.g. 'loving'. */
   heart: string | null;
   createdAt: string;
-  sender: { name: string; username: string };
-  recipient: { name: string; username: string };
+  sender: { name: string; username: string; avatar?: string | null };
+  recipient: { name: string; username: string; avatar?: string | null };
 }
 
 /**
@@ -199,10 +199,10 @@ export interface RadarHeart {
  * what is on screen without changing how fast it moves.
  */
 export async function getRecentHearts(limit = 25) {
-  const { data } = await api.get<{ hearts: RadarHeart[] }>('/board/hearts/recent', {
+  const { data } = await api.get<{ hearts: RadarHeart[]; total?: number }>('/board/hearts/recent', {
     params: { limit },
   });
-  return data.hearts ?? [];
+  return { hearts: data.hearts ?? [], total: data.total ?? null };
 }
 
 /** One heart token the caller has blown at somebody. */

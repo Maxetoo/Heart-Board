@@ -119,7 +119,7 @@ export const HashtagView: React.FC<HashtagViewProps> = ({
       </div>
 
       {/* 2. Grid Container for Hashtag Card + Message Boards */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-6 lg:gap-8 items-stretch">
         
         {/* SLOT 1: Specialized Hashtag Hero Card (Matching reference image) */}
         <div className="bg-white rounded-2xl sm:rounded-[2.5rem] p-3 sm:p-8 border border-gray-100 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center aspect-[380/474] relative overflow-hidden group">
