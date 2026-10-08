@@ -228,19 +228,6 @@ export const MESSAGE_TEMPLATES: MessageTemplate[] = [
     ],
   },
   {
-    id: 'sunshine',
-    name: 'Sunshine',
-    elements: [
-      backdrop('#FFF3C4'),
-      paper('#FFE07A', 220, 220, 0, -40, 0, 110),
-      sticker('sun', '#F2A33D', 0, -88, 1.6),
-      words('You are my\nsunshine', SERIF, '#7A4B12', 0, 36, 1),
-      words('on every cloudy day', CURSIVE, '#B5651D', 0, 128, 1),
-      sticker('sparkle', '#F2A33D', -96, 150, 0.5),
-      sticker('sparkle', '#F2A33D', 98, -146, 0.5),
-    ],
-  },
-  {
     id: 'reach-for-the-stars',
     name: 'Reach for the Stars',
     confetti: 'simple',

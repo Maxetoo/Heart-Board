@@ -881,7 +881,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-between bg-[#1A1B25] text-white font-sans select-none overflow-y-auto antialiased"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-start bg-[#1A1B25] text-white font-sans select-none overflow-y-auto antialiased"
       style={{ backgroundColor: '#1A1B25' }}
     >
       {/* 1. TOP BAR */}
@@ -1011,7 +1011,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         // image drag, which cancels the pointer stream mid-gesture. Touch has
         // no such thing, so this too only ever bit on desktop.
         onDragStart={(e) => e.preventDefault()}
-        className={`w-full flex-1 flex flex-col items-center justify-center px-0 sm:px-4 py-2 my-auto z-10 touch-pan-y select-none ${
+        className={`w-full flex flex-col items-center justify-center px-0 sm:px-4 pt-2 mt-auto z-10 touch-pan-y select-none ${
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >
@@ -1178,7 +1178,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 <div
                   // Five reactions now rather than four, so the gap tightens on a
                   // phone to keep the pill inside the viewport once counts appear.
-                  className="absolute bottom-[calc(100%+10px)] left-0 w-fit max-w-[calc(100vw-2rem)] whitespace-nowrap flex items-center justify-start gap-2 sm:gap-3 bg-[#272835] rounded-full px-3.5 sm:px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
+                  className="absolute bottom-[calc(100%+10px)] left-0 w-fit max-w-[calc(100vw-2rem)] whitespace-nowrap flex items-center justify-start gap-1 sm:gap-1.5 bg-[#272835] rounded-full px-3.5 sm:px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* 1. Clap */}
@@ -1334,7 +1334,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       </main>
 
       {/* 4. BELOW THE BOARD (Strictly permanent main board metadata) */}
-      <footer className="w-full sm:max-w-[300px] md:max-w-[340px] lg:max-w-[360px] mx-auto px-5 sm:px-0 pb-6 pt-1 flex flex-col items-start text-left gap-3 z-20 shrink-0">
+      <footer className="w-full sm:max-w-[300px] md:max-w-[340px] lg:max-w-[360px] mx-auto mb-auto px-5 sm:px-0 pb-6 pt-3.5 flex flex-col items-start text-left gap-3 z-20 shrink-0">
 
         {/* A. Caption — the board's own title, permanent across its messages. */}
         <h2
