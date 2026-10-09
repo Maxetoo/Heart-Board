@@ -197,7 +197,7 @@ const CENTERED_SCALE_STYLE = (scale: number): React.CSSProperties => ({
 
 export interface CanvasElement {
   id: string;
-  type: 'text' | 'image' | 'vector' | 'bg';
+  type: 'text' | 'image' | 'vector' | 'bg' | 'shape';
   text?: string;
   isCursive?: boolean;
   fontFamily?: string;
@@ -220,7 +220,167 @@ export interface CanvasElement {
   y?: number;
   scale?: number;
   rotation?: number;
+  /** Fixed box, in card pixels, for an image slot or a paper shape. */
+  width?: number;
+  height?: number;
+  /** How a sized image slot is mounted on the card. */
+  frame?: 'torn' | 'polaroid';
+  /** An empty photo slot from a template, waiting for the user's own picture. */
+  placeholder?: boolean;
+  /** Paper label colour behind a text element. */
+  labelBg?: string;
+  /** Part of the template's backdrop: not selectable, not draggable. */
+  locked?: boolean;
 }
+
+/**
+ * A torn-paper outline as a CSS polygon, in percentages.
+ *
+ * Seeded on the element id so the same slot always tears the same way — on the
+ * canvas, in the template picker and on the published board.
+ */
+const tornClipPath = (seed: string): string => {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  const rand = () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
+  const steps = 14;
+  const jag = () => (rand() * 2.6).toFixed(2);
+  const pts: string[] = [];
+  for (let i = 0; i <= steps; i++) pts.push(`${((i / steps) * 100).toFixed(2)}% ${jag()}%`);
+  for (let i = 1; i <= steps; i++) pts.push(`${(100 - Number(jag())).toFixed(2)}% ${((i / steps) * 100).toFixed(2)}%`);
+  for (let i = steps - 1; i >= 0; i--) pts.push(`${((i / steps) * 100).toFixed(2)}% ${(100 - Number(jag())).toFixed(2)}%`);
+  for (let i = steps - 1; i >= 1; i--) pts.push(`${jag()}% ${((i / steps) * 100).toFixed(2)}%`);
+  return `polygon(${pts.join(', ')})`;
+};
+
+/** True when an element draws something on the card, template slots included. */
+export const isRenderableElement = (el: CanvasElement): boolean => {
+  if (el.type === 'text') return Boolean(el.text && el.text.trim());
+  if (el.type === 'image') return Boolean((el.imageUrl && el.imageUrl.trim()) || el.placeholder);
+  if (el.type === 'vector') return Boolean(el.vectorId || el.emoji);
+  if (el.type === 'shape') return true;
+  return false;
+};
+
+/** The picture inside an image element: a sized, framed slot or a free image. */
+const CanvasImageBody: React.FC<{ el: CanvasElement }> = ({ el }) => {
+  const hasImage = Boolean(el.imageUrl && el.imageUrl.trim());
+
+  // Free-floating image added from the toolbar: sized by the picture itself.
+  if (!el.width || !el.height) {
+    if (!hasImage) return null;
+    return (
+      <SmartImage
+        src={el.imageUrl}
+        alt="Board attachment"
+        draggable={false}
+        rounded=""
+        // The skeleton needs a real box, otherwise there is nothing to pulse
+        // while a Cloudinary image downloads.
+        wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
+        style={{
+          borderRadius: `${el.cornerRadius || 0}px`,
+          border: el.strokeEnabled ? `${el.strokeWidth ?? 3}px solid ${el.strokeColor || '#FF6B4A'}` : 'none',
+        }}
+        className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none"
+      />
+    );
+  }
+
+  const picture = hasImage ? (
+    <SmartImage
+      src={el.imageUrl}
+      alt="Board photo"
+      draggable={false}
+      rounded=""
+      wrapperClassName="w-full h-full"
+      className="w-full h-full object-cover pointer-events-none select-none"
+    />
+  ) : (
+    // An empty template slot. Never saved: hasElementContent drops it.
+    <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-[#EDE7E1] to-[#D9D0C7] text-[#8C8178]">
+      <ImageIcon className="w-6 h-6 stroke-[1.75]" />
+      <span className="text-[9px] font-bold uppercase tracking-wider">Add photo</span>
+    </div>
+  );
+
+  if (el.frame === 'polaroid') {
+    return (
+      <div className="bg-white p-1.5 pb-6 shadow-md pointer-events-none select-none">
+        <div style={{ width: el.width, height: el.height }} className="overflow-hidden">
+          {picture}
+        </div>
+      </div>
+    );
+  }
+
+  if (el.frame === 'torn') {
+    return (
+      <div
+        style={{ clipPath: tornClipPath(el.id.split('~')[0]) }}
+        className="bg-[#FBF8F3] p-[5px] drop-shadow-sm pointer-events-none select-none"
+      >
+        <div style={{ width: el.width, height: el.height, clipPath: tornClipPath(el.id.split('~')[0] + '-in') }} className="overflow-hidden">
+          {picture}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{ width: el.width, height: el.height, borderRadius: `${el.cornerRadius || 0}px` }}
+      className="overflow-hidden pointer-events-none select-none"
+    >
+      {picture}
+    </div>
+  );
+};
+
+/** A plain sheet of coloured paper: a backdrop, a scrap or a strip of tape. */
+const CanvasShapeBody: React.FC<{ el: CanvasElement }> = ({ el }) => (
+  <div
+    style={{
+      width: el.width || 80,
+      height: el.height || 40,
+      backgroundColor: el.bgHex || '#F3E9DC',
+      borderRadius: `${el.cornerRadius || 0}px`,
+    }}
+    className="pointer-events-none select-none"
+  />
+);
+
+/** The vector sticker, or an emoji sticker when the element carries one. */
+const CanvasVectorBody: React.FC<{ el: CanvasElement }> = ({ el }) => {
+  if (el.emoji && !PHOSPHOR_VECTORS.some(v => v.id === el.vectorId)) {
+    return (
+      <div className="p-1 pointer-events-none select-none flex items-center justify-center">
+        <span className="text-4xl leading-none">{el.emoji}</span>
+      </div>
+    );
+  }
+  const match = PHOSPHOR_VECTORS.find(v => v.id === (el.vectorId || 'heart'));
+  const color = el.vectorColor || '#272835';
+  return (
+    <div className="p-1 pointer-events-none select-none flex items-center justify-center">
+      {match ? (
+        <match.Icon size={48} weight={match.weight || 'fill'} style={{ color }} className="drop-shadow-xs" />
+      ) : (
+        <Heart className="w-10 h-10 drop-shadow-xs" style={{ color }} />
+      )}
+    </div>
+  );
+};
+
+/** Inline style for a text element's paper label, when it has one. */
+const labelStyle = (el: CanvasElement): React.CSSProperties | undefined =>
+  el.labelBg
+    ? { backgroundColor: el.labelBg, padding: '2px 8px', boxShadow: '0 1px 2px rgba(0,0,0,0.12)' }
+    : undefined;
 
 interface RenderCanvasElementProps {
   el: CanvasElement;
@@ -242,6 +402,7 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
   const isRotatingRef = useRef(false);
 
   const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
+  const tapStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const startStateRef = useRef({
     clientX: 0,
@@ -399,9 +560,27 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
     };
   }, []);
 
+  // A template's backdrop is scenery: it neither selects nor moves.
+  if (el.locked) {
+    return (
+      <div
+        style={{
+          transform: `translate3d(${el.x || 0}px, ${el.y || 0}px, 0) scale(${el.scale || 1}) rotate(${el.rotation || 0}deg)`,
+        }}
+        className="absolute pointer-events-none flex items-center justify-center select-none z-0"
+      >
+        {el.type === 'shape' && <CanvasShapeBody el={el} />}
+        {el.type === 'image' && <CanvasImageBody el={el} />}
+      </div>
+    );
+  }
+
   return (
     <div
-      onPointerDown={handlePointerDown}
+      onPointerDown={(e) => {
+        tapStartRef.current = { x: e.clientX, y: e.clientY };
+        handlePointerDown(e);
+      }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
@@ -409,6 +588,13 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
       onClick={(e) => {
         e.stopPropagation();
         onSelect(el.id);
+        // An empty photo slot has one job: take a picture. A plain tap (not
+        // the end of a drag) opens the picker straight away.
+        const start = tapStartRef.current;
+        const moved = start ? Math.hypot(e.clientX - start.x, e.clientY - start.y) : 0;
+        if (el.type === 'image' && el.placeholder && !el.imageUrl && moved < 6) {
+          onEdit(el.id);
+        }
       }}
       style={{
         transform: `translate3d(${el.x || 0}px, ${el.y || 0}px, 0) scale(${el.scale || 1}) rotate(${el.rotation || 0}deg)`,
@@ -424,41 +610,14 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
         isSelected ? 'z-20' : 'hover:opacity-95 z-10'
       }`}
     >
-      {/* 1. Image Element */}
-      {el.type === 'image' && el.imageUrl && (
-        <SmartImage
-          src={el.imageUrl}
-          alt="Board attachment"
-          draggable={false}
-          rounded=""
-          // The skeleton needs a real box, otherwise there is nothing to pulse
-          // while a Cloudinary image downloads.
-          wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
-          style={{
-            borderRadius: `${el.cornerRadius || 0}px`,
-            border: el.strokeEnabled ? `${el.strokeWidth ?? 3}px solid ${el.strokeColor || '#FF6B4A'}` : 'none',
-          }}
-          className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none"
-        />
-      )}
+      {/* 1. Image Element (a free image, or a template photo slot) */}
+      {el.type === 'image' && <CanvasImageBody el={el} />}
+
+      {/* Paper shape: template backdrops, scraps and tape */}
+      {el.type === 'shape' && <CanvasShapeBody el={el} />}
 
       {/* 2. Vector / Sticker Element */}
-      {el.type === 'vector' && (
-        <div className="p-1 pointer-events-none select-none flex items-center justify-center">
-          {(() => {
-            const match = PHOSPHOR_VECTORS.find(v => v.id === (el.vectorId || 'heart'));
-            const color = el.vectorColor || '#272835';
-            if (match) {
-              const IconComp = match.Icon;
-              return <IconComp size={48} weight={match.weight || 'fill'} style={{ color }} className="drop-shadow-xs" />;
-            }
-            if (el.emoji) {
-              return <span className="text-4xl leading-none">{el.emoji}</span>;
-            }
-            return <Heart className="w-10 h-10 drop-shadow-xs" style={{ color }} />;
-          })()}
-        </div>
-      )}
+      {el.type === 'vector' && <CanvasVectorBody el={el} />}
 
       {/* 3. Text Element */}
       {el.type === 'text' && el.text && (
@@ -473,6 +632,7 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
               fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
               textAlign: el.align || DEFAULT_TEXT_ALIGN,
               whiteSpace: 'pre-wrap',
+              ...labelStyle(el),
             }}
             className={`font-bold leading-snug break-words whitespace-pre-wrap ${textSizeClass(el)}`}
           >
@@ -538,41 +698,14 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
       }}
       className="absolute pointer-events-none flex items-center justify-center select-none transition-transform duration-75 z-10"
     >
-      {/* 1. Image Element */}
-      {el.type === 'image' && el.imageUrl && (
-        <SmartImage
-          src={el.imageUrl}
-          alt="Board attachment"
-          draggable={false}
-          rounded=""
-          // The skeleton needs a real box, otherwise there is nothing to pulse
-          // while a Cloudinary image downloads.
-          wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
-          style={{
-            borderRadius: `${el.cornerRadius || 0}px`,
-            border: el.strokeEnabled ? `${el.strokeWidth ?? 3}px solid ${el.strokeColor || '#FF6B4A'}` : 'none',
-          }}
-          className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none"
-        />
-      )}
+      {/* 1. Image Element (a free image, or a template photo slot) */}
+      {el.type === 'image' && <CanvasImageBody el={el} />}
+
+      {/* Paper shape: template backdrops, scraps and tape */}
+      {el.type === 'shape' && <CanvasShapeBody el={el} />}
 
       {/* 2. Vector / Sticker Element */}
-      {el.type === 'vector' && (
-        <div className="p-1 pointer-events-none select-none flex items-center justify-center">
-          {(() => {
-            const match = PHOSPHOR_VECTORS.find(v => v.id === (el.vectorId || 'heart'));
-            const color = el.vectorColor || '#272835';
-            if (match) {
-              const IconComp = match.Icon;
-              return <IconComp size={48} weight={match.weight || 'fill'} style={{ color }} className="drop-shadow-xs" />;
-            }
-            if (el.emoji) {
-              return <span className="text-4xl leading-none">{el.emoji}</span>;
-            }
-            return <Heart className="w-10 h-10 drop-shadow-xs" style={{ color }} />;
-          })()}
-        </div>
-      )}
+      {el.type === 'vector' && <CanvasVectorBody el={el} />}
 
       {/* 3. Text Element */}
       {el.type === 'text' && el.text && (
@@ -583,6 +716,7 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
               fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
               textAlign: el.align || DEFAULT_TEXT_ALIGN,
               whiteSpace: 'pre-wrap',
+              ...labelStyle(el),
             }}
             className={`font-bold leading-snug break-words whitespace-pre-wrap ${textSizeClass(el)}`}
           >
@@ -672,12 +806,7 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
 
   const effectiveScale = externalScale !== undefined ? externalScale : (measuredScale || 1);
 
-  const visibleElements = canvasElements.filter(el => {
-    if (el.type === 'text') return Boolean(el.text && el.text.trim());
-    if (el.type === 'image') return Boolean(el.imageUrl && el.imageUrl.trim());
-    if (el.type === 'vector') return Boolean(el.vectorId || el.emoji);
-    return false;
-  });
+  const visibleElements = canvasElements.filter(isRenderableElement);
 
   const hasCanvasContent = visibleElements.length > 0;
   const fallbackText = content?.trim();
@@ -1331,7 +1460,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     const reader = new FileReader();
     reader.onloadend = () => {
       const previewUrl = reader.result as string;
-      updateEditingElement({ imageUrl: previewUrl });
+      updateEditingElement({ imageUrl: previewUrl, placeholder: false });
       setUploadedImage(previewUrl);
     };
     reader.readAsDataURL(file);
@@ -1339,7 +1468,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     try {
       setCanvasImageUploading(true);
       const uploaded = await uploadFile(file, 'image');
-      updateEditingElement({ imageUrl: uploaded.url });
+      updateEditingElement({ imageUrl: uploaded.url, placeholder: false });
       setUploadedImage(uploaded.url);
     } catch (err) {
       setModerationError(
@@ -1716,10 +1845,15 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     }
   }, [recipient, isHashtagRecipient]);
 
+  /**
+   * What gets SAVED. A template photo slot nobody filled is dropped here, so a
+   * published board never shows an "Add photo" placeholder.
+   */
   const hasElementContent = (el: CanvasElement) => {
     if (el.type === 'text') return Boolean(el.text && el.text.trim());
     if (el.type === 'image') return Boolean(el.imageUrl && el.imageUrl.trim());
     if (el.type === 'vector') return Boolean(el.vectorId || el.emoji);
+    if (el.type === 'shape') return true;
     return false;
   };
 
@@ -2299,7 +2433,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-center justify-center z-10">
               <>
                 {(() => {
-                  const visibleElements = canvasElements.filter(hasElementContent);
+                  const visibleElements = canvasElements.filter(isRenderableElement);
                   if (visibleElements.length === 0) {
                     return (
                       <div className="text-center w-full px-4 space-y-0.5 py-1 pointer-events-none">
@@ -3288,7 +3422,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   {activeType === 'text' && (
                     <>
                       {(() => {
-                        const visibleElements = canvasElements.filter(hasElementContent);
+                        const visibleElements = canvasElements.filter(isRenderableElement);
                         if (visibleElements.length === 0) {
                           return (
                             <div className="text-center w-full px-4 space-y-0.5 py-1 pointer-events-none">
@@ -3488,7 +3622,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 {/* Sticky Top Header */}
                 <div className="px-5 sm:px-6 pt-5 pb-3 bg-white border-b border-[#ECEFF3] flex items-center justify-between shrink-0 sticky top-0 z-10">
                   <h3 className="text-xl font-bold text-[#1A1B25]">
-                    {editingElement.type === 'text' ? 'Text' : editingElement.type === 'bg' ? 'Background' : editingElement.type.charAt(0).toUpperCase() + editingElement.type.slice(1)}
+                    {editingElement.type === 'text' ? 'Text' : editingElement.type === 'bg' ? 'Background' : editingElement.type === 'shape' ? 'Paper' : editingElement.type === 'image' && editingElement.placeholder ? 'Add Photo' : editingElement.type.charAt(0).toUpperCase() + editingElement.type.slice(1)}
                   </h3>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -3914,6 +4048,15 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                     </label>
 
                     </div>
+                  )}
+
+                  {editingElement.type === 'shape' && (
+                    <ChooseColor
+                      label="Paper Colour"
+                      selectedColor={editingElement.bgHex || '#F3E9DC'}
+                      onChangeColor={(hex) => updateEditingElement({ bgHex: hex })}
+                      isAccordion={false}
+                    />
                   )}
 
                   {editingElement.type === 'bg' && (

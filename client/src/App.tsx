@@ -810,7 +810,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, onPlusCl
           onClick={() => {
             setActiveTab('hearts');
           }}
-          aria-label="My Heartboard"
+          aria-label="Blow a heart"
           className="p-1.5 text-gray-600 hover:text-gray-900 transition-all duration-200 transform hover:scale-110 active:scale-90"
         >
           <Heart className="w-6 h-6" strokeWidth={1.8} />
@@ -1507,6 +1507,46 @@ const App: React.FC = () => {
   const boardSlug = boardMatch ? decodeURIComponent(boardMatch[1]) : null;
   const boardSubRoute = boardMatch?.[2] as 'add-message' | 'edit' | undefined;
 
+  /**
+   * Where the Home tab was last, so pressing Home returns there.
+   *
+   * Home is a stack, the way tabs work in a phone app: browse into someone's
+   * profile or a hashtag, step away to your own profile, and Home brings you
+   * back to that profile rather than throwing the place away and resetting to
+   * the feed. Only pages that belong to Home are remembered — your own
+   * profile and the overlays (a board, the composer, sign-in) sit outside it.
+   * Kept in sessionStorage so a refresh does not forget it either.
+   */
+  // Your own profile is never part of Home, whichever address it was opened at.
+  const isOwnProfilePath =
+    path === '/profile' ||
+    Boolean(
+      profileMatch &&
+        currentUser &&
+        decodeURIComponent(profileMatch[1]).toLowerCase() === usernameOf(currentUser.handle).toLowerCase(),
+    );
+  const isHomeSectionPath =
+    !isOwnProfilePath && (path === '/' || Boolean(profileMatch) || Boolean(hashtagMatch));
+  const lastHomePathRef = useRef<string>(
+    (() => {
+      try {
+        return sessionStorage.getItem('hb:lastHomePath') || '/';
+      } catch {
+        return '/';
+      }
+    })(),
+  );
+  useEffect(() => {
+    if (!isHomeSectionPath) return;
+    const here = path + location.search;
+    lastHomePathRef.current = here;
+    try {
+      sessionStorage.setItem('hb:lastHomePath', here);
+    } catch {
+      // Private mode or storage disabled: the in-memory copy still works.
+    }
+  }, [isHomeSectionPath, path, location.search]);
+
   // Which board is open is DERIVED from the slug in the URL, never stored.
   //
   // It used to be an index into `posts`, which broke as soon as the list
@@ -2010,13 +2050,21 @@ const App: React.FC = () => {
 
   const handleTabChange = (tab: 'home' | 'hearts') => {
     if (tab === 'hearts') {
-      if (path !== '/profile') pushView('/profile');
+      // The heart button is a shortcut to blowing a heart, not a page.
+      goToCreate({ mode: 'send_heart' });
       return;
     }
-    // Home returns to the unfiltered feed. Pressing it from inside an event
-    // category used to leave that category selected, so "Home" appeared to do
-    // nothing. (The heartboard never reads activeFilter, which is why switching
-    // to it has no business touching these.)
+
+    // Away from Home (your own profile, say): go back to wherever Home was.
+    const lastHome = lastHomePathRef.current;
+    if (!isHomeSectionPath && lastHome && lastHome !== '/') {
+      pushView(lastHome);
+      return;
+    }
+
+    // Already on Home, or Home was the feed: return to the unfiltered feed.
+    // Pressing it from inside an event category used to leave that category
+    // selected, so "Home" appeared to do nothing.
     resetFeedView();
     if (path !== '/') navigate('/');
   };
@@ -2311,7 +2359,7 @@ const App: React.FC = () => {
             activeTab={activeNavTab} 
             setActiveTab={(tab) => {
               if (tab === 'hearts' && !currentUser) {
-                handleOpenAuth('login', 'Please sign in or create an account to access your personal Heartboard.');
+                handleOpenAuth('login', 'Please sign in or create an account to blow a heart.');
                 return;
               }
               // handleTabChange navigates; the URL -> state effect clears the

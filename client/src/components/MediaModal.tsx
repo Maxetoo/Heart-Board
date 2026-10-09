@@ -6,8 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  UserCheck,
-  LayoutGrid,
   Sparkles,
   Check,
   Plus
@@ -20,7 +18,9 @@ import {
   Fire as PhosphorFire,
   ShareFat,
   Flag as PhosphorFlag,
-  Plus as PhosphorPlus
+  Plus as PhosphorPlus,
+  UserCheck as PhosphorUserCheck,
+  Checkerboard,
 } from '@phosphor-icons/react';
 import { ConfettiOverlay } from './ConfettiOverlay';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
@@ -148,6 +148,8 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [showContributorDetails, setShowContributorDetails] = useState(false);
+  /** The action bar stays out of the way until the message is tapped. */
+  const [showActions, setShowActions] = useState(false);
   const [showFlagToast, setShowFlagToast] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -326,6 +328,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       setActiveTab('main');
       setMessagePosition(0);
       setShowContributorDetails(false);
+      setShowActions(false);
       setIsActionMenuOpen(false);
       setIsReactionPickerOpen(false);
       setReactionCounts(getInitialReactionCounts(post));
@@ -393,6 +396,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       clickTimerRef.current = setTimeout(() => {
         clickTimerRef.current = null;
         setShowContributorDetails((prev) => !prev);
+        setShowActions((prev) => {
+          if (prev) setIsReactionPickerOpen(false);
+          return !prev;
+        });
       }, 240);
     }
   };
@@ -881,7 +888,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-between bg-[#1A1B25] text-white font-sans select-none overflow-y-auto antialiased"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-start bg-[#1A1B25] text-white font-sans select-none overflow-y-auto antialiased"
       style={{ backgroundColor: '#1A1B25' }}
     >
       {/* 1. TOP BAR */}
@@ -897,7 +904,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 setActiveTab('main');
               }
             }}
-            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
+            className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
               canToggleContributions ? 'cursor-pointer' : 'cursor-default'
             } ${
               effectiveActiveTab === 'main'
@@ -907,7 +914,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             title="Main Board (Original by Curator)"
             aria-label="Main Board"
           >
-            <UserCheck className="w-4 h-4" />
+            <PhosphorUserCheck size={20} weight="bold" />
           </button>
 
           {/* Contributions Button */}
@@ -924,7 +931,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               setSwipeDirection(1);
               setMessagePosition(1);
             }}
-            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all relative ${
+            className={`w-10 h-10 flex items-center justify-center rounded-full transition-all relative ${
               canToggleContributions
                 ? 'cursor-pointer hover:text-white/80'
                 : 'cursor-not-allowed opacity-40 select-none'
@@ -944,7 +951,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             }
             aria-label="Contributions"
           >
-            <LayoutGrid className="w-4 h-4" />
+            <Checkerboard size={20} weight="bold" />
           </button>
         </div>
 
@@ -1011,7 +1018,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         // image drag, which cancels the pointer stream mid-gesture. Touch has
         // no such thing, so this too only ever bit on desktop.
         onDragStart={(e) => e.preventDefault()}
-        className={`w-full flex-1 flex flex-col items-center justify-center px-0 sm:px-4 py-2 my-auto z-10 touch-pan-y select-none ${
+        className={`w-full flex flex-col items-center justify-center px-0 sm:px-4 pt-2 mt-auto z-10 touch-pan-y select-none ${
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >
@@ -1062,7 +1069,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             // which read as dragging the board away.
             // No frame: the viewer shows the message alone. Edge to edge on a
             // phone; on larger screens the same size it had inside the old frame.
-            className="w-full sm:w-[290px] md:w-[300px] aspect-[254/350] flex items-center justify-center relative overflow-hidden cursor-pointer active:scale-[0.995] select-none will-change-transform"
+            className="w-full sm:w-[300px] md:w-[340px] lg:w-[360px] aspect-[254/350] flex items-center justify-center relative overflow-hidden cursor-pointer select-none"
             title="Single-click for contributor details, double-click for action menu"
           >
             {/* Confetti Overlay inside frame if enabled */}
@@ -1127,7 +1134,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 
               {/* Single Click — Contributor Details Overlay */}
               {showContributorDetails && (
-                <div className="absolute inset-x-0 bottom-0 pt-16 pb-3.5 px-4 sm:px-5 bg-gradient-to-t from-black/85 via-black/45 to-transparent flex items-center gap-2.5 z-30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
+                <div className="absolute inset-x-0 top-0 pb-16 pt-3.5 px-4 sm:px-5 bg-gradient-to-b from-black/85 via-black/45 to-transparent flex items-center gap-2.5 z-30 transition-all duration-300 animate-in fade-in slide-in-from-top-2 pointer-events-none">
                   <div className="w-8 h-8 rounded-full bg-[#FAF0EC] border border-white/30 flex items-center justify-center text-xs font-extrabold text-[#FE6349] shrink-0 overflow-hidden shadow-xs">
                     {activeContributorAvatar ? (
                       <SmartImage
@@ -1154,24 +1161,201 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Reaction Picker & Action Bar — sits on the message itself, bottom
+                left. Its own taps never reach the board underneath, which would
+                otherwise read them as a click on the card or the start of a swipe. */}
+            <div
+              className={`absolute left-5 bottom-5 z-40 w-fit flex flex-col items-start transition-all duration-200 ${
+                showActions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
+              }`}
+              aria-hidden={!showActions}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+
+              {/* Dismiss backdrop when picker is open */}
+              {isReactionPickerOpen && (
+                <div
+                  className="fixed inset-0 z-20 cursor-default"
+                  onClick={() => setIsReactionPickerOpen(false)}
+                />
+              )}
+
+              {/* Top Floating Pill: Reaction Picker (Absolute overlay - zero layout shift) */}
+              {isReactionPickerOpen && (
+                <div
+                  // Five reactions now rather than four, so the gap tightens on a
+                  // phone to keep the pill inside the viewport once counts appear.
+                  className="absolute bottom-[calc(100%+5px)] left-0 w-fit whitespace-nowrap flex items-center justify-start gap-3 bg-[#272835] rounded-full px-3.5 h-[58px] animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* 1. Clap */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReaction('clap')}
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
+                    title="Clap"
+                  >
+                    <HandsClapping
+                      size={24}
+                      weight={userReactions.includes('clap') ? "fill" : "bold"}
+                      color={userReactions.includes('clap') ? "#00D09C" : "#FFFFFF"}
+                    />
+                    {formatReactionCount(reactionCounts.clap) && (
+                      <span className="text-xs font-bold text-white tracking-tight">
+                        {formatReactionCount(reactionCounts.clap)}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* 2. Heart */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReaction('heart')}
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
+                    title="Heart / Love"
+                  >
+                    <PhosphorHeart
+                      size={24}
+                      weight="fill"
+                      color={userReactions.includes('heart') ? "#FF3838" : "#FFFFFF"}
+                    />
+                    {formatReactionCount(reactionCounts.heart) && (
+                      <span className="text-xs font-bold text-white tracking-tight">
+                        {formatReactionCount(reactionCounts.heart)}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* 3. Smiley */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReaction('smiley')}
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
+                    title="Smiley"
+                  >
+                    <PhosphorSmiley
+                      size={24}
+                      weight={userReactions.includes('smiley') ? "fill" : "bold"}
+                      color={userReactions.includes('smiley') ? "#FFC72C" : "#FFFFFF"}
+                    />
+                    {formatReactionCount(reactionCounts.smiley) && (
+                      <span className="text-xs font-bold text-white tracking-tight">
+                        {formatReactionCount(reactionCounts.smiley)}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* 4. Sad — the reaction behind "This made people cry". */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReaction('sad')}
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
+                    title="Sad / Moved to tears"
+                  >
+                    <PhosphorSmileySad
+                      size={24}
+                      weight={userReactions.includes('sad') ? "fill" : "bold"}
+                      color={userReactions.includes('sad') ? "#5B8DEF" : "#FFFFFF"}
+                    />
+                    {formatReactionCount(reactionCounts.sad) && (
+                      <span className="text-xs font-bold text-white tracking-tight">
+                        {formatReactionCount(reactionCounts.sad)}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* 5. Fire */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReaction('fire')}
+                    className="flex items-center gap-2 transition-transform active:scale-90 cursor-pointer"
+                    title="Fire"
+                  >
+                    <PhosphorFire
+                      size={24}
+                      weight="fill"
+                      color={userReactions.includes('fire') ? "#FF7629" : "#FFFFFF"}
+                    />
+                    {formatReactionCount(reactionCounts.fire) && (
+                      <span className="text-xs font-bold text-white tracking-tight">
+                        {formatReactionCount(reactionCounts.fire)}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Bottom Pill: Action Bar */}
+              <div className="w-fit flex items-center justify-center gap-5 bg-[#272835] rounded-full px-6 h-[58px] relative z-30">
+
+                {/* 1. Reaction Button (Smiley) - Default State has no count, only icon */}
+                <button
+                  type="button"
+                  onClick={() => setIsReactionPickerOpen((prev) => !prev)}
+                  className={`flex items-center justify-center p-1 -m-1 rounded-full active:scale-95 transition-all cursor-pointer ${
+                    isReactionPickerOpen ? 'bg-white/15 text-white' : 'text-white/90 hover:text-white'
+                  }`}
+                  title="Reactions"
+                >
+                  <PhosphorSmiley size={24} weight="bold" color="#FFFFFF" />
+                </button>
+
+                {/* 2. Share Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsShareModalOpen(true)}
+                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
+                  title="Share board link & image"
+                >
+                  <ShareFat size={24} weight="bold" color="#FFFFFF" />
+                </button>
+
+                {/* 3. Flag Button */}
+                <button
+                  type="button"
+                  onClick={handleFlagClick}
+                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
+                  title="Flag / Report this board"
+                >
+                  <PhosphorFlag size={24} weight="bold" color="#FFFFFF" />
+                </button>
+
+                {/* 4. + / Add Message Button (ONLY if collaborative and capacity not reached) */}
+                {!isSoloMode && !isCapacityReached && onAddContributionClick && (
+                  <button
+                    type="button"
+                    onClick={() => onAddContributionClick(post)}
+                    className="text-white hover:text-[#FE6349] active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+                    title="Add a message to this board"
+                  >
+                    <PhosphorPlus size={24} weight="bold" color="#FFFFFF" />
+                  </button>
+                )}
+
+              </div>
+
+            </div>
           </div>
         )}
 
       </main>
 
       {/* 4. BELOW THE BOARD (Strictly permanent main board metadata) */}
-      <footer className="w-full sm:max-w-[290px] md:max-w-[300px] mx-auto px-5 sm:px-0 pb-6 pt-1 flex flex-col items-start text-left gap-3 z-20 shrink-0">
+      <footer className="w-full sm:max-w-[300px] md:max-w-[340px] lg:max-w-[360px] mx-auto mb-auto px-5 sm:px-0 pb-6 pt-[30px] flex flex-col items-start text-left z-20 shrink-0">
 
         {/* A. Caption — the board's own title, permanent across its messages. */}
         <h2
-          className="w-full text-base sm:text-lg font-bold text-white tracking-tight leading-snug truncate"
+          className="w-full text-xl leading-7 font-bold text-white truncate"
           title={boardCaption}
         >
           {boardCaption}
         </h2>
 
         {/* B. Tagged recipient(s) and hashtags. */}
-        <p className="text-xs sm:text-sm font-semibold text-white/60 break-words flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="mt-[5px] text-sm leading-5 font-medium text-white/60 break-words flex flex-wrap items-center gap-x-2 gap-y-1">
           {displayTokens
             .map((token, idx) => (
             <button
@@ -1201,10 +1385,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         <button
           type="button"
           onClick={() => handleUserClick(activeAuthor.handle)}
-          className="flex items-center gap-2 group cursor-pointer text-left transition-opacity hover:opacity-95"
+          className="mt-[10px] flex items-center gap-[11px] group cursor-pointer text-left transition-opacity hover:opacity-95"
           title={`View ${activeAuthor.handle}'s Heartboard`}
         >
-          <div className="w-6 h-6 rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
+          <div className="w-[30px] h-[30px] rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
             {activeAuthor.avatar ? (
               <SmartImage
                 src={activeAuthor.avatar}
@@ -1219,179 +1403,12 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               activeAuthor.name.charAt(0).toUpperCase()
             )}
           </div>
-          <span className="text-xs sm:text-sm font-semibold text-white/60 group-hover:text-white group-hover:underline transition-colors">
+          <span className="text-sm leading-5 font-medium text-white/60 group-hover:text-white group-hover:underline transition-colors">
             {activeAuthor.handle}
             {activeAuthor.isBoardOwner && ' (Curator)'}
           </span>
         </button>
 
-
-        {/* D. Reaction Picker & Action Bar */}
-        <div className="w-fit relative flex flex-col items-start">
-
-          {/* Dismiss backdrop when picker is open */}
-          {isReactionPickerOpen && (
-            <div
-              className="fixed inset-0 z-20 cursor-default"
-              onClick={() => setIsReactionPickerOpen(false)}
-            />
-          )}
-
-          {/* Top Floating Pill: Reaction Picker (Absolute overlay - zero layout shift) */}
-          {isReactionPickerOpen && (
-            <div
-              // Five reactions now rather than four, so the gap tightens on a
-              // phone to keep the pill inside the viewport once counts appear.
-              className="absolute bottom-[calc(100%+10px)] left-0 w-fit max-w-[calc(100vw-2rem)] whitespace-nowrap flex items-center justify-start gap-2.5 sm:gap-4 bg-[#272835] rounded-full px-4 sm:px-5 py-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* 1. Clap */}
-              <button
-                type="button"
-                onClick={() => handleToggleReaction('clap')}
-                className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
-                title="Clap"
-              >
-                <HandsClapping
-                  size={24}
-                  weight={userReactions.includes('clap') ? "fill" : "bold"}
-                  color={userReactions.includes('clap') ? "#00D09C" : "#FFFFFF"}
-                />
-                {formatReactionCount(reactionCounts.clap) && (
-                  <span className="text-xs font-bold text-white tracking-tight ml-0.5">
-                    {formatReactionCount(reactionCounts.clap)}
-                  </span>
-                )}
-              </button>
-
-              {/* 2. Heart */}
-              <button
-                type="button"
-                onClick={() => handleToggleReaction('heart')}
-                className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
-                title="Heart / Love"
-              >
-                <PhosphorHeart
-                  size={24}
-                  weight="fill"
-                  color={userReactions.includes('heart') ? "#FF3838" : "#FFFFFF"}
-                />
-                {formatReactionCount(reactionCounts.heart) && (
-                  <span className="text-xs font-bold text-white tracking-tight ml-0.5">
-                    {formatReactionCount(reactionCounts.heart)}
-                  </span>
-                )}
-              </button>
-
-              {/* 3. Smiley */}
-              <button
-                type="button"
-                onClick={() => handleToggleReaction('smiley')}
-                className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
-                title="Smiley"
-              >
-                <PhosphorSmiley
-                  size={24}
-                  weight={userReactions.includes('smiley') ? "fill" : "bold"}
-                  color={userReactions.includes('smiley') ? "#FFC72C" : "#FFFFFF"}
-                />
-                {formatReactionCount(reactionCounts.smiley) && (
-                  <span className="text-xs font-bold text-white tracking-tight ml-0.5">
-                    {formatReactionCount(reactionCounts.smiley)}
-                  </span>
-                )}
-              </button>
-
-              {/* 4. Sad — the reaction behind "This made people cry". */}
-              <button
-                type="button"
-                onClick={() => handleToggleReaction('sad')}
-                className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
-                title="Sad / Moved to tears"
-              >
-                <PhosphorSmileySad
-                  size={24}
-                  weight={userReactions.includes('sad') ? "fill" : "bold"}
-                  color={userReactions.includes('sad') ? "#5B8DEF" : "#FFFFFF"}
-                />
-                {formatReactionCount(reactionCounts.sad) && (
-                  <span className="text-xs font-bold text-white tracking-tight ml-0.5">
-                    {formatReactionCount(reactionCounts.sad)}
-                  </span>
-                )}
-              </button>
-
-              {/* 5. Fire */}
-              <button
-                type="button"
-                onClick={() => handleToggleReaction('fire')}
-                className="flex items-center gap-1.5 transition-transform active:scale-90 cursor-pointer py-1 px-1 rounded-full hover:bg-white/5"
-                title="Fire"
-              >
-                <PhosphorFire
-                  size={24}
-                  weight="fill"
-                  color={userReactions.includes('fire') ? "#FF7629" : "#FFFFFF"}
-                />
-                {formatReactionCount(reactionCounts.fire) && (
-                  <span className="text-xs font-bold text-white tracking-tight ml-0.5">
-                    {formatReactionCount(reactionCounts.fire)}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Bottom Pill: Action Bar */}
-          <div className="w-fit flex items-center justify-center gap-4 bg-[#272835] rounded-full px-5 py-2.5 relative z-30">
-
-            {/* 1. Reaction Button (Smiley) - Default State has no count, only icon */}
-            <button
-              type="button"
-              onClick={() => setIsReactionPickerOpen((prev) => !prev)}
-              className={`flex items-center justify-center p-1 rounded-full active:scale-95 transition-all cursor-pointer ${
-                isReactionPickerOpen ? 'bg-white/15 text-white' : 'text-white/90 hover:text-white'
-              }`}
-              title="Reactions"
-            >
-              <PhosphorSmiley size={24} weight="bold" color="#FFFFFF" />
-            </button>
-
-            {/* 2. Share Button */}
-            <button
-              type="button"
-              onClick={() => setIsShareModalOpen(true)}
-              className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer p-1"
-              title="Share board link & image"
-            >
-              <ShareFat size={24} weight="bold" color="#FFFFFF" />
-            </button>
-
-            {/* 3. Flag Button */}
-            <button
-              type="button"
-              onClick={handleFlagClick}
-              className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer p-1"
-              title="Flag / Report this board"
-            >
-              <PhosphorFlag size={24} weight="bold" color="#FFFFFF" />
-            </button>
-
-            {/* 4. + / Add Message Button (ONLY if collaborative and capacity not reached) */}
-            {!isSoloMode && !isCapacityReached && onAddContributionClick && (
-              <button
-                type="button"
-                onClick={() => onAddContributionClick(post)}
-                className="text-white hover:text-[#FE6349] active:scale-95 transition-all cursor-pointer p-1 flex items-center justify-center"
-                title="Add a message to this board"
-              >
-                <PhosphorPlus size={24} weight="bold" color="#FFFFFF" />
-              </button>
-            )}
-
-          </div>
-
-        </div>
 
       </footer>
 
