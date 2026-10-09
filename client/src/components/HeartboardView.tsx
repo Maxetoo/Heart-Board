@@ -46,7 +46,6 @@ import {
 } from '../lib/notifications';
 import { avatarDataUri, avatarPngFile, randomAvatarSeeds } from '../lib/avatars';
 import { avatarFromParts, usernameOf, recipientOf } from '../lib/adapters';
-import { useProfileHeartTokens, type HeartSpec } from '../hooks/useHeartTokens';
 import { useMyBoards, useProfileBoards } from '../hooks/useBoards';
 import { formatStatCount, plural } from '../lib/format';
 import { SkeletonBlock } from './SmartImage';
@@ -365,27 +364,8 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const canEditAccount = Boolean(authUser);
   const isOAuthAccount = authUser?.oauthProvider === 'google';
 
-  // ── The profile heart button ───────────────────────────────────────────────
-  //
-  // It used to toggle POST /user/:id/like — a private counter that showed up
-  // nowhere. It now blows a real LOVING heart token at this person, which lands
-  // in the Loving category of their Heartboard, and pressing it again takes that
-  // token back. One token per category per pair of people, so the button is a
-  // straight on/off: given, or not given.
-  //
-  // The category itself is not a fixed list — it exists exactly as long as
-  // somebody's token is in it. Take back the last Loving heart on a profile and
-  // Loving stops being one of their categories.
-  const LOVING_HEART: HeartSpec = { id: 'loving', label: 'Loving', emoji: '💛', theme: '#FAF0EC' };
-
   const viewedProfileHandle = usernameOf(profileUser?.handle);
   const viewedProfileId = profileUser?.id || undefined;
-  const profileHearts = useProfileHeartTokens(
-    viewedProfileHandle || undefined,
-    authUser?.id,
-  );
-  const hasHeartedProfile = profileHearts.has(LOVING_HEART.id);
-  const heartPending = profileHearts.pending;
   /**
    * True when the profile on screen belongs to the signed-in viewer.
    *
@@ -401,39 +381,6 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
         (viewedProfileHandle &&
           viewedProfileHandle.toLowerCase() === usernameOf(authUser.handle).toLowerCase())),
   );
-  /** You cannot blow a heart at yourself, and a signed-out viewer has no set. */
-  const canHeartThisProfile = Boolean(authUser && viewedProfileHandle && !isViewingSelf);
-
-  const handleToggleProfileHeart = async () => {
-    if (!authUser) {
-      // Reuses the gift-heart entry point purely for its auth gate: App sends
-      // the visitor to /login and brings them back here afterwards. Showing a
-      // toast and stopping left them with no way to act on the prompt.
-      if (onGiftHeart && profileUser) onGiftHeart(asRegisteredUser(profileUser));
-      else showToast('Sign in to blow a heart');
-      return;
-    }
-    if (!canHeartThisProfile) return;
-
-    const result = await profileHearts.toggle(LOVING_HEART);
-    if (result === true) {
-      showToast(`You blew a Loving Heart 💛 to ${profileUser?.name ?? 'this profile'}`);
-    } else if (result === false) {
-      showToast('Loving Heart removed');
-    } else {
-      showToast('That did not go through. Please try again.');
-      return;
-    }
-
-    // The heart it just wrote (or removed) belongs to this profile's Hearts tab,
-    // so whatever is on screen there is now one token out of date.
-    if (isOwnProfileView) {
-      myHeartsReceived.reload();
-    } else {
-      otherHeartsReceived.reload();
-    }
-  };
-
   // File Input Ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -1486,29 +1433,18 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
             {/* Action buttons: Heart & Message */}
             <div className="flex items-center gap-3 mt-2">
-              {/* Blows a Loving heart token straight at this person — no
-                  composer, no form. Pressing it again takes that heart back
-                  off their Heartboard. */}
+              {/* Opens the composer on Send Heart with this person already
+                  chosen, so the heart goes with a message. It never toggles
+                  or shows a "Hearted" state. */}
               {!isViewingSelf && (
               <button
-                onClick={handleToggleProfileHeart}
-                // Signed-out visitors keep the button live: pressing it routes
-                // them to sign-in. It is not rendered at all on your own
-                // profile — see isViewingSelf.
-                disabled={heartPending}
-                aria-pressed={hasHeartedProfile}
-                className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95 border-2 disabled:cursor-default disabled:opacity-60 ${
-                  hasHeartedProfile
-                    ? 'bg-[#FFF1EE] border-[#FFD5CC] text-[#FE6349] hover:bg-[#FFE7E2]'
-                    : 'bg-[#ffffff] border-[#ECEFF3] text-[#1A1B25] hover:bg-[#F8F9FB]'
-                }`}
+                onClick={() => {
+                  if (onGiftHeart && profileUser) onGiftHeart(asRegisteredUser(profileUser));
+                }}
+                className="bg-[#ffffff] hover:bg-[#F8F9FB] text-[#1A1B25] border-2 border-[#ECEFF3] px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-95"
               >
-                <Heart
-                  className={`w-4 h-4 stroke-[2.5] transition-colors ${
-                    hasHeartedProfile ? 'text-[#FE6349] fill-[#FE6349]' : 'text-[#1A1B25] fill-none'
-                  }`}
-                />
-                <span>{hasHeartedProfile ? 'Hearted' : 'Heart'}</span>
+                <Heart className="w-4 h-4 text-[#1A1B25] fill-none stroke-[2.5]" />
+                <span>Heart</span>
               </button>
               )}
 

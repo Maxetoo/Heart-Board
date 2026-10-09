@@ -1517,7 +1517,16 @@ const App: React.FC = () => {
    * profile and the overlays (a board, the composer, sign-in) sit outside it.
    * Kept in sessionStorage so a refresh does not forget it either.
    */
-  const isHomeSectionPath = path === '/' || Boolean(profileMatch) || Boolean(hashtagMatch);
+  // Your own profile is never part of Home, whichever address it was opened at.
+  const isOwnProfilePath =
+    path === '/profile' ||
+    Boolean(
+      profileMatch &&
+        currentUser &&
+        decodeURIComponent(profileMatch[1]).toLowerCase() === usernameOf(currentUser.handle).toLowerCase(),
+    );
+  const isHomeSectionPath =
+    !isOwnProfilePath && (path === '/' || Boolean(profileMatch) || Boolean(hashtagMatch));
   const lastHomePathRef = useRef<string>(
     (() => {
       try {
