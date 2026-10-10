@@ -63,17 +63,21 @@ const reactionCountsFor = async (boardIds) => {
   const rows = await Like.aggregate([
     { $match: { board: { $in: ids } } },
     {
-      // Exactly ONE reaction counted per person, so a board's total is the
-      // number of people who reacted to it. Only the first entry is read: a row
-      // written while the client still allowed several would otherwise be
-      // counted once in each of them. Rows predating `reactions` carry
-      // `reaction` alone.
+      // EVERY reaction a person holds is counted: one person can love AND
+      // clap the same board, and each shows in its own count. Rows predating
+      // `reactions` carry `reaction` alone, read as a one-entry list.
       $project: {
         board: 1,
-        picked: { $ifNull: [{ $arrayElemAt: ['$reactions', 0] }, '$reaction'] },
+        picked: {
+          $cond: [
+            { $gt: [{ $size: { $ifNull: ['$reactions', []] } }, 0] },
+            '$reactions',
+            { $cond: [{ $ifNull: ['$reaction', false] }, ['$reaction'], []] },
+          ],
+        },
       },
     },
-    { $match: { picked: { $ne: null } } },
+    { $unwind: '$picked' },
     { $group: { _id: { board: '$board', reaction: '$picked' }, count: { $sum: 1 } } },
   ]);
 
@@ -475,15 +479,14 @@ const likeBoard = async (req, res) => {
 
 
 /**
- * What this user has on the board: one reaction, or none.
- *
- * Still returned as a list because that is the shape the client reads, but
- * capped at one — matching the single-reaction rule, and matching how the
- * counts above are aggregated. Old rows carry `reaction` alone.
+ * Every reaction this user has on the board — several at once is fine
+ * (love and clap together). Old rows carry `reaction` alone.
  */
 const reactionsOf = (like) => {
   if (!like) return [];
-  if (Array.isArray(like.reactions) && like.reactions.length) return [like.reactions[0]];
+  if (Array.isArray(like.reactions) && like.reactions.length) {
+    return [...new Set(like.reactions.map(String))];
+  }
   return like.reaction ? [like.reaction] : [];
 };
 
@@ -499,9 +502,9 @@ const getMyReaction = async (req, res) => {
 /**
  * Sets this user's reaction on a board to exactly what was sent.
  *
- * ONE reaction per person per board — the extra entries of a longer list are
- * dropped here rather than trusted, so the rule holds whatever the caller
- * sends. Sending an empty list (or nothing) clears it.
+ * A person can hold several reactions on one board at once — love and clap
+ * together. Duplicates are collapsed and unknown types are rejected. Sending
+ * an empty list (or nothing) clears them all.
  *
  * It also UPSERTS: it used to 404 unless a Like row already existed, which
  * meant a first reaction could never be stored — the client papered over that
@@ -516,7 +519,7 @@ const patchReaction = async (req, res) => {
   const { reaction, reactions } = req.body;
 
   const incoming = Array.isArray(reactions) ? reactions : reaction ? [reaction] : [];
-  const next = [...new Set(incoming.map(String))].slice(0, 1);
+  const next = [...new Set(incoming.map(String))];
   if (next.some((r) => !VALID_REACTIONS.includes(r))) {
     throw new CustomError.BadRequestError('Invalid reaction type');
   }

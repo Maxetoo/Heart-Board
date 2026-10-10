@@ -810,7 +810,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, onPlusCl
           onClick={() => {
             setActiveTab('hearts');
           }}
-          aria-label="Blow a heart"
+          aria-label="Your Heartboard"
           className="p-1.5 text-gray-600 hover:text-gray-900 transition-all duration-200 transform hover:scale-110 active:scale-90"
         >
           <Heart className="w-6 h-6" strokeWidth={1.8} />
@@ -2050,8 +2050,9 @@ const App: React.FC = () => {
 
   const handleTabChange = (tab: 'home' | 'hearts') => {
     if (tab === 'hearts') {
-      // The heart button is a shortcut to blowing a heart, not a page.
-      goToCreate({ mode: 'send_heart' });
+      // The heart on the right of the bottom nav opens your own Heartboard
+      // (your profile). It used to jump into the Send Heart composer.
+      pushView('/profile');
       return;
     }
 
@@ -2359,7 +2360,7 @@ const App: React.FC = () => {
             activeTab={activeNavTab} 
             setActiveTab={(tab) => {
               if (tab === 'hearts' && !currentUser) {
-                handleOpenAuth('login', 'Please sign in or create an account to blow a heart.');
+                handleOpenAuth('login', 'Please sign in or create an account to see your Heartboard.');
                 return;
               }
               // handleTabChange navigates; the URL -> state effect clears the

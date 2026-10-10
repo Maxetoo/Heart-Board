@@ -166,6 +166,83 @@ const textSizeClass = (el: CanvasElement) =>
   ];
 
 /**
+ * Auto-fit for text on the card.
+ *
+ * The size classes above are the STARTING size. A message can still be too
+ * long for the 254x350 card — or the element scaled up until it is — and the
+ * card simply cut it off. FitText measures the real wrapped height and, only
+ * when the text would not fit, shrinks the font until the whole element sits
+ * inside the card. Text that already fits is untouched.
+ *
+ * Measured in the card's own pixels: both the composer and the published card
+ * draw a fixed 254x350 card and scale it with a CSS transform, which does not
+ * change layout sizes — so the same text fits to the same size everywhere.
+ */
+const FIT_CARD_W = 254;
+const FIT_CARD_H = 350;
+/** p-2 on each side of the text wrapper (16) plus its 1px border (2). */
+const FIT_WRAPPER_PX = 18;
+const FIT_MIN_TEXT_PX = 9;
+
+const FitText: React.FC<{
+  el: CanvasElement;
+  className: string;
+  style: React.CSSProperties;
+}> = ({ el, className, style }) => {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [fontPx, setFontPx] = useState<number | null>(null);
+  const [fontsLoaded, setFontsLoaded] = useState(0);
+
+  // The element's own scale multiplies its size on the card, so the room the
+  // text has shrinks as it is scaled up. At scale 1 the width is exactly the
+  // wrap width text has always had, so nothing that fits moves.
+  const scale = el.scale && el.scale > 0 ? el.scale : 1;
+  const maxW = Math.max(40, FIT_CARD_W / scale - FIT_WRAPPER_PX);
+  const maxH = Math.max(20, FIT_CARD_H / scale - FIT_WRAPPER_PX);
+
+  // Web fonts change line widths once they arrive; measure again then.
+  useEffect(() => {
+    let alive = true;
+    document.fonts?.ready?.then(() => { if (alive) setFontsLoaded((n) => n + 1); });
+    return () => { alive = false; };
+  }, []);
+
+  React.useLayoutEffect(() => {
+    const p = ref.current;
+    if (!p) return;
+    p.style.fontSize = ''; // measure from the class's own size first
+    const base = parseFloat(getComputedStyle(p).fontSize) || 16;
+    let size = base;
+    if (p.scrollHeight > maxH) {
+      // Largest size that fits, by bisection: a handful of layouts, not one
+      // per pixel step.
+      let lo = FIT_MIN_TEXT_PX;
+      let hi = base;
+      while (hi - lo > 0.5) {
+        const mid = (lo + hi) / 2;
+        p.style.fontSize = `${mid}px`;
+        if (p.scrollHeight > maxH) hi = mid;
+        else lo = mid;
+      }
+      size = Math.floor(lo * 2) / 2;
+    }
+    const shrunk = size < base ? size : null;
+    p.style.fontSize = shrunk ? `${shrunk}px` : '';
+    setFontPx(shrunk);
+  }, [el.text, el.fontFamily, el.isCursive, el.labelBg, scale, className, maxW, maxH, fontsLoaded]);
+
+  return (
+    <p
+      ref={ref}
+      style={{ ...style, maxWidth: maxW, fontSize: fontPx ? `${fontPx}px` : undefined }}
+      className={className}
+    >
+      {el.text}
+    </p>
+  );
+};
+
+/**
  * Centres a fixed 254x350 card inside any container at `scale`, WITHOUT letting
  * its layout box escape.
  *
@@ -227,6 +304,22 @@ export interface CanvasElement {
   frame?: 'torn' | 'polaroid';
   /** An empty photo slot from a template, waiting for the user's own picture. */
   placeholder?: boolean;
+  /**
+   * Where the photo sits inside a sized slot, as a CSS object-position in
+   * percent (0 = left/top edge, 100 = right/bottom). Only meaningful for a
+   * slot with width/height, where object-cover crops the picture. Centred
+   * (50/50) when unset.
+   */
+  focusX?: number;
+  focusY?: number;
+  /**
+   * For a free-floating image (no width/height): how far the picture is slid
+   * inside its own box, as a percent of that box. The box stays put and acts
+   * as a window, so whatever is slid past its edge is cut off — 50 on panY
+   * shows only the top half of the photo, in the lower half of its box.
+   */
+  panX?: number;
+  panY?: number;
   /** Paper label colour behind a text element. */
   labelBg?: string;
   /** Part of the template's backdrop: not selectable, not draggable. */
@@ -273,21 +366,32 @@ const CanvasImageBody: React.FC<{ el: CanvasElement }> = ({ el }) => {
   // Free-floating image added from the toolbar: sized by the picture itself.
   if (!el.width || !el.height) {
     if (!hasImage) return null;
+    const panX = el.panX ?? 0;
+    const panY = el.panY ?? 0;
     return (
-      <SmartImage
-        src={el.imageUrl}
-        alt="Board attachment"
-        draggable={false}
-        rounded=""
-        // The skeleton needs a real box, otherwise there is nothing to pulse
-        // while a Cloudinary image downloads.
-        wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
+      // The picture's own box is a window. panX/panY — set by dragging the
+      // image in the image popup — slide the picture inside it, and anything
+      // slid past the edge is cut off. The border and corners belong to the
+      // window, so at no offset this looks exactly as it always did.
+      <div
         style={{
           borderRadius: `${el.cornerRadius || 0}px`,
           border: el.strokeEnabled ? `${el.strokeWidth ?? 3}px solid ${el.strokeColor || '#FF6B4A'}` : 'none',
         }}
-        className="max-w-[220px] max-h-[220px] w-auto h-auto object-contain shadow-xs pointer-events-none select-none"
-      />
+        className="flex overflow-hidden shadow-xs pointer-events-none select-none"
+      >
+        <SmartImage
+          src={el.imageUrl}
+          alt="Board attachment"
+          draggable={false}
+          rounded=""
+          // The skeleton needs a real box, otherwise there is nothing to pulse
+          // while a Cloudinary image downloads.
+          wrapperClassName="max-w-[220px] max-h-[220px] min-w-[72px] min-h-[72px]"
+          style={panX || panY ? { transform: `translate(${panX}%, ${panY}%)` } : undefined}
+          className="block max-w-[220px] max-h-[220px] w-auto h-auto object-contain pointer-events-none select-none"
+        />
+      </div>
     );
   }
 
@@ -298,6 +402,8 @@ const CanvasImageBody: React.FC<{ el: CanvasElement }> = ({ el }) => {
       draggable={false}
       rounded=""
       wrapperClassName="w-full h-full"
+      // Set in the image popup by dragging the photo inside its frame.
+      style={{ objectPosition: `${el.focusX ?? 50}% ${el.focusY ?? 50}%` }}
       className="w-full h-full object-cover pointer-events-none select-none"
     />
   ) : (
@@ -337,6 +443,220 @@ const CanvasImageBody: React.FC<{ el: CanvasElement }> = ({ el }) => {
       className="overflow-hidden pointer-events-none select-none"
     >
       {picture}
+    </div>
+  );
+};
+
+/**
+ * The photo inside a sized slot, draggable to choose which part of it shows.
+ *
+ * A slot crops its picture (object-cover), so a photo's "position" is that
+ * crop. Dragging here moves the photo inside the frame exactly as it will sit
+ * on the card: the result is stored as focusX/focusY and CanvasImageBody reads
+ * it wherever the card is drawn — the composer, the feed, the board viewer.
+ */
+const ImagePositioner: React.FC<{
+  el: CanvasElement;
+  onChange: (focusX: number, focusY: number) => void;
+}> = ({ el, onChange }) => {
+  const frameW = el.width || 1;
+  const frameH = el.height || 1;
+  // The slot's own shape, fitted inside the 180px viewer.
+  const fit = Math.min(260 / frameW, 150 / frameH);
+  const w = Math.round(frameW * fit);
+  const h = Math.round(frameH * fit);
+
+  const fx = el.focusX ?? 50;
+  const fy = el.focusY ?? 50;
+  const [natural, setNatural] = React.useState<{ w: number; h: number } | null>(null);
+  const drag = React.useRef<{ x: number; y: number; fx: number; fy: number } | null>(null);
+
+  // One element update per animation frame, not per pointer event: each update
+  // re-renders the whole composer, and a finger fires moves faster than paint.
+  const pending = React.useRef<[number, number] | null>(null);
+  const raf = React.useRef<number | null>(null);
+  const flush = () => {
+    raf.current = null;
+    const p = pending.current;
+    pending.current = null;
+    if (p) onChange(p[0], p[1]);
+  };
+  React.useEffect(() => () => {
+    if (raf.current !== null) cancelAnimationFrame(raf.current);
+  }, []);
+
+  // How far the cover-scaled photo overflows the frame on each axis — the
+  // distance a 0 -> 100% sweep travels. An axis that does not overflow has
+  // nothing to reveal, so it does not move.
+  const overflow = React.useMemo(() => {
+    if (!natural) return { x: 0, y: 0 };
+    const s = Math.max(w / natural.w, h / natural.h);
+    return { x: natural.w * s - w, y: natural.h * s - h };
+  }, [natural, w, h]);
+
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div
+        style={{
+          width: w,
+          height: h,
+          borderRadius: el.frame ? 0 : `${(el.cornerRadius || 0) * fit}px`,
+          touchAction: 'none',
+        }}
+        className="relative overflow-hidden shadow-xs cursor-grab active:cursor-grabbing select-none"
+        onPointerDown={(e) => {
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+          drag.current = { x: e.clientX, y: e.clientY, fx, fy };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          // Dragging right shows more of the photo's left side, so the
+          // position moves the opposite way to the finger.
+          const nx = overflow.x > 0 ? clamp(d.fx - ((e.clientX - d.x) / overflow.x) * 100) : d.fx;
+          const ny = overflow.y > 0 ? clamp(d.fy - ((e.clientY - d.y) / overflow.y) * 100) : d.fy;
+          pending.current = [Math.round(nx), Math.round(ny)];
+          if (raf.current === null) raf.current = requestAnimationFrame(flush);
+        }}
+        onPointerUp={(e) => {
+          drag.current = null;
+          try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+          if (raf.current !== null) {
+            cancelAnimationFrame(raf.current);
+            flush();
+          }
+        }}
+        onPointerCancel={() => { drag.current = null; }}
+      >
+        <img
+          src={el.imageUrl}
+          alt="Photo in its frame"
+          draggable={false}
+          onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+          style={{ objectPosition: `${fx}% ${fy}%` }}
+          className="w-full h-full object-cover pointer-events-none select-none"
+        />
+      </div>
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-400">
+        <span>Drag the photo to position it</span>
+        {(fx !== 50 || fy !== 50) && (
+          <button
+            type="button"
+            onClick={() => onChange(50, 50)}
+            className="text-[#FE6349] hover:underline cursor-pointer"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * A free-floating image in the image popup, draggable inside its own box to
+ * choose what shows on the card.
+ *
+ * The dashed outline is the box — exactly the part that will be visible. Drag
+ * the picture and whatever is pushed past the outline is cut off on the card:
+ * drag it halfway down and the message shows only the top half of the photo.
+ * The value is stored as panX/panY, a percent of the box, so it means the same
+ * thing at the viewer's size and at the card's.
+ */
+const FreeImagePositioner: React.FC<{
+  el: CanvasElement;
+  onChange: (panX: number, panY: number) => void;
+}> = ({ el, onChange }) => {
+  const [natural, setNatural] = React.useState<{ w: number; h: number } | null>(null);
+  // The window keeps the picture's own shape, fitted inside the 180px viewer.
+  const fit = natural ? Math.min(260 / natural.w, 150 / natural.h) : 1;
+  const w = natural ? Math.round(natural.w * fit) : 0;
+  const h = natural ? Math.round(natural.h * fit) : 0;
+  // On the card the picture is contained in 220x220 and never upscaled; the
+  // ratio between that and the viewer keeps corners and stroke in proportion.
+  const cardScale = natural ? Math.min(1, 220 / natural.w, 220 / natural.h) : 1;
+  const toViewer = fit / cardScale;
+
+  const px = el.panX ?? 0;
+  const py = el.panY ?? 0;
+  const drag = React.useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+
+  // One element update per animation frame, not per pointer event.
+  const pending = React.useRef<[number, number] | null>(null);
+  const raf = React.useRef<number | null>(null);
+  const flush = () => {
+    raf.current = null;
+    const p = pending.current;
+    pending.current = null;
+    if (p) onChange(p[0], p[1]);
+  };
+  React.useEffect(() => () => {
+    if (raf.current !== null) cancelAnimationFrame(raf.current);
+  }, []);
+
+  // Never all the way out: a sliver always stays in the window, so the photo
+  // cannot be dragged out of reach.
+  const clamp = (v: number) => Math.max(-95, Math.min(95, v));
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div
+        style={{
+          ...(natural ? { width: w, height: h } : {}),
+          borderRadius: `${(el.cornerRadius || 0) * toViewer}px`,
+          border: el.strokeEnabled
+            ? `${(el.strokeWidth ?? 3) * toViewer}px solid ${el.strokeColor || '#FF6B4A'}`
+            : 'none',
+          touchAction: 'none',
+        }}
+        className="relative flex overflow-hidden outline-2 outline-dashed outline-[#FE6349]/50 outline-offset-2 cursor-grab active:cursor-grabbing select-none"
+        onPointerDown={(e) => {
+          if (!natural) return;
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+          drag.current = { x: e.clientX, y: e.clientY, px, py };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d || !w || !h) return;
+          // The picture follows the finger: drag down, it moves down.
+          const nx = clamp(d.px + ((e.clientX - d.x) / w) * 100);
+          const ny = clamp(d.py + ((e.clientY - d.y) / h) * 100);
+          pending.current = [Math.round(nx), Math.round(ny)];
+          if (raf.current === null) raf.current = requestAnimationFrame(flush);
+        }}
+        onPointerUp={(e) => {
+          drag.current = null;
+          try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+          if (raf.current !== null) {
+            cancelAnimationFrame(raf.current);
+            flush();
+          }
+        }}
+        onPointerCancel={() => { drag.current = null; }}
+      >
+        <img
+          src={el.imageUrl}
+          alt="Uploaded"
+          draggable={false}
+          onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+          style={{ transform: `translate(${px}%, ${py}%)` }}
+          className={`block pointer-events-none select-none ${natural ? 'w-full h-full' : 'max-h-[150px] max-w-[260px]'}`}
+        />
+      </div>
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-400">
+        <span>Drag the image — anything outside the dashed box is hidden</span>
+        {(px !== 0 || py !== 0) && (
+          <button
+            type="button"
+            onClick={() => onChange(0, 0)}
+            className="text-[#FE6349] hover:underline cursor-pointer"
+          >
+            Reset
+          </button>
+        )}
+      </div>
     </div>
   );
 };
@@ -626,8 +946,9 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
             ? 'border-2 border-dashed border-[#FE6349] ring-2 ring-[#FE6349]/20 bg-white/10' 
             : 'border border-transparent'
         }`}>
-          <p 
-            style={{ 
+          <FitText
+            el={el}
+            style={{
               color: el.color || '#1A1B25',
               fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
               textAlign: el.align || DEFAULT_TEXT_ALIGN,
@@ -635,9 +956,7 @@ const RenderCanvasElement: React.FC<RenderCanvasElementProps> = ({
               ...labelStyle(el),
             }}
             className={`font-bold leading-snug break-words whitespace-pre-wrap ${textSizeClass(el)}`}
-          >
-            {el.text}
-          </p>
+          />
         </div>
       )}
 
@@ -710,8 +1029,9 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
       {/* 3. Text Element */}
       {el.type === 'text' && el.text && (
         <div className="w-full p-2 rounded-xl border border-transparent pointer-events-none select-none">
-          <p 
-            style={{ 
+          <FitText
+            el={el}
+            style={{
               color: el.color || '#1A1B25',
               fontFamily: el.fontFamily || (el.isCursive ? 'Playfair Display, cursive' : DEFAULT_TEXT_FONT),
               textAlign: el.align || DEFAULT_TEXT_ALIGN,
@@ -719,9 +1039,7 @@ export const RenderCanvasElementReadOnly: React.FC<RenderCanvasElementReadOnlyPr
               ...labelStyle(el),
             }}
             className={`font-bold leading-snug break-words whitespace-pre-wrap ${textSizeClass(el)}`}
-          >
-            {el.text}
-          </p>
+          />
         </div>
       )}
 
@@ -1594,7 +1912,6 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     return editingPost?.visibility || PostVisibility.PUBLIC;
   });
   const [isCollaborative, setIsCollaborative] = useState(false);
-  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
   
   // Preview Page State: Never open preview page for any contributor flow
   const [isPreviewOpen, setIsPreviewOpen] = useState(() => Boolean(editMode === 'board' && !isContributorFlow));
@@ -3277,12 +3594,12 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   </label>
                 </div>
                 {isCollaborative && (
-                  <button
-                    onClick={() => setIsPremiumUnlocked(!isPremiumUnlocked)}
-                    className={`text-[9px] font-extrabold uppercase px-2 py-1 rounded-full transition-all ${isPremiumUnlocked ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-100 text-amber-700'}`}
-                  >
-                    {isPremiumUnlocked ? '✨ Infinite slots' : 'Upgrade Slot ($4.99)'}
-                  </button>
+                  // Extra slots are a paid feature that does not exist yet. This
+                  // used to be a "$4.99" button that "unlocked" infinite slots by
+                  // flipping local state — no payment, nothing saved.
+                  <span className="text-[9px] font-extrabold uppercase px-2 py-1 rounded-full bg-[#ECEFF3] text-[#666D80]">
+                    Coming soon
+                  </span>
                 )}
               </div>
             </div>
@@ -3375,10 +3692,19 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               ) : (
                 <button 
                   type="button"
-                  onClick={() => setIsExpanded(false)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[#FE6349] hover:bg-[#e05234] text-white shadow-xs active:scale-95 cursor-pointer transition-all"
-                  aria-label="Save message"
-                  title="Save message"
+                  // Straight to the preview page, where the caption, recipients,
+                  // contribution limit and privacy are set and the board is
+                  // published. It used to drop you back on the form instead.
+                  // Recipients are validated at publish, on that page.
+                  onClick={() => setIsPreviewOpen(true)}
+                  disabled={!hasCanvaContent}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    !hasCanvaContent
+                      ? 'bg-[#F1E4DF] text-[#A49893] cursor-not-allowed shadow-none opacity-60'
+                      : 'bg-[#FE6349] hover:bg-[#e05234] text-white shadow-xs active:scale-95 cursor-pointer'
+                  }`}
+                  aria-label="Preview message"
+                  title={!hasCanvaContent ? 'Add something to your message first' : 'Preview message'}
                 >
                   <Send className="w-5 h-5 -translate-x-0.5" />
                 </button>
@@ -3940,15 +4266,15 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   <div className="flex flex-col gap-3.5">
                     {/* Image Preview Box */}
                     <div className="bg-[#F8F9FB] rounded-2xl h-[180px] flex flex-col items-center justify-center p-3 text-center overflow-hidden relative">
-                      {editingElement.imageUrl ? (
-                        <img 
-                          src={editingElement.imageUrl} 
-                          alt="Uploaded" 
-                          style={{
-                            borderRadius: `${editingElement.cornerRadius || 0}px`,
-                            border: editingElement.strokeEnabled ? `${editingElement.strokeWidth ?? 3}px solid ${editingElement.strokeColor || '#FF6B4A'}` : 'none',
-                          }}
-                          className="max-h-full max-w-full object-contain shadow-xs transition-all" 
+                      {editingElement.imageUrl && editingElement.width && editingElement.height ? (
+                        <ImagePositioner
+                          el={editingElement}
+                          onChange={(focusX, focusY) => updateEditingElement({ focusX, focusY })}
+                        />
+                      ) : editingElement.imageUrl ? (
+                        <FreeImagePositioner
+                          el={editingElement}
+                          onChange={(panX, panY) => updateEditingElement({ panX, panY })}
                         />
                       ) : (
                         <div className="flex flex-col items-center justify-center gap-2 text-gray-400">
@@ -3957,6 +4283,20 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                         </div>
                       )}
                     </div>
+
+                    {/* Change / Upload Image */}
+                    <label className="w-full py-3 bg-[#ffffff] border border-[#F6F8FA] outline outline-1 outline-[#F6F8FA] hover:bg-gray-50 text-[#1A1B25] font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99] shadow-2xs">
+                      <Upload className="w-4 h-4 text-[#1A1B25]" />
+                      <span>{editingElement.imageUrl ? 'Change Image' : 'Upload Image'}</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={(e) => {
+                          void handleCanvasImagePick(e.target.files?.[0]);
+                        }} 
+                        className="hidden" 
+                      />
+                    </label>
 
                     {/* Image Controls Section */}
                     <div className="flex flex-col gap-3 bg-[#F6F8FA] p-3.5 rounded-2xl">
@@ -4033,19 +4373,6 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
                     </div>
 
-                    {/* Change / Upload Image */}
-                    <label className="w-full py-3 bg-[#ffffff] border border-[#F6F8FA] outline outline-1 outline-[#F6F8FA] hover:bg-gray-50 text-[#1A1B25] font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99] shadow-2xs">
-                      <Upload className="w-4 h-4 text-[#1A1B25]" />
-                      <span>{editingElement.imageUrl ? 'Change Image' : 'Upload Image'}</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={(e) => {
-                          void handleCanvasImagePick(e.target.files?.[0]);
-                        }} 
-                        className="hidden" 
-                      />
-                    </label>
 
                     </div>
                   )}
@@ -4462,7 +4789,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             <p className="text-xs text-gray-300 mt-0.5">200 messages total</p>
                           </div>
                         </div>
-                        <span className="bg-[#ECEFF3] text-[#666D80] text-[11px] font-semibold px-2.5 py-1 rounded-full">Paid Option</span>
+                        <span className="bg-[#ECEFF3] text-[#666D80] text-[11px] font-semibold px-2.5 py-1 rounded-full">Coming soon</span>
                       </div>
 
                       {/* Option 4: 1,000 Contributions */}
@@ -4474,7 +4801,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             <p className="text-xs text-gray-300 mt-0.5">1,000 messages total</p>
                           </div>
                         </div>
-                        <span className="bg-[#ECEFF3] text-[#666D80] text-[11px] font-semibold px-2.5 py-1 rounded-full">Paid Option</span>
+                        <span className="bg-[#ECEFF3] text-[#666D80] text-[11px] font-semibold px-2.5 py-1 rounded-full">Coming soon</span>
                       </div>
 
                       {/* Option 5: Unlimited */}
@@ -4486,7 +4813,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             <p className="text-xs text-gray-300 mt-0.5">Unlimited messages</p>
                           </div>
                         </div>
-                        <span className="bg-[#ECEFF3] text-[#666D80] text-[11px] font-semibold px-2.5 py-1 rounded-full">Paid Option</span>
+                        <span className="bg-[#ECEFF3] text-[#666D80] text-[11px] font-semibold px-2.5 py-1 rounded-full">Coming soon</span>
                       </div>
                     </div>
                   )}

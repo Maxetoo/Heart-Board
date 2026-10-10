@@ -15,10 +15,28 @@
  * the canonical app origin.
  */
 
+/**
+ * An origin must carry its scheme.
+ *
+ * Without one, `www.example.com` is a RELATIVE path to a browser. Redirecting
+ * to it from /api/v1/auth/google/callback lands on
+ * /api/v1/auth/google/www.example.com/ — a 404, which is exactly how a Google
+ * sign-in failed in production. CORS can never match it either, because a
+ * browser's Origin header always includes the scheme. Hosting dashboards make
+ * it easy to paste a bare domain, so the scheme is supplied here: http for
+ * local hosts, https for everything else.
+ */
+const withScheme = (origin) => {
+  if (!origin) return origin;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(origin)) return origin;
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(origin);
+  return `${isLocal ? 'http' : 'https'}://${origin}`;
+};
+
 const parseList = (value) =>
   (value || '')
     .split(',')
-    .map((s) => s.trim().replace(/\/+$/, ''))
+    .map((s) => withScheme(s.trim().replace(/\/+$/, '')))
     .filter(Boolean);
 
 const configuredOrigins = parseList(process.env.ALLOWED_ORIGIN);
@@ -38,7 +56,7 @@ const allowedOrigins = [
 /** Where a browser should be sent after an OAuth round-trip. */
 const appOrigin =
   configuredOrigins[0] ||
-  (process.env.CLIENT_URL || '').replace(/\/+$/, '') ||
+  withScheme((process.env.CLIENT_URL || '').trim().replace(/\/+$/, '')) ||
   devOrigins[0] ||
   '';
 

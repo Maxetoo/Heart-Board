@@ -21,7 +21,10 @@ const passport = require('./configs/passport')
 const session = require('express-session');
 
 
-const origin = process.env.ALLOWED_ORIGIN
+// The canonical app origin, normalised (scheme added if missing, first entry
+// of a comma-separated list). The raw env var made the self-ping below call
+// axios.get('www.heartboardapp.com'), which fails on every run.
+const { appOrigin: origin } = require('./configs/origins')
 
 // Express app and server initialization
 const app = express();
@@ -191,7 +194,7 @@ const startApp = async () => {
     });
   } catch (error) {
     console.error('Error connecting to MongoDB via MongoClient:', error);
-  }
+  } 
 };
 
 // Ping self every 5 minutes to prevent idling

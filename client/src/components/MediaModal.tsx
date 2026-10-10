@@ -834,16 +834,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   };
 
   /**
-   * Picks a reaction. ONE per person per board.
-   *
-   * Pressing a different one moves your reaction across rather than adding a
-   * second: the old count comes down as the new one goes up. Pressing the one
-   * you already have takes it back.
-   *
-   * This used to accumulate — you could hold a clap, a heart and a fire on the
-   * same board at once — which made the count on a board larger than the number
-   * of people who had reacted to it, and let one person weight the home feed's
-   * tabs several ways at the same time.
+   * Toggles one reaction. A person can hold several at once — love and clap
+   * on the same message — so pressing a reaction adds it alongside any others
+   * already held, and pressing one you already have takes just that one back.
    */
   const handleToggleReaction = (type: ReactionType) => {
     if (!currentUser && onRequireAuth) {
@@ -852,18 +845,14 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       return;
     }
 
-    const previous = userReactions[0] ?? null;
-    const isAlreadySelected = previous === type;
-    const newUserReactions: ReactionType[] = isAlreadySelected ? [] : [type];
+    const isAlreadySelected = userReactions.includes(type);
+    const newUserReactions: ReactionType[] = isAlreadySelected
+      ? userReactions.filter((r) => r !== type)
+      : [...userReactions, type];
 
+    // Only the pressed reaction's count moves; the others you hold stay put.
     const newCounts = { ...reactionCounts };
-    // Give back whatever was held before, including when swapping.
-    if (previous) {
-      newCounts[previous] = Math.max(0, (newCounts[previous] || 0) - 1);
-    }
-    if (!isAlreadySelected) {
-      newCounts[type] = (newCounts[type] || 0) + 1;
-    }
+    newCounts[type] = Math.max(0, (newCounts[type] || 0) + (isAlreadySelected ? -1 : 1));
 
     setUserReactions(newUserReactions);
     setReactionCounts(newCounts);
