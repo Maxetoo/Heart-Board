@@ -64,6 +64,18 @@ const MESSAGE_SLIDE_TRANSITION = { duration: 0.28, ease: [0.22, 1, 0.36, 1] } as
 const DRAG_FOLLOW_RATIO = 0.3;
 const DRAG_FOLLOW_MAX_PX = 40;
 
+/**
+ * How long to wait for a second tap before treating a tap on the board as a
+ * single tap. A double tap opens the action menu (Add Post, Share, …).
+ *
+ * This was 240ms, which is quicker than a normal thumb double-tap on a phone —
+ * those land around 250-300ms apart. The second tap then arrived after the
+ * window had closed, so it read as two single taps: the overlay flicked on and
+ * off and the menu never opened. Whether it worked depended on tap speed, which
+ * is why it only glitched "sometimes".
+ */
+const DOUBLE_TAP_MS = 350;
+
 interface MediaModalProps {
   post: Post & {
     theme?: string;
@@ -205,7 +217,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   // Identify all contributions made by the current user on this board (independent of the currently viewed contribution)
   const userContributions = useMemo(() => {
     if (!currentUser) {
-      return contributions.filter((c) => c.isCreatedByUser === true);
+      // Signed out, nothing can be edited or deleted: those routes need an
+      // account, and a guest's message has none behind it to check against.
+      return [];
     }
     const curHandle = (currentUser.handle || '').toLowerCase().replace(/^@/, '');
     const curName = (currentUser.name || '').toLowerCase();
@@ -400,7 +414,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           if (prev) setIsReactionPickerOpen(false);
           return !prev;
         });
-      }, 240);
+      }, DOUBLE_TAP_MS);
     }
   };
 
@@ -631,6 +645,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       avatar: source.authorAvatar,
       // The board's face message is the owner's, so only that one is labelled.
       isBoardOwner: isShowingBoardMessage,
+      // A guest's message has no account behind it, so no profile to open. Its
+      // name is not a handle either: "Ada" must not link to whoever is @ada.
+      isGuest: !isShowingBoardMessage && (!activeMessage.authorId || activeMessage.authorId === 'guest'),
     };
   }, [isShowingBoardMessage, post, activeMessage]);
 
@@ -1373,9 +1390,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         {/* C. Whose message is on the board right now — follows the swipe. */}
         <button
           type="button"
-          onClick={() => handleUserClick(activeAuthor.handle)}
-          className="mt-[10px] flex items-center gap-[11px] group cursor-pointer text-left transition-opacity hover:opacity-95"
-          title={`View ${activeAuthor.handle}'s Heartboard`}
+          onClick={() => { if (!activeAuthor.isGuest) handleUserClick(activeAuthor.handle); }}
+          disabled={activeAuthor.isGuest}
+          className={`mt-[10px] flex items-center gap-[11px] group text-left transition-opacity ${activeAuthor.isGuest ? 'cursor-default' : 'cursor-pointer hover:opacity-95'}`}
+          title={activeAuthor.isGuest ? 'Guest' : `View ${activeAuthor.handle}'s Heartboard`}
         >
           <div className="w-[30px] h-[30px] rounded-full bg-[#353849] border border-white/20 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden group-hover:border-[#FE6349] transition-colors">
             {activeAuthor.avatar ? (
@@ -1393,7 +1411,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             )}
           </div>
           <span className="text-sm leading-5 font-medium text-white/60 group-hover:text-white group-hover:underline transition-colors">
-            {activeAuthor.handle}
+            {activeAuthor.isGuest ? 'Guest' : activeAuthor.handle}
             {activeAuthor.isBoardOwner && ' (Curator)'}
           </span>
         </button>
@@ -1448,6 +1466,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           post={post}
           isCreator={isCreator}
           userContributions={userContributions}
+          // Same rule as the board's own "+" button: no Add Post on a solo or
+          // full board, where the server refuses a new message anyway.
+          canAddPost={!isSoloMode && !isCapacityReached}
           onAddPost={() => {
             onAddContributionClick?.(post);
           }}

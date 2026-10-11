@@ -9,6 +9,8 @@ export interface ActionMenuModalProps {
   isCreator: boolean;
   userContributions: Contribution[];
   onAddPost: () => void;
+  /** False on a solo or full board, where the server would refuse a new message. */
+  canAddPost?: boolean;
   onShare: () => void;
   onEditBoard?: () => void;
   onDeleteBoard?: () => void;
@@ -25,6 +27,7 @@ export const ActionMenuModal: React.FC<ActionMenuModalProps> = ({
   isCreator,
   userContributions = [],
   onAddPost,
+  canAddPost = true,
   onShare,
   onEditBoard,
   onDeleteBoard,
@@ -151,6 +154,7 @@ export const ActionMenuModal: React.FC<ActionMenuModalProps> = ({
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {/* Top Action Buttons (Grid 2 columns) */}
           <div className="grid grid-cols-2 gap-3">
+            {canAddPost && (
             <button
               type="button"
               onClick={() => {
@@ -162,6 +166,7 @@ export const ActionMenuModal: React.FC<ActionMenuModalProps> = ({
               <Plus className="w-4 h-4 stroke-[2.5]" />
               <span>Add Post</span>
             </button>
+            )}
 
             <button
               type="button"

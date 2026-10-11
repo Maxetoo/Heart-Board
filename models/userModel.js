@@ -242,7 +242,9 @@ UserSchema.statics.recalculateStats = async function(userId) {
                 { $group: { _id: '$user' } },
             ]),
             Message.aggregate([
-                { $match: { board: { $in: boardIds }, context: 'board' } },
+                // Guest messages have no sender — and r._id.toString() below
+                // would throw on one.
+                { $match: { board: { $in: boardIds }, context: 'board', sender: { $ne: null } } },
                 { $group: { _id: '$sender' } },
             ]),
             Sponsorship.aggregate([

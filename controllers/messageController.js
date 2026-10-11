@@ -6,6 +6,7 @@ const CustomError = require('../error');
 const uploadSendingQueue = require('../workers/uploadAndPostWorker'); 
 const { deleteFromCloudinary } = require('../services/cloudinaryUpload');
 const { StatusCodes } = require('http-status-codes');
+const { moderateText } = require('./aiController');
 const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMiddleware');
 const { buildBoardPreview } = require('../helpers/boardPreview');
 
@@ -29,9 +30,12 @@ const validateContent = (type, content) => {
 const resolveBoard = async (slug, senderId) => {
   const board = await Board.findOne({ slug, isActive: true });
   if (!board) throw new CustomError.NotFoundError('Board not found.');
-  if (board.visibility === 'private' && board.owner.toString() !== senderId.toString())
+  // senderId is null for a guest, who is never the owner — so a guest is
+  // refused on private and creator-only boards like any other non-owner.
+  const isOwner = Boolean(senderId) && board.owner.toString() === senderId.toString();
+  if (board.visibility === 'private' && !isOwner)
     throw new CustomError.ForbiddenError('This board is private.');
-  if (board.onlyMe && board.owner.toString() !== senderId.toString())
+  if (board.onlyMe && !isOwner)
     throw new CustomError.ForbiddenError('Only the board creator can add messages to this board.');
   if (!board.canAcceptMessage())
     throw new CustomError.BadRequestError(
@@ -64,9 +68,61 @@ const checkMonthlyMessageLimit = async (userId) => {
 };
 
 
+/** Every canvasData format's element list (the client writes { v, elements }). */
+const canvasElementsOf = (data) => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.elements)) return data.elements;
+  return [];
+};
+
+const canvasTexts = (data) =>
+  canvasElementsOf(data)
+    .filter((el) => el && el.type === 'text' && typeof el.text === 'string')
+    .map((el) => el.text);
+
+/**
+ * A guest's canvas with every picture we did not supply removed. Template
+ * artwork is served from /templates/ on our own origin and stays; any other URL
+ * would let an anonymous visitor hotlink an arbitrary image onto someone's
+ * board. An unrecognised shape from an anonymous caller is dropped entirely.
+ */
+const guestSafeCanvas = (data) => {
+  if (!data) return null;
+  const keep = (el) =>
+    !(el && el.type === 'image') ||
+    (typeof el.imageUrl === 'string' && el.imageUrl.startsWith('/templates/'));
+  if (Array.isArray(data)) return data.filter(keep);
+  if (Array.isArray(data.elements)) return { ...data, elements: data.elements.filter(keep) };
+  return null;
+};
+
+/**
+ * Server-side moderation for guest posts. The browser's check can be skipped
+ * by calling this endpoint directly, so for an anonymous poster it has to run
+ * here. Same model as /ai/moderate, and the same fail-open rule as that route:
+ * an AI outage must not take posting down with it — the guest rate limit is
+ * the backstop then.
+ */
+const moderateGuestText = async (text) => {
+  if (!text || !text.trim()) return { isSafe: true };
+  try {
+    return await moderateText(text.slice(0, 2000));
+  } catch (err) {
+    console.error('[postMessage] guest moderation unavailable, allowing:', err.message);
+    return { isSafe: true };
+  }
+};
+
 const postMessage = async (req, res) => {
-  const { type, content, cloudinaryPublicId, fileType, canvasData } = req.body;
-  const userId = req.user.userId;
+  const { type, content, cloudinaryPublicId, fileType } = req.body;
+  let { canvasData } = req.body;
+  // Signed-out visitors post as a named guest; the route uses checkUser.
+  const userId = req.user?.userId || null;
+  const isGuest = !userId;
+  const guestName = isGuest
+    ? (String(req.body.guestName || '').trim().slice(0, 40) || 'Guest')
+    : null;
   let uploadedPublicId = cloudinaryPublicId || null;
   let createdMessage = null;
   let createdBoard = null;
@@ -76,7 +132,25 @@ const postMessage = async (req, res) => {
       throw new CustomError.BadRequestError('Invalid message type. Must be text, audio, or emblem.');
     validateContent(type, content);
 
-    await checkMonthlyMessageLimit(userId);
+    if (isGuest) {
+      // No account means nothing to answer for what is posted, so guests get
+      // stricter rules: text only (uploads need an account, and no hotlinked
+      // media either), and moderation enforced here rather than trusted.
+      if (type !== 'text' || content?.imageUrls?.length || content?.audioUrl || uploadedPublicId) {
+        throw new CustomError.BadRequestError('Sign in to add photos or audio to your message.');
+      }
+      canvasData = guestSafeCanvas(canvasData);
+      const verdict = await moderateGuestText(
+        [content?.text, ...canvasTexts(canvasData)].filter(Boolean).join('\n'),
+      );
+      if (!verdict.isSafe) {
+        throw new CustomError.BadRequestError(
+          verdict.reason || 'Please keep messages positive and kind.',
+        );
+      }
+    } else {
+      await checkMonthlyMessageLimit(userId);
+    }
 
     const board = await resolveBoard(req.params.slug, userId);
     createdBoard = board;
@@ -85,6 +159,7 @@ const postMessage = async (req, res) => {
       context:    'board',
       board:      board._id,
       sender:     userId,
+      guestName,
       type,
       content,
       canvasData: canvasData || null,
@@ -95,7 +170,7 @@ const postMessage = async (req, res) => {
 
     // The board's face is its owner's own message. Snapshot it onto the board
     // so feed cards can render the artwork without fetching messages.
-    const isBoardFace = board.owner.toString() === userId.toString();
+    const isBoardFace = !isGuest && board.owner.toString() === userId.toString();
     if (isBoardFace) {
       boardUpdate.$set = { preview: buildBoardPreview(message) };
     }
@@ -119,7 +194,7 @@ const postMessage = async (req, res) => {
     await Promise.all([
       invalidatePattern(`boardMsgs:${board.slug}:*`),
       invalidate(keys.board(board.slug)),
-      invalidatePattern(`myMsgs:${userId}:*`),
+      userId ? invalidatePattern(`myMsgs:${userId}:*`) : Promise.resolve(),
       invalidate(keys.profile(board.owner.toString())),
       owner?.username ? invalidate(keys.publicProfile(owner.username.toLowerCase())) : Promise.resolve(),
     ]);
@@ -313,7 +388,8 @@ const deleteMessage = async (req, res) => {
   const message = await Message.findById(req.params.id).populate('board', 'owner slug receipent');
   if (!message) throw new CustomError.NotFoundError('Message not found.');
 
-  const isSender = message.sender.toString() === userId.toString();
+  // A guest's message has no sender; only the board owner can remove it.
+  const isSender = Boolean(message.sender) && message.sender.toString() === userId.toString();
 
   if (message.context === 'direct') {
     const isRecipient = message.recipient.toString() === userId.toString();
@@ -398,7 +474,7 @@ const editMessage = async (req, res) => {
 
   const message = await Message.findById(req.params.id).populate('board', 'slug');
   if (!message) throw new CustomError.NotFoundError('Message not found.');
-  if (message.sender.toString() !== userId.toString())
+  if (!message.sender || message.sender.toString() !== userId.toString())
     throw new CustomError.ForbiddenError('Only the original sender can edit this message.');
 
   validateContent(message.type, content);

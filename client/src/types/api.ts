@@ -154,7 +154,10 @@ export interface MessageDTO {
   context: MessageContext;
   board?: BoardDTO | string | null;
   recipient?: UserRefDTO | string | null;
-  sender: UserRefDTO | string;
+  /** Null on a guest's board message — see guestName. */
+  sender: UserRefDTO | string | null;
+  /** Set on a guest's board message: the name they signed it with. */
+  guestName?: string | null;
   type: MessageType;
   content: MessageContentDTO;
   status: MessageStatus;

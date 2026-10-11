@@ -26,10 +26,22 @@ const MessageSchema = new Schema({
     default: null,
   },
 
+  // Null for a guest's board message — see guestName.
   sender: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    default: null,
+  },
+
+  /**
+   * The name a signed-out visitor signed their board message with. Set only
+   * when there is no `sender`: a guest has no account to point at.
+   */
+  guestName: {
+    type: String,
+    trim: true,
+    maxlength: 40,
+    default: null,
   },
 
   type: {
@@ -78,6 +90,12 @@ const MessageSchema = new Schema({
 
 
 MessageSchema.pre('validate', function () {
+  if (this.context === 'board' && !this.sender && !this.guestName) {
+    throw new CustomError.BadRequestError('A board message needs a sender or a guest name.');
+  }
+  if (this.context === 'direct' && !this.sender) {
+    throw new CustomError.BadRequestError('Direct messages need a signed-in sender.');
+  }
   if (this.context === 'board' && !this.board) {
     throw new CustomError.BadRequestError('board is required for board messages.');
   }

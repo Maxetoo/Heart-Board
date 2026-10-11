@@ -445,15 +445,17 @@ export function fromClientMessageType(t: 'text' | 'image' | 'audio'): MessageTyp
 }
 
 export function messageToContribution(m: MessageDTO, currentUserId?: string): Contribution {
-  const sender = refOf(m.sender as UserRefDTO | string);
-  const senderName = sender?.displayName || sender?.username || 'Guest';
+  const sender = refOf(m.sender as UserRefDTO | string | null);
+  // A guest's message has no sender, only the name they signed it with.
+  const senderName = sender?.displayName || sender?.username || m.guestName || 'Guest';
   const clientType = toClientMessageType(m.type);
   const image = m.content?.imageUrls?.[0];
 
   return {
     id: m._id,
     authorName: senderName,
-    authorHandle: handleOf(sender?.username),
+    // No handle for a guest: there is no account behind the name to link to.
+    authorHandle: sender ? handleOf(sender.username) : '',
     authorAvatar: sender ? avatarFor(sender) : FALLBACK_AVATAR(avatarSeedOf({ name: senderName })),
     authorId: sender?._id,
 

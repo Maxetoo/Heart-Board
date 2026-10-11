@@ -1,5 +1,6 @@
 const express      = require('express');
 const MessageRoute = express.Router();
+const { rateLimit } = require('express-rate-limit');
 
 const {
   editMessage,
@@ -42,7 +43,18 @@ MessageRoute.get(
 // patterns, so Express matched the first one every time and postDirectMessage
 // was unreachable dead code. Same story for GET /:id vs GET /:username, which
 // made getUserWallMessages unreachable.
-MessageRoute.post('/board/:slug', authentication, postMessage);
+// Signed-out visitors may add a message to a board, as a named guest, so this
+// route only identifies the viewer when there is one. Guests get a tight
+// per-IP budget of their own; signed-in users are not counted against it.
+const guestPostLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skip: (req) => Boolean(req.user),
+  message: { message: 'Too many messages from this connection. Please wait a little, or sign in.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+MessageRoute.post('/board/:slug', checkUser, guestPostLimiter, postMessage);
 MessageRoute.post('/direct/:username', authentication, postDirectMessage);
 
 MessageRoute.get(

@@ -54,7 +54,8 @@ async function computeLiveStats(userId) {
             // aggregate instead of distinct (apiStrict compatible)
             boardIds.length
                 ? Message.aggregate([
-                      { $match: { board: { $in: boardIds }, context: 'board', sender: { $ne: userId } } },
+                      // Guest messages have no sender, and are not curators.
+                      { $match: { board: { $in: boardIds }, context: 'board', sender: { $nin: [userId, null] } } },
                       { $group: { _id: '$sender' } },
                   ])
                 : Promise.resolve([]),
@@ -126,7 +127,7 @@ async function getTopCurator(userId) {
     if (!boardIds.length) return null;
 
     const [result] = await Message.aggregate([
-        { $match: { board: { $in: boardIds }, context: 'board', sender: { $ne: uid } } },
+        { $match: { board: { $in: boardIds }, context: 'board', sender: { $nin: [uid, null] } } },
         { $group: { _id: '$sender', messageCount: { $sum: 1 } } },
         { $sort:  { messageCount: -1 } },
         { $limit: 1 },

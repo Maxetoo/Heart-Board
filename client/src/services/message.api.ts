@@ -15,6 +15,8 @@ export interface PostMessagePayload {
   cloudinaryPublicId?: string | null;
   fileType?: 'image' | 'video' | 'audio' | null;
   canvasData?: unknown;
+  /** Signed-out contributors only: the name they signed their message with. */
+  guestName?: string;
 }
 
 /**

@@ -159,11 +159,18 @@ const isCursiveElement = (el: CanvasElement) =>
       el.fontFamily?.includes('Caveat')
   );
 
-/** The size class a text element renders at, on the canvas and on the board. */
+/**
+ * The size a text element STARTS at, on the canvas and on the board: always the
+ * display size.
+ *
+ * It used to step down at 120 and 200 characters, which made text visibly jump
+ * smaller mid-sentence while typing even when it still fitted with room to
+ * spare. FitText does that job properly now — it shrinks only when the text
+ * would actually run off the card. (The tiers still size the canvas-less
+ * fallback text, which has no FitText.)
+ */
 const textSizeClass = (el: CanvasElement) =>
-  (isCursiveElement(el) ? CURSIVE_TEXT_SIZE_TIERS : TEXT_SIZE_TIERS)[
-    textSizeTier(el.text)
-  ];
+  (isCursiveElement(el) ? CURSIVE_TEXT_SIZE_TIERS : TEXT_SIZE_TIERS)[0];
 
 /**
  * Auto-fit for text on the card.
@@ -1766,6 +1773,11 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
    */
   const handleCanvasImagePick = async (file: File | undefined) => {
     if (!file) return;
+    // Uploads need an account; a guest's message is text only.
+    if (!currentUser) {
+      setModerationError('Sign in to add your own photos.');
+      return;
+    }
 
     const problem = validateFile(file, 'image');
     if (problem) {
@@ -1798,6 +1810,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   };
 
   const handleAddImageElement = () => {
+    if (!currentUser) {
+      setModerationError('Sign in to add your own photos.');
+      return;
+    }
     const newEl: CanvasElement = {
       id: 'image-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
       type: 'image',
@@ -1888,6 +1904,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
    * whole form.
    */
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!currentUser) {
+      setModerationError('Sign in to add your own photos.');
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -2241,7 +2261,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     const textIsUnchanged = isEditing && savedText.length > 0 && safeTextCheck.trim() === savedText;
 
     try {
-      if (!textIsUnchanged) {
+      // Signed out, /ai/moderate only answers 401. A guest's message is
+      // moderated by the server as it is written instead.
+      if (!textIsUnchanged && currentUser) {
         const result = await moderateContent(safeTextCheck);
         if (!result.isSafe) {
           setModerationError(result.reason || "Please ensure the message matches our positive platform code.");
@@ -2514,6 +2536,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
             cloudinaryPublicId: contribPublicId ?? null,
             fileType: contribImage ? 'image' : null,
             canvasData: wrapCanvasData(canvasElements.filter(hasElementContent), 'portrait'),
+            // Signed out: the server stores this name in place of an account.
+            guestName: isRegistered ? undefined : finalAuthorName,
           });
 
           // Use the server's id so later edits and deletes address the real row.
@@ -2670,9 +2694,16 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       console.error(e);
       const err = toApiError(e);
       setModerationError(
-        err.status === 401
-          ? 'Please sign in again to publish this board.'
-          : err.message || 'We could not publish that board. Please try again.',
+        isContributorFlow
+          // Adding a message to someone's board does not need an account, so
+          // "sign in" is the wrong thing to tell a guest — and this is not a
+          // board being published either.
+          ? (err.status === 401
+              ? 'Your message could not be posted just now. Please try again.'
+              : err.message || 'We could not post your message. Please try again.')
+          : err.status === 401
+            ? 'Please sign in again to publish this board.'
+            : err.message || 'We could not publish that board. Please try again.',
       );
       setIsModerating(false);
     }
@@ -3845,7 +3876,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   <FlowerLotus size={30} />
                 </button>
 
-                {/* 2. Image */}
+                {/* 2. Image — photos need an account, so guests do not get the button. */}
+
+                {currentUser && (
                 <button
                   type="button"
                   onClick={handleAddImageElement}
@@ -3855,6 +3888,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                 >
                   <PhImage size={30} />
                 </button>
+                )}
 
                 {/* 3. Text */}
                 <button
@@ -4126,6 +4160,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             Template
                           </button>
 
+                          {/* Refine is an AI call that needs an account. */}
+                          {currentUser && (
                           <button
                             type="button"
                             disabled={isRefining || !editingElement.text?.trim()}
@@ -4156,6 +4192,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             )}
                             <span>{isRefining ? 'Refining...' : 'Refine'}</span>
                           </button>
+                          )}
                         </div>
 
                         {refineError && (
@@ -4285,6 +4322,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                     </div>
 
                     {/* Change / Upload Image */}
+                    {currentUser ? (
                     <label className="w-full py-3 bg-[#ffffff] border border-[#F6F8FA] outline outline-1 outline-[#F6F8FA] hover:bg-gray-50 text-[#1A1B25] font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99] shadow-2xs">
                       <Upload className="w-4 h-4 text-[#1A1B25]" />
                       <span>{editingElement.imageUrl ? 'Change Image' : 'Upload Image'}</span>
@@ -4297,6 +4335,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                         className="hidden" 
                       />
                     </label>
+                    ) : (
+                      <p className="w-full py-3 text-center text-xs font-semibold text-gray-400 bg-[#F8F9FB] rounded-xl">Sign in to add your own photo.</p>
+                    )}
 
                     {/* Image Controls Section */}
                     <div className="flex flex-col gap-3 bg-[#F6F8FA] p-3.5 rounded-2xl">

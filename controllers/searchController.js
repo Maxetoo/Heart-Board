@@ -115,7 +115,8 @@ const globalStats = async (req, res) => {
     Board.countDocuments({ isActive: true, visibility: 'public', kind: { $ne: 'heart' } }),
     Message.countDocuments({ context: 'board' }),
     Message.aggregate([
-      { $match: { context: 'board' } },
+      // Guests are not curators: a null sender would otherwise count as one.
+      { $match: { context: 'board', sender: { $ne: null } } },
       { $group: { _id: '$sender' } },
       { $count: 'total' },
     ]),

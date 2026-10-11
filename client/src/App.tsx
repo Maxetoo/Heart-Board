@@ -1180,6 +1180,12 @@ const App: React.FC = () => {
 
   const handleEngagementPromptSendLove = () => {
     handleDismissEngagementPrompt();
+    // This opens the create-a-board composer, which needs an account. Ask up
+    // front rather than showing the composer and then bouncing to sign-in.
+    if (!currentUser) {
+      handleOpenAuth('login', 'Please sign in or create an account to create a board.');
+      return;
+    }
     setContributionParentPost(null);
     setEditingPost(null);
     setEditingContribution(null);
@@ -1270,6 +1276,11 @@ const App: React.FC = () => {
 
   const handleWelcomeLeaveMessage = () => {
     handleCloseWelcomeModal();
+    // Creates a board, so it needs an account — ask before, not after.
+    if (!currentUser) {
+      handleOpenAuth('login', 'Please sign in or create an account to create a board.');
+      return;
+    }
     setContributionParentPost(null);
     setEditingPost(null);
     setEditingContribution(null);
@@ -1559,6 +1570,20 @@ const App: React.FC = () => {
     return i === -1 ? null : i;
   }, [boardSlug, posts]);
 
+  /**
+   * True while the open board view was reached by posting a message to it.
+   *
+   * Posting closes the composer and leaves you on the board. Its close button
+   * normally steps back one page in history — but straight after posting, the
+   * page behind is this same board, so the X looked like it did nothing. While
+   * this is set, closing the board goes home instead. Cleared the moment the
+   * board view is left any other way, so it never leaks into a later visit.
+   */
+  const exitBoardToHomeRef = useRef(false);
+  useEffect(() => {
+    if (!boardSlug) exitBoardToHomeRef.current = false;
+  }, [boardSlug]);
+
   const isAnyModalOpen = isAuthModalOpen || isCreateModalOpen || isFilterModalOpen || isWelcomeModalOpen || selectedPostIndex !== null;
 
   const {
@@ -1833,7 +1858,8 @@ const App: React.FC = () => {
     // a shared /create link, a refresh after signing out — has to ask for one
     // up front rather than at the end. The return path brings them straight
     // back to the composer they were headed for.
-    if (path === '/create' || boardSubRoute) {
+    // Adding a message is open to guests; creating or editing a board is not.
+    if (path === '/create' || boardSubRoute === 'edit') {
       authReturnToRef.current = `${path}${location.search}`;
       setAuthModalPrompt('Please sign in or create an account to post on Heartboard.');
       navigate('/login', { replace: true });
@@ -2377,13 +2403,32 @@ const App: React.FC = () => {
           />
         )}
 
-        {isCreateModalOpen && (
+        {isCreateModalOpen &&
+          // A route-backed composer must not mount before its board is known.
+          // The composer fixes its mode (add a message vs. create a board) the
+          // moment it mounts, so mounting early — a direct link to, or refresh
+          // of, /board/:slug/add-message — left it stuck as the "create a
+          // board" composer, which a guest cannot even publish.
+          !(boardSubRoute === 'add-message' && !contributionParentPost) &&
+          !(boardSubRoute === 'edit' && !editingPost) && (
           <CreateAppreciationModal 
             onClose={() => {
               // /create is a real route; closing must leave it, or the sync
               // effect immediately reopens the modal.
               if (location.pathname === '/create') closeOverlay();
-              else setIsCreateModalOpen(false);
+              else if (boardSlug && boardSubRoute) {
+                // Leaving /board/:slug/add-message or /edit — by cancelling, or
+                // after posting (the composer calls this then too, so this is
+                // the one place it is handled). Step the address back to the
+                // board itself. Only hiding the composer left the URL on the
+                // sub-route, so the board's X stepped "back" onto this same
+                // board and had to be pressed twice. After adding a message
+                // the X goes straight home — see exitBoardToHomeRef.
+                if (boardSubRoute === 'add-message') exitBoardToHomeRef.current = true;
+                const cameFromApp = (location.state as { fromApp?: boolean } | null)?.fromApp;
+                if (cameFromApp) navigate(-1);
+                else navigate(`/board/${encodeURIComponent(boardSlug)}`, { replace: true });
+              } else setIsCreateModalOpen(false);
               setCreateModalRecipient(undefined);
               setCreateModalHashtag(undefined);
               setCreateModalMode(undefined);
@@ -2540,7 +2585,15 @@ const App: React.FC = () => {
             onRequireAuth={(prompt) => handleOpenAuth('login', prompt)}
             // Closing the board restores the previous URL. Previously this only
             // reset state, leaving /board/:slug stale in the address bar.
-            onClose={closeOverlay}
+            onClose={() => {
+              // Straight home after posting a message to this board.
+              if (exitBoardToHomeRef.current) {
+                exitBoardToHomeRef.current = false;
+                navigate('/', { replace: true });
+                return;
+              }
+              closeOverlay();
+            }}
             // Prev/next swap the address in place, so paging through boards
             // does not bury the feed under a long history stack.
             onPrev={() => {
@@ -2554,13 +2607,8 @@ const App: React.FC = () => {
             onSelectUser={(user) => handleSelectUser(user)}
             onSelectHashtag={(tag) => handleSelectHashtag(tag)}
             onAddContributionClick={(parentPost) => {
-              // Contributing writes a message, so it needs a session. Without
-              // this the composer opened for a guest and only failed with a 401
-              // after they had written the whole thing.
-              if (!currentUser) {
-                handleOpenAuth('login', 'Please sign in or create an account to add a message to this board.');
-                return;
-              }
+              // No sign-in needed: a signed-out visitor adds their message as a
+              // named guest, which the server accepts (text only, moderated).
               setContributionParentPost(parentPost);
               setCreateModalRecipient(undefined);
               setCreateModalHashtag(undefined);
