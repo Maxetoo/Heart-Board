@@ -164,9 +164,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   /** The action bar stays out of the way until the message is tapped. */
   const [showActions, setShowActions] = useState(false);
   /** First-visit tip explaining tap and double-tap. */
-  const [boardGuideSeen, markBoardGuideSeen] = useGuideSeen('board-viewer');
+  const [boardGuideSeen, markBoardGuideSeen, boardGuideShown] = useGuideSeen('board-viewer');
   /** First-visit tip for the main board / contributions switch. */
-  const [toggleGuideSeen, markToggleGuideSeen] = useGuideSeen('board-toggle');
+  const [toggleGuideSeen, markToggleGuideSeen, toggleGuideShown] = useGuideSeen('board-toggle');
   const [showFlagToast, setShowFlagToast] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -926,6 +926,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               },
             ]}
             onDismiss={markToggleGuideSeen}
+            onShown={toggleGuideShown}
           />
         )}
         <div className="flex items-center bg-[#272835] p-1 rounded-full">
@@ -1121,6 +1122,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   { action: 'Double-tap', result: 'to add a message, edit your message or edit the board.' },
                 ]}
                 onDismiss={markBoardGuideSeen}
+                onShown={boardGuideShown}
               />
             )}
 

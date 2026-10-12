@@ -1678,7 +1678,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [isConfettiPickerOpen, setIsConfettiPickerOpen] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   /** First-time tip: elements are edited by double-tapping them. */
-  const [composerGuideSeen, markComposerGuideSeen] = useGuideSeen('composer-elements');
+  const [composerGuideSeen, markComposerGuideSeen, composerGuideShown] = useGuideSeen('composer-elements');
   const [selectedHearts, setSelectedHearts] = useState<string[]>(() => {
     // Contributions carry their own hearts (message content.hearts); only fall
     // back to the board's when editing the board itself.
@@ -3781,6 +3781,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   { action: 'Drag', result: 'to move it, and use its handles to resize or rotate.' },
                 ]}
                 onDismiss={markComposerGuideSeen}
+                onShown={composerGuideShown}
               />
             )}
             
