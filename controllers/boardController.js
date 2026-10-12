@@ -6,6 +6,7 @@ const Subscription = require('../models/subscription');
 const Sponsorship = require('../models/sponsporship');
 const Like = require('../models/boardLikeModel');
 const CustomError = require('../error');
+const { canViewBoard } = require('../helpers/boardAccess');
 const { StatusCodes } = require('http-status-codes');
 const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMiddleware');
 
@@ -387,10 +388,12 @@ const getBoardBySlug = async (req, res) => {
 
   if (!board) return res.status(StatusCodes.NOT_FOUND).json({ message: 'Board not found.' });
 
-  const isOwner = req.user && board.owner._id.toString() === req.user.userId.toString();
-  if (board.visibility === 'private' && !isOwner) {
+  if (!canViewBoard(board, req.user?.userId)) {
     return res.status(StatusCodes.FORBIDDEN).json({ message: 'This board is private.' });
   }
+  // The cache is keyed on the slug alone, so a private board's response would
+  // be handed to anyone who asked next. Never store it.
+  if (board.visibility === 'private') res.locals.noCache = true;
 
   Board.findByIdAndUpdate(board._id, { $inc: { 'stats.visits': 1 } }).exec();
 
@@ -452,6 +455,9 @@ const updateBoard = async (req, res) => {
 
   await Promise.all([
     invalidate(keys.board(board.slug)),
+    // Its messages too: a board made private must stop being served from a
+    // cache filled while it was public.
+    invalidatePattern(`boardMsgs:${board.slug}:*`),
     invalidatePattern(`myBoards:${req.user.userId}:*`),
     invalidatePattern('discover:*'),
     newlyTagged.length ? invalidateTaggedCaches(newlyTagged) : null,
@@ -510,6 +516,7 @@ const likeBoard = async (req, res) => {
 
   const board = await Board.findById(id);
   if (!board) throw new CustomError.NotFoundError('Board not found');
+  if (!canViewBoard(board, userId)) throw new CustomError.ForbiddenError('This board is private.');
 
   const existingLike = await Like.findOne({ board: id, user: userId });
 
@@ -578,6 +585,7 @@ const patchReaction = async (req, res) => {
 
   const board = await Board.findById(id);
   if (!board || !board.isActive) throw new CustomError.NotFoundError('Board not found');
+  if (!canViewBoard(board, userId)) throw new CustomError.ForbiddenError('This board is private.');
 
   const existing = await Like.findOne({ board: id, user: userId });
 

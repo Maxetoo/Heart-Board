@@ -261,7 +261,9 @@ function cache(ttl, keyFn) {
     const _originalJson = res.json.bind(res);
     res.json = function (body) {
       res.json = _originalJson; // restore before calling to prevent re-entry
-      if (res.statusCode >= 200 && res.statusCode < 300) {
+      // A controller sets res.locals.noCache for responses that depend on who
+      // is asking (a private board): those must never land in a shared key.
+      if (res.statusCode >= 200 && res.statusCode < 300 && !res.locals?.noCache) {
         cacheSet(key, body, ttl); // fire-and-forget — response already sent
       }
       return _originalJson(body);
