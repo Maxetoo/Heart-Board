@@ -1,41 +1,86 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { HandTap, X } from '@phosphor-icons/react';
 
 /**
- * Whether a one-time guide has already been seen, remembered per browser.
+ * One-time guides: each is shown to a person ONCE, ever, on this browser.
  *
- * Storage can be unavailable (private mode, blocked site data); then the guide
- * simply shows again next time, which is harmless.
+ * It counts as seen the moment it appears — not only when it is dismissed —
+ * so leaving the page with a tip still open does not bring it back. Recorded
+ * in localStorage and mirrored to a long-lived cookie, so clearing one store
+ * (or a browser that blocks localStorage) does not resurface every tip.
  */
-export function useGuideSeen(key: string): [boolean, () => void] {
-  const storageKey = `hb:guide:${key}`;
-  const [seen, setSeen] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(storageKey) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const markSeen = useCallback(() => {
-    setSeen(true);
-    try {
-      localStorage.setItem(storageKey, '1');
-    } catch {
-      // Not persisted; the in-memory flag still hides it for this session.
-    }
-  }, [storageKey]);
-  return [seen, markSeen];
+const COOKIE = 'hb_guides';
+const ONE_YEAR_S = 60 * 60 * 24 * 365;
+
+const cookieKeys = (): string[] => {
+  try {
+    const raw = document.cookie.split('; ').find((c) => c.startsWith(`${COOKIE}=`));
+    return raw ? decodeURIComponent(raw.slice(COOKIE.length + 1)).split('|').filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+};
+
+const hasSeenGuide = (key: string): boolean => {
+  try {
+    if (localStorage.getItem(`hb:guide:${key}`) === '1') return true;
+  } catch {
+    // Fall through to the cookie.
+  }
+  return cookieKeys().includes(key);
+};
+
+const recordGuideSeen = (key: string) => {
+  try {
+    localStorage.setItem(`hb:guide:${key}`, '1');
+  } catch {
+    // Storage blocked; the cookie below still remembers it.
+  }
+  try {
+    const keys = new Set(cookieKeys());
+    keys.add(key);
+    document.cookie =
+      `${COOKIE}=${encodeURIComponent([...keys].join('|'))}; max-age=${ONE_YEAR_S}; path=/; SameSite=Lax`;
+  } catch {
+    // Nothing more we can do; worst case it shows once more.
+  }
+};
+
+/**
+ * [hidden, dismiss, recordShown] for one guide.
+ *
+ * `hidden` is decided when the screen mounts: a guide already shown once stays
+ * hidden from then on. `recordShown` is called by <FeatureGuide> as it appears;
+ * it saves the guide as seen but leaves it on screen until it is dismissed.
+ */
+export function useGuideSeen(key: string): [boolean, () => void, () => void] {
+  const [hidden, setHidden] = useState<boolean>(() => hasSeenGuide(key));
+  const dismiss = useCallback(() => {
+    setHidden(true);
+    recordGuideSeen(key);
+  }, [key]);
+  const recordShown = useCallback(() => recordGuideSeen(key), [key]);
+  return [hidden, dismiss, recordShown];
 }
 
 interface FeatureGuideProps {
   /** One short instruction per line. */
   lines: { action: React.ReactNode; result: string }[];
   onDismiss: () => void;
+  /** Called once as the guide appears, to save it as seen. */
+  onShown?: () => void;
   className?: string;
 }
 
 /** A small dark tip card: what to tap, and what it does. */
-export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, className = '' }) => (
+export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, onShown, className = '' }) => {
+  // Saved as seen the moment it is on screen: a guide is shown once, ever.
+  useEffect(() => {
+    onShown?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
   <div
     role="note"
     className={`bg-[#1A1B25]/90 backdrop-blur-sm text-white rounded-2xl pl-3.5 pr-2 py-3 shadow-lg flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1 duration-300 ${className}`}
@@ -62,3 +107,4 @@ export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, cl
     </button>
   </div>
 );
+};
