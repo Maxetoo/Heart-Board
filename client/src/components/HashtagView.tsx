@@ -15,7 +15,8 @@ export interface HashtagViewProps {
   posts: any[];
   onBack: () => void;
   onCreateBoard: (hashtag: string) => void;
-  onPostClick?: (post: any) => void;
+  /** The list the post was picked from, which the board view pages through. */
+  onPostClick?: (post: any, list?: any[]) => void;
   onSelectUser?: (user: RegisteredUser) => void;
   /**
    * Totals for the whole tag, from GET /board/hashtag/:tag. Null until they
@@ -159,7 +160,7 @@ export const HashtagView: React.FC<HashtagViewProps> = ({
           <div key={post.id} className="h-full">
             <PostCard 
               post={post} 
-              onClick={() => onPostClick && onPostClick(post)} 
+              onClick={() => onPostClick && onPostClick(post, filteredPosts)} 
             />
           </div>
         ))}

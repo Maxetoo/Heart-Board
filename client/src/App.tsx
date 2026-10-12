@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { EntityType, Post, PostVisibility, RegisteredUser, Contribution } from './types';
 import { useAuth } from './contexts/AuthContext';
@@ -69,13 +69,10 @@ export function canViewPostPublicly(post: any) {
   if (!post.visibility || post.visibility === PostVisibility.PUBLIC || post.visibility === PostVisibility.ANONYMOUS) {
     return true;
   }
-  if (post.visibility === PostVisibility.PRIVATE) {
-    if (post.isCreatedByUser) return true;
-    if (Array.isArray(post.recipients) && post.recipients.some((r: string) => r === '@you' || r.toLowerCase().includes('you'))) {
-      return true;
-    }
-    return false;
-  }
+  // Home, search and hashtag pages are public spaces: a private board never
+  // appears there, not even to its owner or the people it tags. Those find it
+  // on their profile (Board or Tagged), which is the only place it lives.
+  if (post.visibility === PostVisibility.PRIVATE) return false;
   return true;
 }
 
@@ -1403,7 +1400,27 @@ const App: React.FC = () => {
 
   /** Board prev/next swaps the address in place rather than stacking history. */
   const replaceBoard = (post: Post) => {
-    navigate(`/board/${encodeURIComponent(post.slug || post.id)}`, { replace: true });
+    // Keep the entry's state: it carries fromApp, which is how the board's
+    // close button knows there is a page of ours behind it. Dropping it on
+    // every prev/next made closing fall through to Home instead of returning
+    // to the profile (or wherever) the board was opened from.
+    navigate(`/board/${encodeURIComponent(post.slug || post.id)}`, {
+      replace: true,
+      state: location.state,
+    });
+  };
+
+  /**
+   * Opens a board from a list on screen. The list becomes what prev/next and
+   * swipe page through, and its boards become open-able even when they are
+   * not in the home feed (your private boards, someone's profile, a hashtag).
+   */
+  const openBoardFrom = (post: Post, list: Post[]) => {
+    const visible = list.length ? list : [post];
+    rememberBoards(visible.filter((b) => !postsRef.current.some((p) => p.id === b.id)));
+    setBoardNavIds(visible.map((b) => b.id));
+    goToBoard(post);
+    recordBoardViewed();
   };
 
   /**
@@ -1493,15 +1510,73 @@ const App: React.FC = () => {
     };
   }, [authReady, currentUser?.id]);
 
-  const posts = useMemo(
-    () =>
-      rawPosts.map((p) => {
-        const mine = myReactions[p.id];
-        if (!mine && !(p.userReactions && p.userReactions.length)) return p;
-        return { ...p, userReactions: mine ?? [] };
-      }),
-    [rawPosts, myReactions],
+  const withMyReactions = useCallback(
+    (p: Post): Post => {
+      const mine = myReactions[p.id];
+      if (!mine && !(p.userReactions && p.userReactions.length)) return p;
+      return { ...p, userReactions: mine ?? [] };
+    },
+    [myReactions],
   );
+
+  const posts = useMemo(() => rawPosts.map(withMyReactions), [rawPosts, withMyReactions]);
+
+  /**
+   * Boards that are open-able but are NOT part of the home feed: ones opened
+   * from a profile, a hashtag page or a shared link.
+   *
+   * These used to be prepended into the feed itself, so a private board you
+   * opened from your profile then appeared among the public boards on Home,
+   * and paging on Home walked through it. They live here instead.
+   */
+  const [offFeedBoards, setOffFeedBoards] = useState<Post[]>([]);
+
+  /** Every board the board view can show: the feed, then everything else. */
+  const boardPool = useMemo(() => {
+    const feedIds = new Set(posts.map((p) => p.id));
+    return [...posts, ...offFeedBoards.filter((b) => !feedIds.has(b.id)).map(withMyReactions)];
+  }, [posts, offFeedBoards, withMyReactions]);
+
+  /** Adds boards to the off-feed pool, keeping the newest copy of each. */
+  const rememberBoards = useCallback((list: Post[]) => {
+    if (!list.length) return;
+    setOffFeedBoards((prev) => {
+      const byId = new Map(prev.map((b) => [b.id, b]));
+      list.forEach((b) => byId.set(b.id, { ...byId.get(b.id), ...b }));
+      return [...byId.values()];
+    });
+  }, []);
+
+  /** setPosts for a change that must reach a board wherever it lives. */
+  const updateBoards = useCallback(
+    (fn: (prev: Post[]) => Post[]) => {
+      setPosts(fn);
+      setOffFeedBoards(fn);
+    },
+    [setPosts],
+  );
+  const patchBoard = useCallback(
+    (id: string, patch: Partial<Post>) => {
+      patchPost(id, patch);
+      setOffFeedBoards((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    },
+    [patchPost],
+  );
+  const removeBoard = useCallback(
+    (id: string) => {
+      removePost(id);
+      setOffFeedBoards((prev) => prev.filter((b) => b.id !== id));
+    },
+    [removePost],
+  );
+
+  /**
+   * The list the open board pages through with prev/next and swipe, as board
+   * ids: what was on screen when it was opened. Opened from your profile it
+   * walks your profile's boards; opened from Home it walks Home's. Null means
+   * "not opened from a list" (a shared link), which falls back to Home's.
+   */
+  const [boardNavIds, setBoardNavIds] = useState<string[] | null>(null);
 
   const [selectedFilterId, setSelectedFilterId] = useState<string>('moment');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -1591,9 +1666,9 @@ const App: React.FC = () => {
   // Deriving from the slug makes that impossible.
   const selectedPostIndex = useMemo(() => {
     if (!boardSlug) return null;
-    const i = posts.findIndex((p) => p.slug === boardSlug || p.id === boardSlug);
+    const i = boardPool.findIndex((p) => p.slug === boardSlug || p.id === boardSlug);
     return i === -1 ? null : i;
-  }, [boardSlug, posts]);
+  }, [boardSlug, boardPool]);
 
   /**
    * True while the open board view was reached by posting a message to it.
@@ -1922,7 +1997,7 @@ const App: React.FC = () => {
     if (!boardSlug) return;
     const idx = selectedPostIndex;
     if (idx !== null && boardSubRoute) {
-      const parent = posts[idx];
+      const parent = boardPool[idx];
       if (boardSubRoute === 'add-message') {
         setContributionParentPost(parent);
         setEditingPost(null);
@@ -1936,7 +2011,7 @@ const App: React.FC = () => {
         setEditMode('board');
       }
     }
-  }, [boardSlug, boardSubRoute, posts, selectedPostIndex]);
+  }, [boardSlug, boardSubRoute, boardPool, selectedPostIndex]);
 
   /**
    * Deep link to a board that is not in the loaded feed — a shared link, a
@@ -1945,20 +2020,12 @@ const App: React.FC = () => {
    */
   const fetchedSlugRef = useRef<string | null>(null);
   const [boardNotFound, setBoardNotFound] = useState<string | null>(null);
-  /**
-   * The board fetched for that link, kept so it survives the feed loading.
-   *
-   * The feed's first page REPLACES the list when it lands. On a cold open of a
-   * shared link the board's own fetch usually wins that race, so the feed then
-   * wiped it out — and with the slug already marked as fetched, nothing ever
-   * brought it back: the link opened onto the plain feed, and a guest's "add a
-   * message" link never showed the composer at all.
-   */
-  const [deepLinkedPost, setDeepLinkedPost] = useState<Post | null>(null);
 
   // Latest posts, read inside the effect below without becoming a dependency.
   const postsRef = useRef(posts);
   postsRef.current = posts;
+  const boardPoolRef = useRef(boardPool);
+  boardPoolRef.current = boardPool;
 
   useEffect(() => {
     if (!boardSlug) {
@@ -1966,7 +2033,7 @@ const App: React.FC = () => {
       fetchedSlugRef.current = null;
       return;
     }
-    if (postsRef.current.some((p) => p.slug === boardSlug || p.id === boardSlug)) return;
+    if (boardPoolRef.current.some((p) => p.slug === boardSlug || p.id === boardSlug)) return;
     if (fetchedSlugRef.current === boardSlug) return;
 
     fetchedSlugRef.current = boardSlug;
@@ -1985,9 +2052,8 @@ const App: React.FC = () => {
         const { board } = await boardApi.getBoardBySlug(boardSlug);
         settled = true;
         if (cancelled) return;
-        const fetched = boardToPost(board, currentUser?.id);
-        setDeepLinkedPost(fetched);
-        prependPost(fetched);
+        // Kept out of the feed — see offFeedBoards.
+        rememberBoards([boardToPost(board, currentUser?.id)]);
         setBoardNotFound(null);
       } catch (e) {
         settled = true;
@@ -2013,13 +2079,6 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardSlug]);
 
-  // Put the linked board back if a feed load dropped it while it is open.
-  useEffect(() => {
-    if (!deepLinkedPost || !boardSlug) return;
-    if (deepLinkedPost.slug !== boardSlug && deepLinkedPost.id !== boardSlug) return;
-    if (posts.some((p) => p.id === deepLinkedPost.id)) return;
-    prependPost(deepLinkedPost);
-  }, [posts, deepLinkedPost, boardSlug, prependPost]);
 
   const handleGiftHeartForUser = (user: RegisteredUser) => {
     if (!currentUser) {
@@ -2271,14 +2330,31 @@ const App: React.FC = () => {
   });
 
   const handleSelectBoardFromSearch = (post: any) => {
-    goToBoard(post);
-    recordBoardViewed();
+    openBoardFrom(post, [post]);
+  };
+
+  /**
+   * Prev/next for the open board, within the list it was opened from. A board
+   * reached without a list (a shared link) pages through Home's public boards.
+   */
+  const stepBoard = (dir: 1 | -1) => {
+    if (!openPost) return;
+    const fromList = boardNavIds
+      ? boardNavIds
+          .map((id) => boardPool.find((b) => b.id === id))
+          .filter((b): b is Post => Boolean(b))
+      : [];
+    const sequence = fromList.some((b) => b.id === openPost.id) ? fromList : filteredPosts;
+    const at = sequence.findIndex((b) => b.id === openPost.id);
+    if (sequence.length < 2) return;
+    const target = sequence[at === -1 ? 0 : (at + dir + sequence.length) % sequence.length];
+    if (target && target.id !== openPost.id) replaceBoard(target);
   };
 
   // Hydrate the open board with its full document and messages. Feed cards come
   // from a .select()-ed list query and carry neither.
-  const openPost = selectedPostIndex !== null ? posts[selectedPostIndex] : null;
-  const { hydrating: boardHydrating } = useBoardMessages(openPost, currentUser?.id, patchPost);
+  const openPost = selectedPostIndex !== null ? boardPool[selectedPostIndex] : null;
+  const { hydrating: boardHydrating } = useBoardMessages(openPost, currentUser?.id, patchBoard);
 
   return (
     <>
@@ -2313,10 +2389,7 @@ const App: React.FC = () => {
               onBack={closeOverlay}
               onCreateBoard={handleCreateBoardForHashtag}
               onSelectUser={handleSelectUser}
-              onPostClick={(post) => {
-                goToBoard(post);
-                recordBoardViewed();
-              }}
+              onPostClick={(post, list) => openBoardFrom(post, list ?? [post])}
             />
           </main>
         ) : viewingProfileUser ? (
@@ -2340,10 +2413,7 @@ const App: React.FC = () => {
                 setFilterModalMode(subTab === 'hearts' ? 'hearts' : 'events');
                 setIsFilterModalOpen(true);
               }}
-              onPostClick={(post) => {
-                goToBoard(post);
-                recordBoardViewed();
-              }}
+              onPostClick={(post, list) => openBoardFrom(post, list ?? [post])}
             />
           </main>
         ) : activeNavTab === 'home' ? (
@@ -2383,11 +2453,9 @@ const App: React.FC = () => {
                     posts={filteredPosts}
                     onPostClick={(index) => {
                       const target = filteredPosts[index];
-                      if (target) {
-                        // Navigate so the board gets a real, shareable URL.
-                        goToBoard(target);
-                        recordBoardViewed();
-                      }
+                      // Navigate so the board gets a real, shareable URL. Paging
+                      // stays within Home's public boards on this tab.
+                      if (target) openBoardFrom(target, filteredPosts);
                     }}
                     activeFilter={activeFilter}
                     setActiveFilter={setActiveFilter}
@@ -2412,10 +2480,7 @@ const App: React.FC = () => {
                   onBack={() => setSelectedFilterId('moment')}
                   onPostClick={(index) => {
                     const target = posts[index];
-                    if (target) {
-                      goToBoard(target);
-                      recordBoardViewed();
-                    }
+                    if (target) openBoardFrom(target, posts.filter(canViewPostPublicly));
                   }}
                   onCreateBoard={(eventType) => {
                     if (!currentUser) {
@@ -2444,10 +2509,7 @@ const App: React.FC = () => {
                 setFilterModalMode(subTab === 'hearts' ? 'hearts' : 'events');
                 setIsFilterModalOpen(true);
               }}
-              onPostClick={(post) => {
-                goToBoard(post);
-                recordBoardViewed();
-              }}
+              onPostClick={(post, list) => openBoardFrom(post, list ?? [post])}
             />
           </main>
         )}
@@ -2495,8 +2557,11 @@ const App: React.FC = () => {
                 // sub-route, so the board's X stepped "back" onto this same
                 // board and had to be pressed twice. After adding a message
                 // the X goes straight home — see exitBoardToHomeRef.
-                if (boardSubRoute === 'add-message') exitBoardToHomeRef.current = true;
                 const cameFromApp = (location.state as { fromApp?: boolean } | null)?.fromApp;
+                // Only when nothing of ours sits behind the board (a shared
+                // link): then its X should go home. With a page behind it —
+                // your profile, Home, a hashtag — the X returns there.
+                if (boardSubRoute === 'add-message' && !cameFromApp) exitBoardToHomeRef.current = true;
                 if (cameFromApp) navigate(-1);
                 else navigate(`/board/${encodeURIComponent(boardSlug)}`, { replace: true });
               } else setIsCreateModalOpen(false);
@@ -2524,7 +2589,7 @@ const App: React.FC = () => {
             editingContribution={editingContribution}
             editMode={editMode}
             onUpdatePost={(updatedPost) => {
-              setPosts((prevPosts) =>
+              updateBoards((prevPosts) =>
                 prevPosts.map((p) => (p.id === updatedPost.id ? { ...p, ...updatedPost } : p))
               );
               setEditingPost(null);
@@ -2532,7 +2597,7 @@ const App: React.FC = () => {
               setIsCreateModalOpen(false);
             }}
             onUpdateContribution={(parentBoardId, updatedContrib) => {
-              setPosts((prevPosts) =>
+              updateBoards((prevPosts) =>
                 prevPosts.map((p) => {
                   if (p.id !== parentBoardId) return p;
                   return {
@@ -2551,7 +2616,7 @@ const App: React.FC = () => {
             onDeletePost={async (postId) => {
               // Optimistic removal, rolled back by a reload if the server refuses.
               const snapshot = posts;
-              removePost(postId);
+              removeBoard(postId);
               leaveDeletedBoard();
               setEditingPost(null);
               setEditMode(null);
@@ -2564,7 +2629,7 @@ const App: React.FC = () => {
               }
             }}
             onDeleteContribution={(parentBoardId, contribId) => {
-              setPosts((prevPosts) =>
+              updateBoards((prevPosts) =>
                 prevPosts.map((p) => {
                   if (p.id !== parentBoardId) return p;
                   const remaining = (p.contributions || []).filter((c) => c.id !== contribId);
@@ -2586,7 +2651,7 @@ const App: React.FC = () => {
               setIsCreateModalOpen(false);
             }}
             onAddContribution={(parentBoardId, newContrib) => {
-              setPosts((prevPosts) =>
+              updateBoards((prevPosts) =>
                 prevPosts.map((p) => {
                   if (p.id !== parentBoardId) return p;
                   const currentContribs = p.contributions || [];
@@ -2648,9 +2713,9 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {selectedPostIndex !== null && posts[selectedPostIndex] && (
+        {openPost && (
           <MediaModal 
-            post={posts[selectedPostIndex]} 
+            post={openPost} 
             currentUser={currentUser}
             isHydrating={boardHydrating}
             onRequireAuth={(prompt) => handleOpenAuth('login', prompt)}
@@ -2667,14 +2732,8 @@ const App: React.FC = () => {
             }}
             // Prev/next swap the address in place, so paging through boards
             // does not bury the feed under a long history stack.
-            onPrev={() => {
-              const target = posts[(selectedPostIndex - 1 + posts.length) % posts.length];
-              if (target) replaceBoard(target);
-            }}
-            onNext={() => {
-              const target = posts[(selectedPostIndex + 1) % posts.length];
-              if (target) replaceBoard(target);
-            }}
+            onPrev={() => stepBoard(-1)}
+            onNext={() => stepBoard(1)}
             onSelectUser={(user) => handleSelectUser(user)}
             onSelectHashtag={(tag) => handleSelectHashtag(tag)}
             onAddContributionClick={(parentPost) => {
@@ -2698,7 +2757,7 @@ const App: React.FC = () => {
             }}
             onDeleteBoard={async (postId) => {
               const snapshot = posts;
-              removePost(postId);
+              removeBoard(postId);
               leaveDeletedBoard();
               try {
                 await boardApi.deleteBoard(postId);
@@ -2724,7 +2783,7 @@ const App: React.FC = () => {
             onDeleteMessage={async (targetPost, targetContribution) => {
               const snapshot = posts;
               if (targetContribution) {
-                setPosts((prevPosts) =>
+                updateBoards((prevPosts) =>
                   prevPosts.map((p) => {
                     if (p.id !== targetPost.id) return p;
                     return {
@@ -2739,7 +2798,7 @@ const App: React.FC = () => {
                   const res = await messageApi.deleteMessage(targetContribution.id);
                   // Removing the last message can delete the board too.
                   if (res.boardDeleted) {
-                    removePost(targetPost.id);
+                    removeBoard(targetPost.id);
                     leaveDeletedBoard();
                   }
                 } catch (e) {
@@ -2747,7 +2806,7 @@ const App: React.FC = () => {
                   showAppToast(toApiError(e).message);
                 }
               } else {
-                removePost(targetPost.id);
+                removeBoard(targetPost.id);
                 leaveDeletedBoard();
                 try {
                   await boardApi.deleteBoard(targetPost.id);
@@ -2776,7 +2835,7 @@ const App: React.FC = () => {
 
               // Optimistic: the picker never waits on the network.
               setMyReactions((prev) => ({ ...prev, [postId]: userReactions }));
-              patchPost(postId, { reactionCounts: counts, reactions: totalReactions(counts) });
+              patchBoard(postId, { reactionCounts: counts, reactions: totalReactions(counts) });
 
               if (sync.timer) window.clearTimeout(sync.timer);
               sync.timer = window.setTimeout(async () => {
@@ -2797,7 +2856,7 @@ const App: React.FC = () => {
                     sync.confirmed = { mine: serverMine, counts: serverCounts, total: serverTotal };
                     return;
                   }
-                  patchPost(postId, { reactionCounts: serverCounts, reactions: serverTotal });
+                  patchBoard(postId, { reactionCounts: serverCounts, reactions: serverTotal });
                   setMyReactions((prev) => ({ ...prev, [postId]: serverMine }));
                   sync.confirmed = undefined;
                 } catch (e) {
@@ -2806,7 +2865,7 @@ const App: React.FC = () => {
                   sync.confirmed = undefined;
                   if (back) {
                     setMyReactions((prev) => ({ ...prev, [postId]: back.mine }));
-                    patchPost(postId, { reactionCounts: back.counts, reactions: back.total });
+                    patchBoard(postId, { reactionCounts: back.counts, reactions: back.total });
                   }
                   if (toApiError(e).status === 401) {
                     handleOpenAuth('login', 'Sign in to react to this board.');

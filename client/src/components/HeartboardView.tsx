@@ -92,7 +92,8 @@ export function asRegisteredUser(u: UserProfileData): RegisteredUser {
 
 export interface HeartboardViewProps {
   posts?: any[];
-  onPostClick?: (post: any) => void;
+  /** The list the post was picked from, which the board view pages through. */
+  onPostClick?: (post: any, list?: any[]) => void;
   onFilterClick?: (subTab?: 'board' | 'tagged' | 'collaboration' | 'hearts') => void;
   profileUser?: UserProfileData | null;
   currentUser?: RegisteredUser | null;
@@ -1745,7 +1746,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
             <HeartboardCard 
               key={item.id} 
               item={item} 
-              onClick={() => onPostClick && onPostClick(item)} 
+              onClick={() => onPostClick && onPostClick(item, filteredItems)} 
             />
           ))}
         </div>
