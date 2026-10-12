@@ -21,6 +21,8 @@ import {
   toReactionCounts,
   totalReactions,
   postMatchesFeedTab,
+  randomFeedTabFor,
+  RANDOM_TAB_BOARD_LIMIT,
   type ClientReaction,
 } from './lib/adapters';
 import { formatCount, plural } from './lib/format';
@@ -2188,6 +2190,21 @@ const App: React.FC = () => {
   const appSearch = useSearch(searchQuery, currentUser?.id, { enabled: query.length >= 2 });
   const matchingUsersCount = appSearch.active ? appSearch.users.length : 0;
 
+  // The first boards nobody has reacted to yet are scattered across the four
+  // tabs at random, so every tab has something in it from day one. The pick is
+  // seeded on the board's id, so a board always lands in the same tab. The
+  // moment someone reacts, its reactions decide its tab instead.
+  const randomTabByPostId = useMemo(() => {
+    const map = new Map<string, 'all' | 'vouch' | 'tears' | 'hype'>();
+    for (const post of momentPosts) {
+      if (map.size >= RANDOM_TAB_BOARD_LIMIT) break;
+      if (totalReactions(post.reactionCounts ?? {}) === 0) {
+        map.set(String(post.id), randomFeedTabFor(String(post.id)));
+      }
+    }
+    return map;
+  }, [momentPosts]);
+
   const filteredPosts = momentPosts.filter(post => {
     // The four tabs ARE the reactions, read back off the board: hearts land it
     // in Most Loved Today, claps and sads in This Moved People, sads in This
@@ -2195,7 +2212,10 @@ const App: React.FC = () => {
     // sit in more than one, which is only honest — people reacted to it in more
     // than one way. It used to filter on `category`, a bucket the composer
     // guessed from the media type at publish time and nobody could change.
-    if (!postMatchesFeedTab(post.reactionCounts, activeFilter)) {
+    const randomTab = randomTabByPostId.get(String(post.id));
+    if (randomTab) {
+      if (randomTab !== activeFilter) return false;
+    } else if (!postMatchesFeedTab(post.reactionCounts, activeFilter)) {
       return false;
     }
     // Filter search query

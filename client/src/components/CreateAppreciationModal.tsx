@@ -76,6 +76,7 @@ import { VectorPicker, PHOSPHOR_VECTORS } from './VectorPicker';
 import { ChooseColor } from './ColorPicker';
 import { ConfettiOverlay, ConfettiType } from './ConfettiOverlay';
 import { ConfettiPickerModal } from './ConfettiPickerModal';
+import { FeatureGuide, useGuideSeen } from './FeatureGuide';
 import { TemplatePickerModal, instantiateTemplate } from './TemplatePickerModal';
 import type { MessageTemplate } from './TemplatePickerModal';
 import {
@@ -1676,6 +1677,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   });
   const [isConfettiPickerOpen, setIsConfettiPickerOpen] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  /** First-time tip: elements are edited by double-tapping them. */
+  const [composerGuideSeen, markComposerGuideSeen] = useGuideSeen('composer-elements');
   const [selectedHearts, setSelectedHearts] = useState<string[]>(() => {
     // Contributions carry their own hearts (message content.hearts); only fall
     // back to the board's when editing the board itself.
@@ -2800,7 +2803,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                       el={el}
                       isSelected={selectedElementId === el.id}
                       onSelect={(id) => setSelectedElementId(id)}
-                      onEdit={(id) => setEditingElementId(id)}
+                      onEdit={(id) => { setEditingElementId(id); markComposerGuideSeen(); }}
                       onUpdate={updateCanvasElement}
                     />
                   ));
@@ -3745,6 +3748,18 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
           {/* C. DISTRACTION-FREE CANVAS WORKSPACE */}
           <div className="flex-grow w-full flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            {/* First-time tip, once there is something on the canvas to edit. */}
+            {activeType === 'text' && !composerGuideSeen && !editingElementId &&
+              canvasElements.some((el) => isRenderableElement(el) && !el.locked) && (
+              <FeatureGuide
+                className="absolute top-3 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-[400px] z-30"
+                lines={[
+                  { action: 'Double-tap', result: 'any text, photo or sticker to edit it.' },
+                  { action: 'Drag', result: 'to move it, and use its handles to resize or rotate.' },
+                ]}
+                onDismiss={markComposerGuideSeen}
+              />
+            )}
             
             {/* Outer frame matching default frame dimensions exactly */}
             <div 
@@ -3798,7 +3813,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             el={el}
                             isSelected={selectedElementId === el.id}
                             onSelect={(id) => setSelectedElementId(id)}
-                            onEdit={(id) => setEditingElementId(id)}
+                            onEdit={(id) => { setEditingElementId(id); markComposerGuideSeen(); }}
                             onUpdate={updateCanvasElement}
                           />
                         ));
