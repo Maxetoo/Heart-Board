@@ -1945,6 +1945,16 @@ const App: React.FC = () => {
    */
   const fetchedSlugRef = useRef<string | null>(null);
   const [boardNotFound, setBoardNotFound] = useState<string | null>(null);
+  /**
+   * The board fetched for that link, kept so it survives the feed loading.
+   *
+   * The feed's first page REPLACES the list when it lands. On a cold open of a
+   * shared link the board's own fetch usually wins that race, so the feed then
+   * wiped it out — and with the slug already marked as fetched, nothing ever
+   * brought it back: the link opened onto the plain feed, and a guest's "add a
+   * message" link never showed the composer at all.
+   */
+  const [deepLinkedPost, setDeepLinkedPost] = useState<Post | null>(null);
 
   // Latest posts, read inside the effect below without becoming a dependency.
   const postsRef = useRef(posts);
@@ -1967,14 +1977,20 @@ const App: React.FC = () => {
     // cancelled the in-flight request — so a 404 never surfaced and the page
     // sat silently on a board that does not exist.
     let cancelled = false;
+    let settled = false;
+    const slug = boardSlug;
 
     (async () => {
       try {
         const { board } = await boardApi.getBoardBySlug(boardSlug);
+        settled = true;
         if (cancelled) return;
-        prependPost(boardToPost(board, currentUser?.id));
+        const fetched = boardToPost(board, currentUser?.id);
+        setDeepLinkedPost(fetched);
+        prependPost(fetched);
         setBoardNotFound(null);
       } catch (e) {
+        settled = true;
         if (cancelled) return;
         const err = toApiError(e);
         setBoardNotFound(
@@ -1989,9 +2005,21 @@ const App: React.FC = () => {
 
     return () => {
       cancelled = true;
+      // Cancelled before the answer came back: forget that this slug was
+      // fetched, or the next run (React re-runs effects in development) skips
+      // it and the link never resolves.
+      if (!settled && fetchedSlugRef.current === slug) fetchedSlugRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardSlug]);
+
+  // Put the linked board back if a feed load dropped it while it is open.
+  useEffect(() => {
+    if (!deepLinkedPost || !boardSlug) return;
+    if (deepLinkedPost.slug !== boardSlug && deepLinkedPost.id !== boardSlug) return;
+    if (posts.some((p) => p.id === deepLinkedPost.id)) return;
+    prependPost(deepLinkedPost);
+  }, [posts, deepLinkedPost, boardSlug, prependPost]);
 
   const handleGiftHeartForUser = (user: RegisteredUser) => {
     if (!currentUser) {

@@ -6,6 +6,7 @@ const Subscription = require('../models/subscription');
 const Sponsorship = require('../models/sponsporship');
 const Like = require('../models/boardLikeModel');
 const CustomError = require('../error');
+const { canViewBoard } = require('../helpers/boardAccess');
 const { StatusCodes } = require('http-status-codes');
 const { invalidate, invalidatePattern, keys } = require('../middlewares/cacheMiddleware');
 
@@ -107,9 +108,37 @@ const requireBoardOwner = async (res, boardId, userId) => {
 };
 
 
+/** Most people one board can tag; keeps a pasted list from fanning out. */
+const MAX_TAGGED_USERS = 20;
+
+/**
+ * Turns @usernames into accounts. Unknown names are skipped rather than
+ * rejected: a mention in the message text is not a promise that the account
+ * exists, and one typo must not block publishing the board.
+ */
+const resolveTaggedUsers = async (usernames) => {
+  if (!Array.isArray(usernames) || usernames.length === 0) return [];
+  const clean = [...new Set(
+    usernames
+      .map((u) => String(u || '').trim().replace(/^@/, '').toLowerCase())
+      .filter((u) => u && !u.startsWith('#')),
+  )].slice(0, MAX_TAGGED_USERS);
+  if (!clean.length) return [];
+  return User.find({ username: { $in: clean } }).select('_id username').lean();
+};
+
+/** Drops the cached lists a newly tagged account would otherwise miss. */
+const invalidateTaggedCaches = (users) =>
+  Promise.all(
+    users.flatMap((u) => [
+      invalidatePattern(`myBoards:${u._id.toString()}:*`),
+      invalidatePattern(`${keys.publicProfile(u.username.toLowerCase())}*`),
+    ]),
+  );
+
 const createBoard = async (req, res) => {
   const userId = req.user.userId;
-  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe, style, kind } = req.body;
+  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe, style, kind, taggedUsernames } = req.body;
   const boardKind = kind === 'heart' ? 'heart' : 'board';
   let createdBoard = null;
 
@@ -187,8 +216,15 @@ const createBoard = async (req, res) => {
       }
     }
 
+    // Everyone the board tags. Hearts are addressed to one person and are not
+    // board tags, so they carry only their recipient.
+    const taggedAccounts = boardKind === 'heart' ? [] : await resolveTaggedUsers(taggedUsernames);
+    const taggedIds = new Map(taggedAccounts.map((u) => [u._id.toString(), u._id]));
+    if (receipentId && boardKind !== 'heart') taggedIds.set(receipentId.toString(), receipentId);
+
     const board = await Board.create({
       owner:            userId,
+      taggedUsers:      [...taggedIds.values()],
       title,
       description,
       event,
@@ -240,6 +276,9 @@ const createBoard = async (req, res) => {
     if (receipentHashtag) {
       invalidations.push(invalidatePattern(`hashtag:${receipentHashtag}:*`));
     }
+    if (taggedAccounts.length) {
+      invalidations.push(invalidateTaggedCaches(taggedAccounts));
+    }
     if (boardKind === 'heart' && visibility !== 'private') {
       // The hero radar's pool. Dropping it here is what makes a heart blown
       // right now show up on everyone's radar on their next poll, rather than
@@ -281,7 +320,7 @@ const getMyBoards = async (req, res) => {
     // Boards SOMEONE ELSE addressed to this account. A board the account both
     // owns and addressed to itself belongs under Board, never Tagged.
     filter = {
-      $or:              [{ receipent: userId }, { receipentOriginal: userId }],
+      $or:              [{ receipent: userId }, { receipentOriginal: userId }, { taggedUsers: userId }],
       owner:            { $ne: userId },
       receipentFlagged: false,
       isActive:         true,
@@ -294,13 +333,19 @@ const getMyBoards = async (req, res) => {
     // A board you wrote on is not in that list except by coincidence, so the
     // tab was empty for almost everyone.
     //
-    // Private boards are excluded: contributing to one does not grant access,
-    // and GET /board/:slug would refuse the card the moment it was opened.
+    // A private board is listed only when this account may open it — it is
+    // tagged on it (see helpers/boardAccess). Anyone else's card would be
+    // refused by GET /board/:slug the moment it was tapped.
     filter = {
-      _id:        { $in: await collaboratedBoardIds(userId) },
-      owner:      { $ne: userId },
-      isActive:   true,
-      visibility: { $ne: 'private' },
+      _id:      { $in: await collaboratedBoardIds(userId) },
+      owner:    { $ne: userId },
+      isActive: true,
+      $or: [
+        { visibility: { $ne: 'private' } },
+        { receipent: userId },
+        { receipentOriginal: userId },
+        { taggedUsers: userId },
+      ],
     };
   } else {
     filter = { owner: userId };
@@ -349,10 +394,12 @@ const getBoardBySlug = async (req, res) => {
 
   if (!board) return res.status(StatusCodes.NOT_FOUND).json({ message: 'Board not found.' });
 
-  const isOwner = req.user && board.owner._id.toString() === req.user.userId.toString();
-  if (board.visibility === 'private' && !isOwner) {
+  if (!canViewBoard(board, req.user?.userId)) {
     return res.status(StatusCodes.FORBIDDEN).json({ message: 'This board is private.' });
   }
+  // The cache is keyed on the slug alone, so a private board's response would
+  // be handed to anyone who asked next. Never store it.
+  if (board.visibility === 'private') res.locals.noCache = true;
 
   Board.findByIdAndUpdate(board._id, { $inc: { 'stats.visits': 1 } }).exec();
 
@@ -373,7 +420,7 @@ const updateBoard = async (req, res) => {
   const board  = await requireBoardOwner(res, id, req.user.userId);
   if (!board) return;
 
-  const { title, description, visibility, coverImage, style, event, tags } = req.body;
+  const { title, description, visibility, coverImage, style, event, tags, taggedUsernames } = req.body;
   if (title       !== undefined) board.title       = title;
   if (description !== undefined) board.description = description;
   if (visibility  !== undefined) board.visibility  = visibility;
@@ -397,12 +444,29 @@ const updateBoard = async (req, res) => {
     }
   }
 
+  // Tags added on an edit. Additive on purpose: an edit form that was never
+  // seeded with the board's existing tags would otherwise send a short list
+  // and silently untag people.
+  let newlyTagged = [];
+  if (Array.isArray(taggedUsernames) && board.kind !== 'heart') {
+    const accounts = await resolveTaggedUsers(taggedUsernames);
+    const have = new Set((board.taggedUsers || []).map((id) => id.toString()));
+    newlyTagged = accounts.filter((u) => !have.has(u._id.toString()));
+    if (newlyTagged.length) {
+      board.taggedUsers = [...(board.taggedUsers || []), ...newlyTagged.map((u) => u._id)].slice(0, MAX_TAGGED_USERS + 1);
+    }
+  }
+
   await board.save();
 
   await Promise.all([
     invalidate(keys.board(board.slug)),
+    // Its messages too: a board made private must stop being served from a
+    // cache filled while it was public.
+    invalidatePattern(`boardMsgs:${board.slug}:*`),
     invalidatePattern(`myBoards:${req.user.userId}:*`),
     invalidatePattern('discover:*'),
+    newlyTagged.length ? invalidateTaggedCaches(newlyTagged) : null,
   ]);
 
   res.status(StatusCodes.OK).json({ message: 'Board updated.', board });
@@ -458,6 +522,7 @@ const likeBoard = async (req, res) => {
 
   const board = await Board.findById(id);
   if (!board) throw new CustomError.NotFoundError('Board not found');
+  if (!canViewBoard(board, userId)) throw new CustomError.ForbiddenError('This board is private.');
 
   const existingLike = await Like.findOne({ board: id, user: userId });
 
@@ -526,6 +591,7 @@ const patchReaction = async (req, res) => {
 
   const board = await Board.findById(id);
   if (!board || !board.isActive) throw new CustomError.NotFoundError('Board not found');
+  if (!canViewBoard(board, userId)) throw new CustomError.ForbiddenError('This board is private.');
 
   const existing = await Like.findOne({ board: id, user: userId });
 

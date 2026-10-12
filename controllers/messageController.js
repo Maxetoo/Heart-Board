@@ -3,6 +3,7 @@ const Board = require('../models/boardModel');
 const User = require('../models/userModel');
 const Subscription = require('../models/subscription');
 const CustomError = require('../error');
+const { canViewBoard } = require('../helpers/boardAccess');
 const uploadSendingQueue = require('../workers/uploadAndPostWorker'); 
 const { deleteFromCloudinary } = require('../services/cloudinaryUpload');
 const { StatusCodes } = require('http-status-codes');
@@ -32,8 +33,9 @@ const resolveBoard = async (slug, senderId) => {
   if (!board) throw new CustomError.NotFoundError('Board not found.');
   // senderId is null for a guest, who is never the owner — so a guest is
   // refused on private and creator-only boards like any other non-owner.
+  // A private board takes messages from its owner and the people it tags.
   const isOwner = Boolean(senderId) && board.owner.toString() === senderId.toString();
-  if (board.visibility === 'private' && !isOwner)
+  if (!canViewBoard(board, senderId))
     throw new CustomError.ForbiddenError('This board is private.');
   if (board.onlyMe && !isOwner)
     throw new CustomError.ForbiddenError('Only the board creator can add messages to this board.');
@@ -222,8 +224,10 @@ const getBoardMessages = async (req, res) => {
   if (!board) throw new CustomError.NotFoundError('Board not found.');
 
   const isOwner = board.owner.toString() === userId.toString();
-  if (board.visibility === 'private' && !isOwner)
+  if (!canViewBoard(board, userId))
     throw new CustomError.ForbiddenError('This board is private.');
+  // Cached by slug alone — a private board's messages must never be stored.
+  if (board.visibility === 'private') res.locals.noCache = true;
 
   const page  = Math.max(1, parseInt(req.query.page)  || 1);
   const limit = Math.min(100, parseInt(req.query.limit) || 20);
@@ -362,7 +366,7 @@ const getMessage = async (req, res) => {
   const message = await Message.findById(req.params.id)
     .populate('sender',    'username profileImage')
     .populate('recipient', 'username profileImage')
-    .populate('board',     'title slug visibility owner');
+    .populate('board',     'title slug visibility owner receipent receipentOriginal taggedUsers');
 
   if (!message || message.status === 'rejected')
     throw new CustomError.NotFoundError('Message not found.');
@@ -376,7 +380,8 @@ const getMessage = async (req, res) => {
 
   const board   = message.board;
   const isOwner = board.owner.toString() === userId.toString();
-  if (board.visibility === 'private' && !isOwner) throw new CustomError.ForbiddenError('This board is private.');
+  if (!canViewBoard(board, userId)) throw new CustomError.ForbiddenError('This board is private.');
+  if (board.visibility === 'private') res.locals.noCache = true;
   if (message.status === 'pending' && !isOwner)   throw new CustomError.ForbiddenError('This message is pending approval.');
 
   res.status(StatusCodes.OK).json({ message });

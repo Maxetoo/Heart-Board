@@ -29,6 +29,19 @@ const BoardSchema = new Schema({
     default: null,
   },
 
+  /**
+   * Everyone tagged on the board, the recipient included.
+   *
+   * `receipent` holds a single person, so a board addressed to three people —
+   * or one that @mentions someone in its text — only ever reached the first
+   * profile's Tagged section. This holds them all.
+   */
+  taggedUsers: {
+    type:    [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    default: [],
+    index:   true,
+  },
+
   receipentHashtag: {
     type:    String,
     default: null,
