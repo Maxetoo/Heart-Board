@@ -5,15 +5,8 @@ const AiRoute = express.Router();
 const { moderate, refine, transcribe } = require('../controllers/aiController');
 const { authentication } = require('../middlewares/authMiddleware');
 
-// These calls cost money per request, so they get a tighter budget than the
-// global limiter in app.js.
-const aiLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: 40,
-  message: { message: 'Too many AI requests. Please slow down and try again shortly.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// These calls cost money per request: per-person limit, see middlewares/rateLimiter.js.
+const { aiLimiter } = require('../middlewares/rateLimiter');
 
 AiRoute.use(authentication, aiLimiter);
 

@@ -144,3 +144,21 @@ input[type='search']::-webkit-search-results-decoration {
 .border-gray-600 { border-color: #353849; }
 .border-gray-800 { border-color: #272835; }
 .border-gray-900 { border-color: #1A1B25; }
+
+/* ── Low-power devices ───────────────────────────────────────────────────────
+   Set on <html> by lib/performance.ts. Old Android GPUs stall on blur and
+   filter effects, worst of all when the element underneath is animating: the
+   blur is then redrawn every frame. Everything here is decorative, so on a
+   low-power device it is switched off instead of being drawn slowly. */
+.low-power [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.low-power [class*="drop-shadow"] {
+  filter: none !important;
+}
+/* The soft blurred colour discs behind hearts: absolute, -z-10, blur-*. The
+   leading space in " blur-" keeps backdrop-blur-* elements out of this. */
+.low-power [class~="-z-10"][class*=" blur-"] {
+  display: none !important;
+}

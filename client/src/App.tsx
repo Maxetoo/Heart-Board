@@ -1443,6 +1443,29 @@ const App: React.FC = () => {
    */
   const [myReactions, setMyReactions] = useState<Record<string, ClientReaction[]>>({});
 
+  /**
+   * Reaction saves, coalesced per board.
+   *
+   * Every tap used to send its own PATCH at once. Two quick taps put two
+   * requests in flight that could finish in either order, and when the older
+   * one landed last it overwrote the newer state: a reaction you had just
+   * added flickered off, or one you removed came back. Now the screen updates
+   * on the tap, the save waits for a short pause in tapping and sends only the
+   * final set, and an answer that is no longer the latest is ignored. If a
+   * save fails, the board returns to the last state the server confirmed.
+   */
+  const REACTION_SAVE_DELAY_MS = 350;
+  const reactionSyncRef = useRef<Record<string, {
+    seq: number;
+    timer?: number;
+    confirmed?: { mine: ClientReaction[]; counts: Post['reactionCounts']; total: number };
+  }>>({});
+  useEffect(() => () => {
+    Object.values(reactionSyncRef.current).forEach((sync) => {
+      if (sync.timer) window.clearTimeout(sync.timer);
+    });
+  }, []);
+
   useEffect(() => {
     if (!authReady || !currentUser) {
       setMyReactions({});
@@ -2691,37 +2714,57 @@ const App: React.FC = () => {
             // the like TOGGLE, so picking a second reaction quietly un-liked
             // the board and the count went down instead of up.
             onReactionBlown={() => recordUserCreatedMessageOrHeart()}
-            onUpdateReactions={async (postId, counts, userReactions) => {
-              const previousMine = myReactions[postId] ?? [];
-              const previousCounts = rawPosts.find((p) => p.id === postId)?.reactionCounts;
-              const previousTotal = rawPosts.find((p) => p.id === postId)?.reactions ?? 0;
-
-              // Optimistic: the picker should not wait on a round trip.
-              setMyReactions((prev) => ({ ...prev, [postId]: userReactions }));
-              patchPost(postId, {
-                reactionCounts: counts,
-                reactions: totalReactions(counts),
-              });
-
-              try {
-                // PATCH /board/:id/reaction replaces the whole set, so it is
-                // also how a reaction is REMOVED. Nothing persisted reactions
-                // at all before this — they lived in React state and were gone
-                // on the next refresh.
-                const saved = await boardApi.setReactions(postId, fromClientReactions(userReactions));
-                const serverCounts = toReactionCounts(saved.reactionCounts);
-                patchPost(postId, {
-                  reactionCounts: serverCounts,
-                  reactions: totalReactions(serverCounts) || saved.likeCount,
-                });
-                setMyReactions((prev) => ({ ...prev, [postId]: toClientReactions(saved.reactions) }));
-              } catch (e) {
-                setMyReactions((prev) => ({ ...prev, [postId]: previousMine }));
-                patchPost(postId, { reactionCounts: previousCounts, reactions: previousTotal });
-                if (toApiError(e).status === 401) {
-                  handleOpenAuth('login', 'Sign in to react to this board.');
-                }
+            onUpdateReactions={(postId, counts, userReactions) => {
+              // Coalesced, latest-wins saving — see reactionSyncRef.
+              const sync = (reactionSyncRef.current[postId] ??= { seq: 0 });
+              if (!sync.confirmed) {
+                const current = rawPosts.find((p) => p.id === postId);
+                sync.confirmed = {
+                  mine: myReactions[postId] ?? [],
+                  counts: current?.reactionCounts,
+                  total: current?.reactions ?? 0,
+                };
               }
+
+              // Optimistic: the picker never waits on the network.
+              setMyReactions((prev) => ({ ...prev, [postId]: userReactions }));
+              patchPost(postId, { reactionCounts: counts, reactions: totalReactions(counts) });
+
+              if (sync.timer) window.clearTimeout(sync.timer);
+              sync.timer = window.setTimeout(async () => {
+                sync.timer = undefined;
+                const seq = ++sync.seq;
+                // A newer tap, or a newer request, makes this answer stale.
+                const isStale = () => seq !== sync.seq || sync.timer !== undefined;
+                try {
+                  // PATCH /board/:id/reaction replaces the whole set, so it is
+                  // also how a reaction is REMOVED.
+                  const saved = await boardApi.setReactions(postId, fromClientReactions(userReactions));
+                  const serverCounts = toReactionCounts(saved.reactionCounts);
+                  const serverMine = toClientReactions(saved.reactions);
+                  const serverTotal = totalReactions(serverCounts) || saved.likeCount;
+                  if (isStale()) {
+                    // Not shown — a newer save supersedes it — but it IS what
+                    // the server now holds, so it is the state to fall back to.
+                    sync.confirmed = { mine: serverMine, counts: serverCounts, total: serverTotal };
+                    return;
+                  }
+                  patchPost(postId, { reactionCounts: serverCounts, reactions: serverTotal });
+                  setMyReactions((prev) => ({ ...prev, [postId]: serverMine }));
+                  sync.confirmed = undefined;
+                } catch (e) {
+                  if (isStale()) return;
+                  const back = sync.confirmed;
+                  sync.confirmed = undefined;
+                  if (back) {
+                    setMyReactions((prev) => ({ ...prev, [postId]: back.mine }));
+                    patchPost(postId, { reactionCounts: back.counts, reactions: back.total });
+                  }
+                  if (toApiError(e).status === 401) {
+                    handleOpenAuth('login', 'Sign in to react to this board.');
+                  }
+                }
+              }, REACTION_SAVE_DELAY_MS);
             }}
           />
         )}

@@ -32,31 +32,15 @@ const server = http.createServer(app);
 
 app.set('trust proxy', 1); 
 
-// Rate limit setup.
-// The SPA is chattier than the old frontend (feed + profile + reactions +
-// message loads on a single screen), so a 100/15min budget was exhausting a
-// normal session. Reads get a generous budget here; auth and AI routes carry
-// their own tighter limiters.
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 600,
-  message: { message: 'Too many requests from this IP, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Never rate-limit the SPA's own static assets.
-  skip: (req) => !req.path.startsWith('/api/'),
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { message: 'Too many authentication attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Apply rate limiter
-app.use(limiter);
+// Rate limiting: fingerprint-based and Redis-backed — see middlewares/rateLimiter.js.
+// Mounted after cookieParser below, so a signed-in caller is counted as their
+// account rather than as their IP.
+const {
+  apiLimiter,
+  networkLimiter,
+  authLimiter,
+  authNetworkLimiter,
+} = require('./middlewares/rateLimiter');
 
 /**
  * Helmet, minus the CSP.
@@ -101,6 +85,7 @@ app.use(compression());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: false, limit: '15mb' }));
 app.use(cookieParser(process.env.COOKIE));
+app.use(networkLimiter, apiLimiter);
 app.use(morgan('tiny'));
 app.use(session({
     secret: process.env.SESSION_SECRET,
@@ -125,7 +110,7 @@ const SearchRouter      = require('./routes/searchRoute');
 const AiRouter          = require('./routes/aiRoute');
 
 // API routes
-app.use('/api/v1/auth', authLimiter, AuthRouter);
+app.use('/api/v1/auth', authNetworkLimiter, authLimiter, AuthRouter);
 app.use('/api/v1/user', UserRouter);
 app.use('/api/v1/board', BoardRouter);
 app.use('/api/v1/message', MessageRouter);

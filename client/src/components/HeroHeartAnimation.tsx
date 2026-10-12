@@ -5,6 +5,7 @@ import {
   HEARTBOARD_BUBBLE_PATH,
   HEARTBOARD_HEART_PATH,
 } from './HeartboardLogo';
+import { IS_LOW_POWER } from '../lib/performance';
 
 // Semantic Heart Spectrum Colors strictly adhering to Heartboard's design system
 export const SEMANTIC_HEART_COLORS = [
@@ -65,7 +66,9 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
   // Generate a continuous, beautifully balanced organic set of ambient floating hearts
   const ambientHearts = useMemo<AmbientHeart[]>(() => {
     const list: AmbientHeart[] = [];
-    const count = 18; // Balanced number for visual richness without clutter
+    // 18 on capable devices. Each one loops forever, so on a low-power device
+    // fewer of them is the difference between smooth and stuttering.
+    const count = IS_LOW_POWER ? 8 : 18;
 
     // Distribution zones to ensure balanced left, right, top, and bottom framing
     const zones = [
@@ -130,7 +133,7 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
   // Trigger dynamic outward burst particles whenever activeActivityKey changes (live heart blown or ticker transition)
   useEffect(() => {
     const newBurst: BurstParticle[] = [];
-    const count = 7; // 7 lively particles radiating outward
+    const count = IS_LOW_POWER ? 3 : 7; // particles radiating outward
 
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + (Math.random() * 0.4 - 0.2);
@@ -170,7 +173,7 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
 
     // Spawn 3 playful mini floating hearts
     const clicks: AmbientHeart[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < (IS_LOW_POWER ? 2 : 4); i++) {
       const colorObj = SEMANTIC_HEART_COLORS[Math.floor(Math.random() * SEMANTIC_HEART_COLORS.length)];
       clicks.push({
         id: `click-${Date.now()}-${i}`,
@@ -366,7 +369,7 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
           'w-[1000px] h-[1000px] sm:w-[1120px] sm:h-[1120px]',
           'w-[1120px] h-[1120px] sm:w-[1240px] sm:h-[1240px]',
           'w-[1240px] h-[1240px] sm:w-[1360px] sm:h-[1360px]',
-        ].map((sizeClass, idx) => (
+        ].slice(0, IS_LOW_POWER ? 3 : 7).map((sizeClass, idx) => (
           <motion.div
             key={idx}
             animate={{
@@ -467,7 +470,9 @@ export const HeroHeartAnimation: React.FC<HeroHeartAnimationProps> = ({
                 tail, which came apart from the bubble on some screens. */}
             <motion.svg
               viewBox={HEARTBOARD_LOGO_VIEWBOX}
-              animate={{ filter: `drop-shadow(0 14px 28px ${activeColor}4D)` }}
+              // An animated drop-shadow is repainted every frame of its
+              // transition — skipped on low-power devices.
+              animate={IS_LOW_POWER ? undefined : { filter: `drop-shadow(0 14px 28px ${activeColor}4D)` }}
               transition={{ duration: 0.8, ease: 'easeInOut' }}
               className="w-[150px] h-[150px] md:w-[180px] md:h-[180px] overflow-visible relative transition-transform duration-300 group-hover:scale-105 group-active:scale-95"
               aria-hidden="true"

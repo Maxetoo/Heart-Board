@@ -46,15 +46,8 @@ MessageRoute.get(
 // Signed-out visitors may add a message to a board, as a named guest, so this
 // route only identifies the viewer when there is one. Guests get a tight
 // per-IP budget of their own; signed-in users are not counted against it.
-const guestPostLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  skip: (req) => Boolean(req.user),
-  message: { message: 'Too many messages from this connection. Please wait a little, or sign in.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-MessageRoute.post('/board/:slug', checkUser, guestPostLimiter, postMessage);
+const { guestPostLimiter, guestNetworkLimiter } = require('../middlewares/rateLimiter');
+MessageRoute.post('/board/:slug', checkUser, guestNetworkLimiter, guestPostLimiter, postMessage);
 MessageRoute.post('/direct/:username', authentication, postDirectMessage);
 
 MessageRoute.get(

@@ -22,6 +22,41 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+/**
+ * A random id for this browser, sent on every request as X-Device-Id.
+ *
+ * The server's rate limits key on it (middlewares/rateLimiter.js), so the many
+ * different people behind one shared mobile-carrier IP are counted separately
+ * instead of as one. It is NOT an identity: it is random, holds nothing
+ * personal, and simply starts over if site data is cleared.
+ */
+const DEVICE_ID_KEY = 'hb_device_id';
+const DEVICE_ID_SHAPE = /^[A-Za-z0-9-]{16,64}$/;
+let cachedDeviceId: string | null = null;
+
+function deviceId(): string {
+  if (cachedDeviceId !== null) return cachedDeviceId;
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id || !DEVICE_ID_SHAPE.test(id)) {
+      id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    cachedDeviceId = id;
+  } catch {
+    cachedDeviceId = ''; // storage blocked: the server falls back to network + browser
+  }
+  return cachedDeviceId;
+}
+
+api.interceptors.request.use((config) => {
+  const id = deviceId();
+  if (id) config.headers.set('X-Device-Id', id);
+  return config;
+});
+
 /** Fired when any request comes back 401, so AuthContext can clear the session. */
 export const UNAUTHORIZED_EVENT = 'heartboard:unauthorized';
 

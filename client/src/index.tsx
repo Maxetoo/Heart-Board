@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AppRoutes } from './routes/AppRoutes';
 import { AuthProvider } from './contexts/AuthContext';
+import { MotionConfig } from 'motion/react';
+import { IS_LOW_POWER } from './lib/performance';
 import './index.css';
 
 // Suppress only crypto-wallet extension noise. Narrow on purpose: the original
@@ -93,6 +95,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
+// Low-power devices get the light version of the app's effects — see
+// lib/performance.ts and the .low-power rules at the end of index.css.
+if (IS_LOW_POWER) document.documentElement.classList.add('low-power');
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
@@ -104,7 +110,11 @@ root.render(
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          {/* "user": anyone who asked their OS for reduced motion gets no
+              transform animations anywhere in the app. */}
+          <MotionConfig reducedMotion="user">
+            <AppRoutes />
+          </MotionConfig>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

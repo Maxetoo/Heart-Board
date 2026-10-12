@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { IS_LOW_POWER, PREFERS_REDUCED_MOTION } from '../lib/performance';
 
 export type ConfettiType = 'clap' | 'ribbons' | 'simple' | 'celebration' | string | null | undefined;
 
@@ -125,7 +126,8 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
       const width = canvas.width || 380;
       const height = canvas.height || 474;
 
-      const isEmoji = Math.random() < (type === 'clap' ? 0.45 : type === 'celebration' ? 0.35 : type === 'ribbons' ? 0.25 : 0.2);
+      // Emoji are drawn with fillText, the slowest call here on old Android.
+      const isEmoji = !IS_LOW_POWER && Math.random() < (type === 'clap' ? 0.45 : type === 'celebration' ? 0.35 : type === 'ribbons' ? 0.25 : 0.2);
       const isRibbon = type === 'ribbons' && !isEmoji && Math.random() < 0.6;
       const isStar = (type === 'simple' || type === 'celebration') && !isEmoji && Math.random() < 0.3;
 
@@ -173,7 +175,8 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
     };
 
     const initBurst = () => {
-      const particleCount = type === 'celebration' ? 55 : type === 'ribbons' ? 45 : 40;
+      const fullCount = type === 'celebration' ? 55 : type === 'ribbons' ? 45 : 40;
+      const particleCount = IS_LOW_POWER ? Math.round(fullCount * 0.4) : fullCount;
       particles = Array.from({ length: particleCount }, () => createParticle(true));
     };
 
@@ -220,7 +223,7 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
 
     // 30fps is indistinguishable for confetti and halves the draw cost when
     // several cards are visible at once.
-    const FRAME_MS = 1000 / 30;
+    const FRAME_MS = 1000 / (IS_LOW_POWER ? 24 : 30);
     /** How long the single burst lasts before the canvas is cleared for good. */
     const BURST_MS = 4000;
     /** Particles fade out over the tail of the burst rather than vanishing. */
@@ -323,7 +326,8 @@ export const ConfettiOverlay: React.FC<ConfettiOverlayProps> = ({
     };
   }, [type, loopCycle, onScreen]);
 
-  if (!type) return null;
+  // Someone who asked for reduced motion gets no confetti at all.
+  if (!type || PREFERS_REDUCED_MOTION) return null;
 
   return (
     <canvas 
