@@ -28,7 +28,7 @@ const TAGGED_VISIBILITY = { $in: ['public', 'link-only'] };
  * Both are matched so historic boards are found today without a migration.
  */
 const TAGGED_RECIPIENT_MATCH = (userId) => ({
-    $or: [{ receipent: userId }, { receipentOriginal: userId }],
+    $or: [{ receipent: userId }, { receipentOriginal: userId }, { taggedUsers: userId }],
 });
 
 // Heart tokens are stored as boards, but they are not boards to the product and

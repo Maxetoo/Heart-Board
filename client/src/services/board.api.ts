@@ -21,6 +21,13 @@ export interface CreateBoardPayload {
    */
   receipent?: string | null;
   /**
+   * Every @username the board tags — the recipients plus anyone mentioned in
+   * its text. Each lands the board in that person's Tagged section. Unknown
+   * names are ignored server-side. On an edit the list is ADDED to, never
+   * replaces what is there.
+   */
+  taggedUsernames?: string[];
+  /**
    * 'heart' stores this row as a blown heart token rather than a message board.
    * Heart tokens are excluded from the plan's board quota server-side.
    */

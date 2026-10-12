@@ -2295,6 +2295,27 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
       }
 
       const finalRecipientsString = recipients.join(', ') || '@you';
+
+      // Everyone this board tags: the people in the To field, and anyone
+      // @mentioned in the caption, the message or a text element on the card.
+      // Each of them sees the board in their profile's Tagged section.
+      const mentionSources = [
+        caption,
+        content,
+        ...canvasElements.filter((el) => el.type === 'text').map((el) => el.text || ''),
+      ].join(' ');
+      const taggedUsernames = [
+        ...new Set(
+          [
+            ...recipients.filter((r) => r !== '@you' && !r.startsWith('#')),
+            ...(mentionSources.match(/(^|[^\w@])@([a-zA-Z0-9_.-]{3,30})/g) || []).map((m) =>
+              m.replace(/^[^@]*@/, '').replace(/[.-]+$/, ''),
+            ),
+          ]
+            .map((r) => usernameOf(r).toLowerCase())
+            .filter(Boolean),
+        ),
+      ];
       
       const extractedHashtags = recipients.filter(r => r.startsWith('#'));
       if (initialHashtag) {
@@ -2411,6 +2432,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
               ? editPrimaryRecipient
               : usernameOf(editPrimaryRecipient)
             : undefined,
+          ...(taggedUsernames.length ? { taggedUsernames } : {}),
           style: {
             // null, NOT undefined. JSON.stringify drops undefined keys, so the
             // server's `if (style.x !== undefined)` guard never fired and the
@@ -2646,6 +2668,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         description: (content.trim() || safeTextCheck).slice(0, 300),
         visibility: fromPostVisibility(effectiveVisibility),
         receipent,
+        taggedUsernames,
         event: toBoardEvent(selectedEventType),
         coverImage,
         coverImagePublicId,

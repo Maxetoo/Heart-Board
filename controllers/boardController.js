@@ -107,9 +107,37 @@ const requireBoardOwner = async (res, boardId, userId) => {
 };
 
 
+/** Most people one board can tag; keeps a pasted list from fanning out. */
+const MAX_TAGGED_USERS = 20;
+
+/**
+ * Turns @usernames into accounts. Unknown names are skipped rather than
+ * rejected: a mention in the message text is not a promise that the account
+ * exists, and one typo must not block publishing the board.
+ */
+const resolveTaggedUsers = async (usernames) => {
+  if (!Array.isArray(usernames) || usernames.length === 0) return [];
+  const clean = [...new Set(
+    usernames
+      .map((u) => String(u || '').trim().replace(/^@/, '').toLowerCase())
+      .filter((u) => u && !u.startsWith('#')),
+  )].slice(0, MAX_TAGGED_USERS);
+  if (!clean.length) return [];
+  return User.find({ username: { $in: clean } }).select('_id username').lean();
+};
+
+/** Drops the cached lists a newly tagged account would otherwise miss. */
+const invalidateTaggedCaches = (users) =>
+  Promise.all(
+    users.flatMap((u) => [
+      invalidatePattern(`myBoards:${u._id.toString()}:*`),
+      invalidatePattern(`${keys.publicProfile(u.username.toLowerCase())}*`),
+    ]),
+  );
+
 const createBoard = async (req, res) => {
   const userId = req.user.userId;
-  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe, style, kind } = req.body;
+  const { title, description, visibility, receipent, event, coverImage, tags, coverImagePublicId, onlyMe, style, kind, taggedUsernames } = req.body;
   const boardKind = kind === 'heart' ? 'heart' : 'board';
   let createdBoard = null;
 
@@ -187,8 +215,15 @@ const createBoard = async (req, res) => {
       }
     }
 
+    // Everyone the board tags. Hearts are addressed to one person and are not
+    // board tags, so they carry only their recipient.
+    const taggedAccounts = boardKind === 'heart' ? [] : await resolveTaggedUsers(taggedUsernames);
+    const taggedIds = new Map(taggedAccounts.map((u) => [u._id.toString(), u._id]));
+    if (receipentId && boardKind !== 'heart') taggedIds.set(receipentId.toString(), receipentId);
+
     const board = await Board.create({
       owner:            userId,
+      taggedUsers:      [...taggedIds.values()],
       title,
       description,
       event,
@@ -240,6 +275,9 @@ const createBoard = async (req, res) => {
     if (receipentHashtag) {
       invalidations.push(invalidatePattern(`hashtag:${receipentHashtag}:*`));
     }
+    if (taggedAccounts.length) {
+      invalidations.push(invalidateTaggedCaches(taggedAccounts));
+    }
     if (boardKind === 'heart' && visibility !== 'private') {
       // The hero radar's pool. Dropping it here is what makes a heart blown
       // right now show up on everyone's radar on their next poll, rather than
@@ -281,7 +319,7 @@ const getMyBoards = async (req, res) => {
     // Boards SOMEONE ELSE addressed to this account. A board the account both
     // owns and addressed to itself belongs under Board, never Tagged.
     filter = {
-      $or:              [{ receipent: userId }, { receipentOriginal: userId }],
+      $or:              [{ receipent: userId }, { receipentOriginal: userId }, { taggedUsers: userId }],
       owner:            { $ne: userId },
       receipentFlagged: false,
       isActive:         true,
@@ -373,7 +411,7 @@ const updateBoard = async (req, res) => {
   const board  = await requireBoardOwner(res, id, req.user.userId);
   if (!board) return;
 
-  const { title, description, visibility, coverImage, style, event, tags } = req.body;
+  const { title, description, visibility, coverImage, style, event, tags, taggedUsernames } = req.body;
   if (title       !== undefined) board.title       = title;
   if (description !== undefined) board.description = description;
   if (visibility  !== undefined) board.visibility  = visibility;
@@ -397,12 +435,26 @@ const updateBoard = async (req, res) => {
     }
   }
 
+  // Tags added on an edit. Additive on purpose: an edit form that was never
+  // seeded with the board's existing tags would otherwise send a short list
+  // and silently untag people.
+  let newlyTagged = [];
+  if (Array.isArray(taggedUsernames) && board.kind !== 'heart') {
+    const accounts = await resolveTaggedUsers(taggedUsernames);
+    const have = new Set((board.taggedUsers || []).map((id) => id.toString()));
+    newlyTagged = accounts.filter((u) => !have.has(u._id.toString()));
+    if (newlyTagged.length) {
+      board.taggedUsers = [...(board.taggedUsers || []), ...newlyTagged.map((u) => u._id)].slice(0, MAX_TAGGED_USERS + 1);
+    }
+  }
+
   await board.save();
 
   await Promise.all([
     invalidate(keys.board(board.slug)),
     invalidatePattern(`myBoards:${req.user.userId}:*`),
     invalidatePattern('discover:*'),
+    newlyTagged.length ? invalidateTaggedCaches(newlyTagged) : null,
   ]);
 
   res.status(StatusCodes.OK).json({ message: 'Board updated.', board });
