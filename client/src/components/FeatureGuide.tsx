@@ -29,7 +29,7 @@ export function useGuideSeen(key: string): [boolean, () => void] {
 
 interface FeatureGuideProps {
   /** One short instruction per line. */
-  lines: { action: string; result: string }[];
+  lines: { action: React.ReactNode; result: string }[];
   onDismiss: () => void;
   className?: string;
 }
@@ -45,8 +45,8 @@ export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, cl
   >
     <HandTap size={22} weight="bold" className="shrink-0 mt-0.5 text-[#FFB8A8]" />
     <ul className="flex-1 space-y-1 text-[13px] leading-snug">
-      {lines.map((l) => (
-        <li key={l.action}>
+      {lines.map((l, i) => (
+        <li key={i}>
           <span className="font-extrabold">{l.action}</span>
           <span className="text-white/75"> {l.result}</span>
         </li>

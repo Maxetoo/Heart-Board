@@ -165,6 +165,8 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const [showActions, setShowActions] = useState(false);
   /** First-visit tip explaining tap and double-tap. */
   const [boardGuideSeen, markBoardGuideSeen] = useGuideSeen('board-viewer');
+  /** First-visit tip for the main board / contributions switch. */
+  const [toggleGuideSeen, markToggleGuideSeen] = useGuideSeen('board-toggle');
   const [showFlagToast, setShowFlagToast] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -906,6 +908,26 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       <header className="relative w-full px-4 sm:px-8 md:px-16 lg:px-24 xl:px-[192px] pt-5 pb-3 flex items-center justify-between z-30 shrink-0">
 
         {/* Top-Left: Toggle / Switch Component (Main Board vs. Contributions) */}
+        <div className="relative">
+        {/* First-visit tip for the switch. Waits for the board tip to be done
+            with, so two tips never compete, and only appears when there is
+            something to switch to. */}
+        {boardGuideSeen && !toggleGuideSeen && !isHydrating && canToggleContributions && (
+          <FeatureGuide
+            className="absolute top-full left-0 mt-2 w-[min(300px,calc(100vw-2rem))] z-50 ring-1 ring-white/15"
+            lines={[
+              {
+                action: <span className="inline-flex items-center gap-1 align-middle"><PhosphorUserCheck size={14} weight="bold" />Main board</span>,
+                result: 'shows the creator’s own message.',
+              },
+              {
+                action: <span className="inline-flex items-center gap-1 align-middle"><Checkerboard size={14} weight="bold" />Contributions</span>,
+                result: 'shows messages others added. Swipe, or tap the dots at the top, to move between them.',
+              },
+            ]}
+            onDismiss={markToggleGuideSeen}
+          />
+        )}
         <div className="flex items-center bg-[#272835] p-1 rounded-full">
           {/* Main Board Button */}
           <button
@@ -934,6 +956,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             disabled={!canToggleContributions}
             onClick={() => {
               if (!canToggleContributions) return;
+              markToggleGuideSeen();
               setActiveTab('contributions');
               // Position 1: the first CONTRIBUTION. Position 0 is the board's
               // own message, which is what Main Board already shows — opening
@@ -964,6 +987,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
           >
             <Checkerboard size={20} weight="bold" />
           </button>
+        </div>
         </div>
 
         {/* Top-Centre: carousel dots. One per message ON the board — the
