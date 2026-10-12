@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Loader2, Building2, User as UserIcon, Globe, Camera } from 'lucide-react';
+import { Check, Loader2, Globe, Camera } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import * as userApi from '../services/user.api';
 import { uploadFile } from '../services/upload.api';
@@ -24,14 +24,16 @@ const COUNTRIES = [
   'Brazil', 'Mexico', 'Japan', 'Other',
 ];
 
-type Step = 'type' | 'country' | 'username';
+type Step = 'country' | 'username';
 
 export const AccountSetupPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, rawUser, refresh, ready } = useAuth();
 
-  const [step, setStep] = useState<Step>('type');
-  const [accountType, setAccountType] = useState<'personal' | 'enterprise'>('personal');
+  const [step, setStep] = useState<Step>('country');
+  // The "How will you use Heartboard?" step was removed; every account starts
+  // as personal, which was that step's default anyway.
+  const accountType = 'personal' as const;
   const [country, setCountry] = useState('');
   const [username, setUsername] = useState('');
   const [availability, setAvailability] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
@@ -119,14 +121,14 @@ export const AccountSetupPage: React.FC = () => {
     }
   };
 
-  const stepIndex = step === 'type' ? 0 : step === 'country' ? 1 : 2;
+  const stepIndex = step === 'country' ? 0 : 1;
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xs border border-[#ECEFF3]">
         {/* Progress */}
-        <div className="flex gap-1.5 mb-6" role="progressbar" aria-valuenow={stepIndex + 1} aria-valuemin={1} aria-valuemax={3}>
-          {[0, 1, 2].map((i) => (
+        <div className="flex gap-1.5 mb-6" role="progressbar" aria-valuenow={stepIndex + 1} aria-valuemin={1} aria-valuemax={2}>
+          {[0, 1].map((i) => (
             <div
               key={i}
               className={`h-1 flex-1 rounded-full transition-colors ${
@@ -142,48 +144,7 @@ export const AccountSetupPage: React.FC = () => {
           </div>
         )}
 
-        {/* Step 1 — account type */}
-        {step === 'type' && (
-          <>
-            <h1 className="text-2xl font-extrabold text-[#1A1B25] mb-1.5">How will you use Heartboard?</h1>
-            <p className="text-sm text-[#808897] mb-6">You can change this later.</p>
-
-            <div className="space-y-3">
-              {([
-                { id: 'personal', icon: UserIcon, title: 'Personal', desc: 'Celebrate friends, family and colleagues' },
-                { id: 'enterprise', icon: Building2, title: 'Organisation', desc: 'Recognition boards for a team or brand' },
-              ] as const).map(({ id, icon: Icon, title, desc }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setAccountType(id)}
-                  className={`w-full flex items-start gap-3 p-4 rounded-2xl border-2 text-left transition-all ${
-                    accountType === id
-                      ? 'border-[#FE6349] bg-rose-50/50'
-                      : 'border-[#ECEFF3] hover:border-[#DFE1E6]'
-                  }`}
-                >
-                  <Icon className="w-5 h-5 text-[#FE6349] shrink-0 mt-0.5" />
-                  <span>
-                    <span className="block font-extrabold text-sm text-[#1A1B25]">{title}</span>
-                    <span className="block text-xs text-[#808897] mt-0.5">{desc}</span>
-                  </span>
-                  {accountType === id && <Check className="w-4 h-4 text-[#FE6349] ml-auto shrink-0" />}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setStep('country')}
-              className="w-full mt-6 py-3.5 rounded-2xl bg-[#FE6349] hover:bg-[#e05234] text-white font-extrabold text-sm transition-all"
-            >
-              Continue
-            </button>
-          </>
-        )}
-
-        {/* Step 2 — country */}
+        {/* Step 1 — country */}
         {step === 'country' && (
           <>
             <h1 className="text-2xl font-extrabold text-[#1A1B25] mb-1.5">Where are you based?</h1>
@@ -206,13 +167,6 @@ export const AccountSetupPage: React.FC = () => {
             <div className="flex gap-2 mt-6">
               <button
                 type="button"
-                onClick={() => setStep('type')}
-                className="px-6 py-3.5 rounded-2xl bg-[#F8F9FB] text-[#1A1B25] font-extrabold text-sm"
-              >
-                Back
-              </button>
-              <button
-                type="button"
                 onClick={() => setStep('username')}
                 className="flex-1 py-3.5 rounded-2xl bg-[#FE6349] hover:bg-[#e05234] text-white font-extrabold text-sm transition-all"
               >
@@ -222,7 +176,7 @@ export const AccountSetupPage: React.FC = () => {
           </>
         )}
 
-        {/* Step 3 — username + avatar */}
+        {/* Step 2 — username + avatar */}
         {step === 'username' && (
           <form onSubmit={handleFinish}>
             <h1 className="text-2xl font-extrabold text-[#1A1B25] mb-1.5">Claim your handle</h1>
