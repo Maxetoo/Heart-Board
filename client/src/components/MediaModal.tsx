@@ -23,6 +23,7 @@ import {
   Checkerboard,
 } from '@phosphor-icons/react';
 import { ConfettiOverlay } from './ConfettiOverlay';
+import { FeatureGuide, useGuideSeen } from './FeatureGuide';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
 import { ShareProfileModal } from './ShareProfileModal';
 import { SmartImage } from './SmartImage';
@@ -162,6 +163,8 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const [showContributorDetails, setShowContributorDetails] = useState(false);
   /** The action bar stays out of the way until the message is tapped. */
   const [showActions, setShowActions] = useState(false);
+  /** First-visit tip explaining tap and double-tap. */
+  const [boardGuideSeen, markBoardGuideSeen] = useGuideSeen('board-viewer');
   const [showFlagToast, setShowFlagToast] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -405,6 +408,8 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
       setIsActionMenuOpen(true);
+      // They have found the double-tap; the tip has done its job.
+      markBoardGuideSeen();
     } else {
       // First click: wait briefly to see if a second click arrives
       clickTimerRef.current = setTimeout(() => {
@@ -1081,6 +1086,18 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             {/* Confetti Overlay inside frame if enabled */}
             {(activeMessage.confetti || post.confetti) && (
               <ConfettiOverlay type={(activeMessage.confetti || post.confetti) as any} />
+            )}
+
+            {/* First-visit tip: how to react, add a message or edit. */}
+            {!boardGuideSeen && !isHydrating && (
+              <FeatureGuide
+                className="absolute top-3 left-3 right-3 z-50"
+                lines={[
+                  { action: 'Tap', result: 'the message to react, share or flag it.' },
+                  { action: 'Double-tap', result: 'to add a message, edit your message or edit the board.' },
+                ]}
+                onDismiss={markBoardGuideSeen}
+              />
             )}
 
             {/* Board artwork lives on the board's messages, so opening a board

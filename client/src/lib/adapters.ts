@@ -120,6 +120,24 @@ export const FEED_TAB_REACTIONS: Record<'all' | 'vouch' | 'tears' | 'hype', Reac
   hype: ['smiley', 'fire'],
 };
 
+/** How many reaction-less boards get scattered across the tabs. */
+export const RANDOM_TAB_BOARD_LIMIT = 30;
+
+const FEED_TABS = ['all', 'vouch', 'tears', 'hype'] as const;
+
+/**
+ * A stable "random" tab for a board nobody has reacted to yet.
+ *
+ * Derived from the board's id alone (FNV-1a), so the same board always lands
+ * in the same tab — on every refresh, every device, for every viewer. Nothing
+ * is stored; there is nothing to drift.
+ */
+export function randomFeedTabFor(id: string): (typeof FEED_TABS)[number] {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return FEED_TABS[(h >>> 0) % FEED_TABS.length];
+}
+
 export function postMatchesFeedTab(
   counts: ReactionCounts | undefined,
   tab: 'all' | 'vouch' | 'tears' | 'hype',
