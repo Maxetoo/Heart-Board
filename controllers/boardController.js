@@ -333,13 +333,19 @@ const getMyBoards = async (req, res) => {
     // A board you wrote on is not in that list except by coincidence, so the
     // tab was empty for almost everyone.
     //
-    // Private boards are excluded: contributing to one does not grant access,
-    // and GET /board/:slug would refuse the card the moment it was opened.
+    // A private board is listed only when this account may open it — it is
+    // tagged on it (see helpers/boardAccess). Anyone else's card would be
+    // refused by GET /board/:slug the moment it was tapped.
     filter = {
-      _id:        { $in: await collaboratedBoardIds(userId) },
-      owner:      { $ne: userId },
-      isActive:   true,
-      visibility: { $ne: 'private' },
+      _id:      { $in: await collaboratedBoardIds(userId) },
+      owner:    { $ne: userId },
+      isActive: true,
+      $or: [
+        { visibility: { $ne: 'private' } },
+        { receipent: userId },
+        { receipentOriginal: userId },
+        { taggedUsers: userId },
+      ],
     };
   } else {
     filter = { owner: userId };
