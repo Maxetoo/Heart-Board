@@ -27,6 +27,7 @@ import {
 } from './lib/adapters';
 import { formatCount, plural } from './lib/format';
 import { matchesCategory, categoryIdOf } from './lib/categories';
+import { useBoardsChanged } from './lib/boardEvents';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
 import { CreateAppreciationModal, SEMANTIC_HEARTS } from './components/CreateAppreciationModal';
@@ -1573,6 +1574,10 @@ const App: React.FC = () => {
 
   const [selectedFilterId, setSelectedFilterId] = useState<string>('moment');
 
+  /** Bumps whenever any board changes, for views that fetch on their own. */
+  const [boardsVersion, setBoardsVersion] = useState(0);
+  useBoardsChanged(() => setBoardsVersion((v) => v + 1));
+
   /** Home's category view: that category's public boards, from the server. */
   const activeCategoryId = categoryIdOf(selectedFilterId);
   const categoryFeed = useDiscoverFeed({
@@ -1580,6 +1585,8 @@ const App: React.FC = () => {
     limit: 50,
     currentUserId: currentUser?.id,
     enabled: authReady && Boolean(activeCategoryId),
+    // A board whose category was just changed must leave / join this list now.
+    refreshOnBoardChange: true,
   });
   const categoryPosts = useMemo(
     () => categoryFeed.posts.map(withMyReactions),
@@ -1950,7 +1957,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [hashtagTag, currentUser?.id]);
+  }, [hashtagTag, currentUser?.id, boardsVersion]);
 
   // /profile is the signed-in user's own heartboard, so it needs a session to
   // render anything. The bottom-nav heart button already asks a guest to sign

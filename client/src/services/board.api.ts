@@ -1,3 +1,4 @@
+import { notifyBoardsChanged } from '../lib/boardEvents';
 import { api, cleanParams } from '../lib/api';
 import type {
   BoardDTO,
@@ -63,6 +64,7 @@ export async function createBoard(payload: CreateBoardPayload) {
      */
     alreadySent?: boolean;
   }>('/board', payload);
+  notifyBoardsChanged();
   return data;
 }
 
@@ -111,11 +113,13 @@ export async function getBoardBySlug(slug: string) {
 
 export async function updateBoard(id: string, fields: Partial<CreateBoardPayload>) {
   const { data } = await api.patch<{ message: string; board: BoardDTO }>(`/board/${id}`, fields);
+  notifyBoardsChanged();
   return data;
 }
 
 export async function deleteBoard(id: string) {
   const { data } = await api.delete<{ message: string }>(`/board/${id}`);
+  notifyBoardsChanged();
   return data;
 }
 

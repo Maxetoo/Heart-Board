@@ -108,6 +108,43 @@ const requireBoardOwner = async (res, boardId, userId) => {
 };
 
 
+/**
+ * Clears every cached list a board can appear in, so a change to it — its
+ * category above all — shows up on the very next request everywhere, instead
+ * of after the 2–5 minute TTLs run out.
+ *
+ * Edits used to clear only the board itself, the owner's own lists and the
+ * discover feed: the owner's PUBLIC profile, the people tagged on the board
+ * and anyone who wrote on it kept serving the old category until their cache
+ * expired, which is what made filters look like they ignored a change.
+ */
+const invalidateBoardEverywhere = async (board) => {
+  const ownerId = String(board.owner && board.owner._id ? board.owner._id : board.owner);
+  const memberIds = new Set(
+    [board.receipent, board.receipentOriginal, ...(board.taggedUsers || [])]
+      .filter(Boolean)
+      .map((r) => String(r && r._id ? r._id : r)),
+  );
+  const writerIds = await Message.distinct('sender', { board: board._id, context: 'board' }).catch(() => []);
+  writerIds.filter(Boolean).forEach((id) => memberIds.add(String(id)));
+  memberIds.add(ownerId);
+
+  const people = await User.find({ _id: { $in: [...memberIds] } }).select('_id username').lean();
+  const tags = [...new Set([...(board.tags || []), board.receipentHashtag].filter(Boolean).map((t) => String(t).toLowerCase()))];
+
+  await Promise.all([
+    invalidate(keys.board(board.slug)),
+    invalidatePattern(`boardMsgs:${board.slug}:*`),
+    invalidatePattern('discover:*'),
+    invalidate(keys.profile(ownerId)),
+    ...people.flatMap((u) => [
+      invalidatePattern(`myBoards:${String(u._id)}:*`),
+      u.username ? invalidatePattern(`${keys.publicProfile(u.username.toLowerCase())}*`) : null,
+    ]),
+    ...tags.map((t) => invalidatePattern(`hashtag:${t}:*`)),
+  ]);
+};
+
 /** Most people one board can tag; keeps a pasted list from fanning out. */
 const MAX_TAGGED_USERS = 20;
 
@@ -261,9 +298,12 @@ const createBoard = async (req, res) => {
     }
 
     // Bust owner's boards cache + discover + recipient's tagged boards cache
+    const ownerDoc = await User.findById(userId).select('username').lean();
     const invalidations = [
       invalidatePattern(`myBoards:${userId}:*`),
       invalidatePattern('discover:*'),
+      // The owner's public profile lists it too (and filters it by category).
+      ownerDoc?.username ? invalidatePattern(`${keys.publicProfile(ownerDoc.username.toLowerCase())}*`) : null,
     ];
     if (receipentId) {
       invalidations.push(invalidatePattern(`myBoards:${receipentId.toString()}:*`));
@@ -459,15 +499,9 @@ const updateBoard = async (req, res) => {
 
   await board.save();
 
-  await Promise.all([
-    invalidate(keys.board(board.slug)),
-    // Its messages too: a board made private must stop being served from a
-    // cache filled while it was public.
-    invalidatePattern(`boardMsgs:${board.slug}:*`),
-    invalidatePattern(`myBoards:${req.user.userId}:*`),
-    invalidatePattern('discover:*'),
-    newlyTagged.length ? invalidateTaggedCaches(newlyTagged) : null,
-  ]);
+  // Everywhere the board is listed — including its messages, so a board made
+  // private stops being served from a cache filled while it was public.
+  await invalidateBoardEverywhere(board);
 
   res.status(StatusCodes.OK).json({ message: 'Board updated.', board });
 };
@@ -508,6 +542,8 @@ const deleteBoard = async (req, res) => {
   if (recipient?.username) {
     invalidations.push(invalidatePattern(`${keys.publicProfile(recipient.username.toLowerCase())}*`));
   }
+  // Tagged people, writers and hashtag pages list it too.
+  invalidations.push(invalidateBoardEverywhere(board));
   await Promise.all(invalidations);
 
   res.status(StatusCodes.OK).json({ message: 'Board deleted.' });
