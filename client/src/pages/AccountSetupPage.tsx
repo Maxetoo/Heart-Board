@@ -181,7 +181,7 @@ export const AccountSetupPage: React.FC = () => {
           <form onSubmit={handleFinish}>
             <h1 className="text-2xl font-extrabold text-[#1A1B25] mb-1.5">Claim your handle</h1>
             <p className="text-sm text-[#808897] mb-6">
-              This is your profile address: heartboard.app/profile/<strong>you</strong>
+              This is your profile address: myheartboard.com/profile/<strong>you</strong>
             </p>
 
             {/* Avatar */}

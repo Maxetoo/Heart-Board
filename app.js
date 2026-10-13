@@ -23,7 +23,7 @@ const session = require('express-session');
 
 // The canonical app origin, normalised (scheme added if missing, first entry
 // of a comma-separated list). The raw env var made the self-ping below call
-// axios.get('www.heartboardapp.com'), which fails on every run.
+// axios.get('www.myheartboard.com'), which fails on every run.
 const { appOrigin: origin } = require('./configs/origins')
 
 // Express app and server initialization
