@@ -85,7 +85,13 @@ const BoardSchema = new Schema({
 
   event: {
     type:    String,
-    enum:    ['birthday', 'wedding', 'anniversary', 'graduation', 'sport', 'retirement', 'promotion', 'other'],
+    // Keep in step with client/src/lib/categories.ts. The last five were
+    // missing, so the composer's Appreciation, Congratulations, Condolence,
+    // Friendship and Love were all saved as 'other'.
+    enum:    [
+      'birthday', 'wedding', 'anniversary', 'graduation', 'sport', 'retirement', 'promotion',
+      'appreciation', 'congratulations', 'condolence', 'friendship', 'love', 'other',
+    ],
     default: null,
   },
 

@@ -1,3 +1,4 @@
+import { BOARD_CATEGORIES } from '../lib/categories';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, X, Heart } from 'lucide-react';
@@ -8,18 +9,10 @@ export interface FilterOption {
   emoji: string;
 }
 
+/** 'Moment' (everything) plus the shared board categories — see lib/categories. */
 export const FILTER_OPTIONS: FilterOption[] = [
   { id: 'moment', label: 'Moment', emoji: '🥰' },
-  { id: 'graduation', label: 'Graduation', emoji: '🎓' },
-  { id: 'wedding', label: 'Wedding', emoji: '💍' },
-  { id: 'birthday', label: 'Birthday', emoji: '🎂' },
-  { id: 'anniversary', label: 'Anniversary', emoji: '💐' },
-  { id: 'appreciation', label: 'Appreciation', emoji: '🙌' },
-  { id: 'congratulations', label: 'Congratulations', emoji: '🎉' },
-  { id: 'condolence', label: 'Condolence', emoji: '🕯️' },
-  { id: 'friendship', label: 'Friendship', emoji: '🤝' },
-  { id: 'love', label: 'Love', emoji: '❤️' },
-  { id: 'other', label: 'Other', emoji: '✨' },
+  ...BOARD_CATEGORIES.map((c) => ({ id: c.id, label: c.label, emoji: c.emoji })),
 ];
 
 interface FilterModalProps {

@@ -55,28 +55,19 @@ import { useSearch } from '../hooks/useSearch';
 import type { BoardEvent } from '../types/api';
 
 /**
- * Maps the UI's free-text event label onto the server's `event` enum
- * (models/boardModel.js). Anything unrecognised becomes 'other' rather than
- * failing schema validation.
+ * The composer's category label as the server's `event` id. Exact mapping from
+ * the one shared list (lib/categories) — it used to guess by substring and fall
+ * back to 'other', which is where most categories ended up.
  */
-const BOARD_EVENTS: BoardEvent[] = [
-  'birthday', 'wedding', 'anniversary', 'graduation',
-  'sport', 'retirement', 'promotion', 'other',
-];
-
 function toBoardEvent(label?: string): BoardEvent | null {
-  if (!label) return null;
-  const clean = label.trim().toLowerCase();
-  const direct = BOARD_EVENTS.find((e) => e === clean);
-  if (direct) return direct;
-  const partial = BOARD_EVENTS.find((e) => clean.includes(e));
-  return partial ?? 'other';
+  return categoryIdOf(label);
 }
 import { VectorPicker, PHOSPHOR_VECTORS } from './VectorPicker';
 import { ChooseColor } from './ColorPicker';
 import { ConfettiOverlay, ConfettiType } from './ConfettiOverlay';
 import { ConfettiPickerModal } from './ConfettiPickerModal';
 import { FeatureGuide, useGuideSeen } from './FeatureGuide';
+import { BOARD_CATEGORIES, categoryIdOf, categoryLabelOf } from '../lib/categories';
 import { TemplatePickerModal, instantiateTemplate } from './TemplatePickerModal';
 import type { MessageTemplate } from './TemplatePickerModal';
 import {
@@ -1558,18 +1549,7 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
 
 const TEXT_TEMPLATES = TEMPLATE_CATEGORIES.flatMap(c => c.templates);
 
-const EVENT_TYPES = [
-  'Graduation',
-  'Wedding',
-  'Birthday',
-  'Anniversary',
-  'Appreciation',
-  'Congratulations',
-  'Condolence',
-  'Friendship',
-  'Love',
-  'Other',
-];
+const EVENT_TYPES = BOARD_CATEGORIES.map((c) => c.label);
 
 const FONT_OPTIONS = [
   { id: 'nunito', name: 'Nunito (Clean Sans)', font: 'Nunito, sans-serif' },
@@ -1942,7 +1922,10 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
     return editingContribution?.caption || editingPost?.caption || '';
   });
   const [selectedEventType, setSelectedEventType] = useState<string>(() => {
-    return editingPost?.eventType || initialEventType || '';
+    // Held as the picker's LABEL. A board being edited carries the stored id
+    // ("birthday"), which the picker never matched, so it showed nothing
+    // selected for a board that had a category.
+    return categoryLabelOf(editingPost?.eventType) || categoryLabelOf(initialEventType) || '';
   });
   const [isEventDropdownOpen, setIsEventDropdownOpen] = useState(false);
   const [recipients, setRecipients] = useState<string[]>(() => {

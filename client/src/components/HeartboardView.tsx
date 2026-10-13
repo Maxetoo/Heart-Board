@@ -1,3 +1,4 @@
+import { matchesCategory } from '../lib/categories';
 import React, { useState } from 'react';
 import { ShareProfileModal, ShareData } from './ShareProfileModal';
 import { SEMANTIC_HEARTS, HeartBubbleSvg } from './CreateAppreciationModal';
@@ -1284,17 +1285,10 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
 
     // Apply User-Controlled Event Category Filter on Boards/Tagged/Collaboration tabs if explicitly selected by user
     if (activeSubTab !== 'hearts' && selectedFilterId && selectedFilterId !== 'moment' && selectedFilterId !== 'all') {
-      const targetFilter = selectedFilterId.toLowerCase();
-      const pEv = (item.eventType || '').toLowerCase().replace(/_/g, ' ');
-      const content = (item.content || '').toLowerCase();
-      const title = (item.title || '').toLowerCase();
-      const badge = (item.statusBadge || '').toLowerCase();
-      
-      const matchesEvent = pEv === targetFilter || 
-                           content.includes(targetFilter) || 
-                           title.includes(targetFilter) || 
-                           badge.includes(targetFilter);
-      if (!matchesEvent) return false;
+      // By the category the board was ASSIGNED, and nothing else. This used to
+      // also match the word in the board's text, so a caption saying "love"
+      // put a Birthday board under Love.
+      if (!matchesCategory(item.eventType, selectedFilterId)) return false;
     }
 
     if (!searchQuery.trim()) return true;

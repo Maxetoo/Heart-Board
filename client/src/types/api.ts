@@ -21,6 +21,11 @@ export type BoardEvent =
   | 'sport'
   | 'retirement'
   | 'promotion'
+  | 'appreciation'
+  | 'congratulations'
+  | 'condolence'
+  | 'friendship'
+  | 'love'
   | 'other';
 
 /** models/boardLikeModel.js — note 'smile', not 'smiley', and 'thumbs' exists. */
