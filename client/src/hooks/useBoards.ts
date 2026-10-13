@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useBoardsChanged } from '../lib/boardEvents';
 import * as boardApi from '../services/board.api';
 import * as userApi from '../services/user.api';
 import { boardToPost, userToRegisteredUser } from '../lib/adapters';
@@ -36,6 +37,12 @@ interface FeedOptions {
   currentUserId?: string;
   /** Set false to skip fetching (e.g. while auth is still resolving). */
   enabled?: boolean;
+  /**
+   * Refetch page 1 whenever a board is created/edited/deleted. On for the Home
+   * category view, whose membership IS the category; off for the main feed,
+   * where a reload would throw away the pages already scrolled through.
+   */
+  refreshOnBoardChange?: boolean;
 }
 
 /**
@@ -45,7 +52,7 @@ interface FeedOptions {
  * .filter(), which could only ever show the first page of data.
  */
 export function useDiscoverFeed(options: FeedOptions = {}): FeedState {
-  const { sort = 'latest', event, limit = 12, currentUserId, enabled = true } = options;
+  const { sort = 'latest', event, limit = 12, currentUserId, enabled = true, refreshOnBoardChange = false } = options;
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [pagination, setPagination] = useState<PaginationDTO | null>(null);
@@ -97,6 +104,7 @@ export function useDiscoverFeed(options: FeedOptions = {}): FeedState {
   }, [hasMore, loadingMore, loading, pagination, fetchPage]);
 
   const reload = useCallback(() => void fetchPage(1, false), [fetchPage]);
+  useBoardsChanged(reload, enabled && refreshOnBoardChange);
 
   const patchPost = useCallback((id: string, patch: Partial<Post>) => {
     setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -181,6 +189,10 @@ export function useMyBoards(
     void load();
   }, [load]);
 
+  // Refetch after any board is created, edited or deleted, so this list never
+  // shows a board under a category (or tab) it has since left.
+  useBoardsChanged(() => void load(), enabled);
+
   return { items, loading, error, reload: load };
 }
 
@@ -246,6 +258,10 @@ export function useProfileBoards(
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Refetch after any board is created, edited or deleted, so this list never
+  // shows a board under a category (or tab) it has since left.
+  useBoardsChanged(() => void load(), enabled);
 
   return { items, loading, error, reload: load };
 }

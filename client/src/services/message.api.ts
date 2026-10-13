@@ -1,3 +1,4 @@
+import { notifyBoardsChanged } from '../lib/boardEvents';
 import { api, cleanParams } from '../lib/api';
 import type {
   MessageContentDTO,
@@ -30,6 +31,8 @@ export async function postMessage(slug: string, payload: PostMessagePayload) {
     `/message/board/${encodeURIComponent(slug)}`,
     payload,
   );
+  // Writing on a board puts it in your Collaboration tab.
+  notifyBoardsChanged();
   return data.data;
 }
 
@@ -65,6 +68,7 @@ export async function editMessage(
 /** Deleting the last message on a board can delete the board — check boardDeleted. */
 export async function deleteMessage(id: string) {
   const { data } = await api.delete<{ message: string; boardDeleted?: boolean }>(`/message/${id}`);
+  notifyBoardsChanged();
   return data;
 }
 
