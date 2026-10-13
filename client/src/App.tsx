@@ -26,6 +26,7 @@ import {
   type ClientReaction,
 } from './lib/adapters';
 import { formatCount, plural } from './lib/format';
+import { matchesCategory, categoryIdOf } from './lib/categories';
 import { PostCard } from './components/PostCard';
 import { MediaModal } from './components/MediaModal';
 import { CreateAppreciationModal, SEMANTIC_HEARTS } from './components/CreateAppreciationModal';
@@ -1008,28 +1009,14 @@ const EventCategoryView: React.FC<EventCategoryViewProps> = ({
     emoji: '🎉'
   };
 
-  const targetLabel = currentOption.label.toLowerCase();
   const targetId = currentOption.id.toLowerCase();
 
-  const matchedPosts = posts.filter(post => {
-    if (!canViewPostPublicly(post)) return false;
-    if (post.eventType) {
-      const pEv = post.eventType.toLowerCase().replace(/_/g, ' ');
-      if (pEv === targetLabel || pEv === targetId) return true;
-    }
-    const content = (post.content || '').toLowerCase();
-    const badge = (post.statusBadge || '').toLowerCase();
-    const cat = (post.category || '').toLowerCase();
-    const tags = (post.hashtags || []).map((h: string) => h.toLowerCase()).join(' ');
-
-    return (
-      content.includes(targetLabel) || 
-      content.includes(targetId) ||
-      badge.includes(targetLabel) || 
-      cat.includes(targetLabel) ||
-      tags.includes(targetId)
-    );
-  });
+  // Strictly the category the board was assigned. The text, badge and
+  // hashtags used to count too, so boards turned up under categories they
+  // were never given.
+  const matchedPosts = posts.filter(
+    (post) => canViewPostPublicly(post) && matchesCategory(post.eventType, targetId),
+  );
 
   const query = searchQuery.trim().toLowerCase();
   const displayPosts = matchedPosts.filter(post => {
@@ -1395,6 +1382,12 @@ const App: React.FC = () => {
     if (opts.mode) params.set('mode', opts.mode);
     if (opts.eventType) params.set('event', opts.eventType);
     const qs = params.toString();
+    // A new board or message starts from nothing — never from whatever was
+    // last edited or contributed to.
+    setEditingPost(null);
+    setEditingContribution(null);
+    setContributionParentPost(null);
+    setEditMode(null);
     pushView(qs ? `/create?${qs}` : '/create');
   };
 
@@ -1579,6 +1572,19 @@ const App: React.FC = () => {
   const [boardNavIds, setBoardNavIds] = useState<string[] | null>(null);
 
   const [selectedFilterId, setSelectedFilterId] = useState<string>('moment');
+
+  /** Home's category view: that category's public boards, from the server. */
+  const activeCategoryId = categoryIdOf(selectedFilterId);
+  const categoryFeed = useDiscoverFeed({
+    event: activeCategoryId ?? undefined,
+    limit: 50,
+    currentUserId: currentUser?.id,
+    enabled: authReady && Boolean(activeCategoryId),
+  });
+  const categoryPosts = useMemo(
+    () => categoryFeed.posts.map(withMyReactions),
+    [categoryFeed.posts, withMyReactions],
+  );
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [filterModalMode, setFilterModalMode] = useState<'events' | 'hearts'>('events');
@@ -1735,6 +1741,13 @@ const App: React.FC = () => {
     setIsCreateModalOpen(isCreatePath);
 
     if (isCreatePath && !boardSubRoute) {
+      // /create is always a NEW board or message, however it was reached
+      // (the + button, a link, Back/Forward): drop any editing leftovers.
+      setEditingPost(null);
+      setEditingContribution(null);
+      setContributionParentPost(null);
+      setEditMode(null);
+
       // Restore the composer's prefill from the query string, so /create?to=x
       // works on a cold load, a refresh, or a shared link.
       const q = new URLSearchParams(location.search);
@@ -1993,10 +2006,22 @@ const App: React.FC = () => {
 
   // Cold load of /board/:slug/add-message or /board/:slug/edit: the composer
   // needs its parent board, which only exists once the board has resolved.
+  // Runs ONCE per arrival at a sub-route. It used to re-run whenever the board
+  // list changed — and saving an edit changes it while the address still
+  // reads /board/:slug/edit for a moment — so it put the just-saved board
+  // straight back into editingPost. Nothing cleared it after that, and the
+  // next "create new" opened pre-filled with the board you had edited.
+  const handledSubRouteRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!boardSlug) return;
+    if (!boardSlug || !boardSubRoute) {
+      handledSubRouteRef.current = null;
+      return;
+    }
+    const routeKey = `${boardSlug}/${boardSubRoute}`;
+    if (handledSubRouteRef.current === routeKey) return;
     const idx = selectedPostIndex;
-    if (idx !== null && boardSubRoute) {
+    if (idx !== null) {
+      handledSubRouteRef.current = routeKey;
       const parent = boardPool[idx];
       if (boardSubRoute === 'add-message') {
         setContributionParentPost(parent);
@@ -2476,11 +2501,21 @@ const App: React.FC = () => {
               <main className="flex-grow bg-white">
                 <EventCategoryView 
                   filterId={selectedFilterId}
-                  posts={posts}
+                  // Straight from the server for this category, so it holds
+                  // every public board in it — not just the ones the home feed
+                  // happened to have loaded so far.
+                  posts={categoryPosts}
                   onBack={() => setSelectedFilterId('moment')}
                   onPostClick={(index) => {
-                    const target = posts[index];
-                    if (target) openBoardFrom(target, posts.filter(canViewPostPublicly));
+                    const target = categoryPosts[index];
+                    if (target) {
+                      openBoardFrom(
+                        target,
+                        categoryPosts.filter(
+                          (p) => canViewPostPublicly(p) && matchesCategory(p.eventType, selectedFilterId),
+                        ),
+                      );
+                    }
                   }}
                   onCreateBoard={(eventType) => {
                     if (!currentUser) {
@@ -2545,6 +2580,9 @@ const App: React.FC = () => {
           !(boardSubRoute === 'add-message' && !contributionParentPost) &&
           !(boardSubRoute === 'edit' && !editingPost) && (
           <CreateAppreciationModal 
+            // A fresh composer for every session: its fields are seeded once,
+            // on mount, from whatever it was opened for.
+            key={editingPost?.id ?? editingContribution?.id ?? contributionParentPost?.id ?? `new:${location.key}`}
             onClose={() => {
               // /create is a real route; closing must leave it, or the sync
               // effect immediately reopens the modal.
