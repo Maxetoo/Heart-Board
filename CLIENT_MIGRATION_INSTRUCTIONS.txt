@@ -432,7 +432,7 @@ D5. SCOPE OF THE FIRST CUTOVER
     `client/index.html` — you will lose it otherwise:
         <title>Heart Board</title>, description meta, theme-color,
         og:title / og:description / og:type / og:url / og:image / og:image:alt,
-        <link rel="canonical" href="https://heartboardapp.com/">,
+        <link rel="canonical" href="https://myheartboard.com/">,
         favicon + apple-touch-icon + manifest.
     NOTE: the new client's <title> is currently "Goodwall | Spread Kindness"
     while the whole product is branded "Heartboard". Pick one name and make it

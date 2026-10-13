@@ -15,11 +15,11 @@ const resend = new Resend(apiKey);
 /**
  * The verified sending identity.
  *
- * The domain (heartboardapp.com) must be verified in the Resend dashboard, and
+ * The domain (myheartboard.com) must be verified in the Resend dashboard, and
  * the address here must sit on it — Resend rejects anything else. Overridable
  * so staging can send from its own subdomain without a code change.
  */
-const FROM = process.env.EMAIL_FROM || 'Heart Board <info@heartboardapp.com>';
+const FROM = process.env.EMAIL_FROM || 'Heart Board <info@myheartboard.com>';
 
 /** Where replies go. Falls back to the address the templates already advertise. */
 const REPLY_TO = process.env.EMAIL_REPLY_TO || 'heartboardapp@gmail.com';
