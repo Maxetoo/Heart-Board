@@ -44,6 +44,15 @@ export function validatePassword(password: string): string | null {
   return null;
 }
 
+/** The same rules as validatePassword, as a checklist shown under the field. */
+const PASSWORD_RULES: { label: string; test: (p: string) => boolean }[] = [
+  { label: 'At least 5 characters', test: (p) => p.length >= 5 },
+  { label: 'An uppercase letter', test: (p) => /[A-Z]/.test(p) },
+  { label: 'A lowercase letter', test: (p) => /[a-z]/.test(p) },
+  { label: 'A number', test: (p) => /[0-9]/.test(p) },
+  { label: 'A symbol (e.g. ! @ # ?)', test: (p) => /[^A-Za-z0-9]/.test(p) },
+];
+
 export interface AuthModalProps {
   isOpen?: boolean;
   onClose: () => void;
@@ -79,6 +88,9 @@ export const AuthView: React.FC<AuthModalProps> = ({
   // Email-verification resend cooldown
   const [resendTimer, setResendTimer] = useState(30);
   const [canResend, setCanResend] = useState(false);
+
+  // Resending the link from the sign-in error ("Please verify your email…").
+  const [loginResendState, setLoginResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
 
   // Onboarding Step 1 State
   const [customHandle, setCustomHandle] = useState('');
@@ -159,6 +171,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setLoginResendState('idle');
 
     if (!email.trim()) {
       setErrorMessage('Please enter your email address');
@@ -212,7 +225,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
 
     setSubmitting(true);
     try {
-      const message = await register(trimmedEmail, password);
+      await register(trimmedEmail, password);
 
       // Suggest a handle for after they verify.
       const cleanPrefix = trimmedEmail
@@ -223,7 +236,9 @@ export const AuthView: React.FC<AuthModalProps> = ({
       setCustomHandle(cleanPrefix);
 
       setCurrentStep('verify');
-      setSuccessMessage(message || `We sent a verification link to ${trimmedEmail}`);
+      // The verify screen itself says the link was sent; the banner is only
+      // for confirming a resend.
+      setSuccessMessage(null);
       setResendTimer(30);
       setCanResend(false);
     } catch (err) {
@@ -261,6 +276,20 @@ export const AuthView: React.FC<AuthModalProps> = ({
       setSubmitting(false);
     }
   };
+
+  // Sign-in refused because the email is unverified  ->  resend the link.
+  const handleLoginResend = async () => {
+    if (loginResendState !== 'idle') return;
+    setLoginResendState('sending');
+    try {
+      await authApi.resendVerificationEmail(email.trim());
+      setLoginResendState('sent');
+    } catch (err) {
+      setLoginResendState('idle');
+      setErrorMessage(toApiError(err).message);
+    }
+  };
+  const needsVerification = currentStep === 'login' && /verify your email/i.test(errorMessage ?? '');
 
   /**
    * Google OAuth is a full-page redirect to /api/v1/auth/google. The server
@@ -441,7 +470,26 @@ export const AuthView: React.FC<AuthModalProps> = ({
         {errorMessage && (
           <div className="mb-5 p-3.5 bg-red-50 rounded-2xl flex items-center gap-2.5 text-xs font-semibold text-red-600 border border-red-100">
             <AlertCircle size={16} className="shrink-0" />
-            <span>{errorMessage}</span>
+            <span>
+              {errorMessage}
+              {needsVerification && (
+                <>
+                  {' '}
+                  {loginResendState === 'sent' ? (
+                    <span className="text-emerald-700">New link sent. Check your inbox.</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleLoginResend}
+                      disabled={loginResendState === 'sending'}
+                      className="font-extrabold text-[#FE6349] underline underline-offset-2 hover:no-underline cursor-pointer disabled:opacity-50"
+                    >
+                      {loginResendState === 'sending' ? 'Sending…' : 'Resend verification link'}
+                    </button>
+                  )}
+                </>
+              )}
+            </span>
           </div>
         )}
 
@@ -633,7 +681,9 @@ export const AuthView: React.FC<AuthModalProps> = ({
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Create a password (min 6 chars)"
+                    placeholder="Create a strong password"
+                    autoComplete="new-password"
+                    aria-describedby="password-rules"
                     className="w-full bg-[#F8F9FB] focus:bg-[#ECEFF3]/50 border-none rounded-2xl py-3 pl-10 pr-10 text-xs sm:text-sm font-semibold text-[#1A1B25] placeholder:text-gray-400 focus:outline-none transition-colors"
                   />
                   <button
@@ -644,14 +694,35 @@ export const AuthView: React.FC<AuthModalProps> = ({
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {/* What makes it strong, ticked off as they type. */}
+                <div id="password-rules" className="mt-2 text-left">
+                  <p className="text-[11px] text-[#808897] font-medium leading-relaxed">
+                    Use a strong password you don't use anywhere else. It must include:
+                  </p>
+                  <ul className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                    {PASSWORD_RULES.map((rule) => {
+                      const met = rule.test(password);
+                      return (
+                        <li
+                          key={rule.label}
+                          className={`flex items-center gap-1.5 text-[11px] font-semibold transition-colors ${met ? 'text-emerald-600' : 'text-[#A4ABB8]'}`}
+                        >
+                          {met ? <Check size={12} strokeWidth={3} className="shrink-0" /> : <span className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-current" />}
+                          <span>{rule.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#FE6349] hover:bg-[#FE6349]/90 text-white font-extrabold text-xs sm:text-sm transition-all cursor-pointer shadow-md mt-2 flex items-center justify-center gap-2"
+                disabled={submitting}
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#FE6349] hover:bg-[#FE6349]/90 text-white font-extrabold text-xs sm:text-sm transition-all cursor-pointer shadow-md mt-2 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
               >
-                <span>Continue & Send Code</span>
-                <ChevronRight size={16} />
+                <span>{submitting ? 'Please wait…' : 'Continue'}</span>
+                {!submitting && <ChevronRight size={16} />}
               </button>
             </form>
 
@@ -691,9 +762,37 @@ export const AuthView: React.FC<AuthModalProps> = ({
             </div>
 
             <div className="space-y-6">
-              <div className="p-4 bg-[#F8F9FB] rounded-2xl text-xs text-[#666D80] leading-relaxed">
-                The link expires after a short while. If it does not arrive within a
-                couple of minutes, check your spam folder or send another one.
+              {/* The sent notice and the resend link, together. */}
+              <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs leading-relaxed">
+                <div className="flex items-start gap-2.5">
+                  <Mail size={16} className="shrink-0 mt-0.5 text-emerald-700" />
+                  <div className="text-left">
+                    <p className="font-bold text-emerald-800">
+                      Verification link sent to {email || 'your email address'}
+                    </p>
+                    <p className="text-emerald-700/90 mt-1">
+                      It expires after a short while. If it hasn't arrived in a couple of
+                      minutes, check your spam folder.
+                    </p>
+                    <p className="mt-2.5 font-semibold text-[#666D80]">
+                      Didn't get it?{' '}
+                      {resendTimer > 0 ? (
+                        <span>
+                          Resend in <strong className="text-[#1A1B25]">{resendTimer}s</strong>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendCode}
+                          disabled={submitting}
+                          className="text-[#FE6349] font-extrabold hover:underline cursor-pointer disabled:opacity-50"
+                        >
+                          {submitting ? 'Sending…' : 'Resend verification link'}
+                        </button>
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <button
@@ -703,24 +802,6 @@ export const AuthView: React.FC<AuthModalProps> = ({
               >
                 Continue to sign in
               </button>
-
-              {/* Resend verification email */}
-              <div className="text-center text-xs font-semibold text-[#808897] pt-2">
-                {resendTimer > 0 ? (
-                  <span>
-                    Resend link in <strong className="text-[#1A1B25]">{resendTimer}s</strong>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendCode}
-                    disabled={submitting}
-                    className="text-[#FE6349] font-extrabold hover:underline cursor-pointer disabled:opacity-50"
-                  >
-                    {submitting ? 'Sending…' : 'Resend verification link'}
-                  </button>
-                )}
-              </div>
             </div>
           </div>
         )}
