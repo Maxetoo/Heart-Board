@@ -249,15 +249,16 @@ export const AuthView: React.FC<AuthModalProps> = ({
   };
 
   /**
-   * The backend verifies by emailed LINK (/verify-email?verificationToken=...),
-   * not by a 6-digit code. This step is therefore a "check your inbox" screen:
-   * the user clicks the link, lands on /verify-email, and comes back to log in.
+   * The backend verifies by emailed LINK (/verify-email?verificationToken=...).
+   * Verifying is not required to use the app for now, and registering already
+   * signed the user in (authController.register sets the cookie), so this
+   * "check your inbox" screen leads straight on to choosing a username.
    */
-  const handleGoToLogin = () => {
+  const handleContinueAfterSignup = () => {
     setSuccessMessage(null);
     setErrorMessage(null);
     setPassword('');
-    setCurrentStep('login');
+    setCurrentStep('onboarding_step1');
   };
 
   // Resend the verification email  ->  POST /auth/resend-verification-email
@@ -757,7 +758,7 @@ export const AuthView: React.FC<AuthModalProps> = ({
               <p className="text-xs sm:text-sm text-[#808897] font-medium mt-1.5 leading-relaxed">
                 We sent a verification link to{' '}
                 <strong className="text-[#1A1B25]">{email || 'your email address'}</strong>.
-                Open it to activate your account, then sign in.
+                You can carry on now and verify your email whenever you're ready.
               </p>
             </div>
 
@@ -797,10 +798,10 @@ export const AuthView: React.FC<AuthModalProps> = ({
 
               <button
                 type="button"
-                onClick={handleGoToLogin}
+                onClick={handleContinueAfterSignup}
                 className="w-full py-3.5 px-4 rounded-2xl bg-[#FE6349] hover:bg-[#FE6349]/90 text-white font-extrabold text-xs sm:text-sm transition-all cursor-pointer shadow-md"
               >
-                Continue to sign in
+                Continue
               </button>
             </div>
           </div>

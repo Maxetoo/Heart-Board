@@ -146,9 +146,9 @@ const login = async (req, res) => {
     throw new CustomError.UnauthorizedError('Invalid credentials.');
   }
 
-  if (!user.isEmailVerified) {
-    throw new CustomError.BadRequestError('Please verify your email before logging in.');
-  }
+  // Email verification is not required to sign in for now: unverified
+  // accounts can log in, and the app shows a reminder banner until they verify.
+  // To make it strict again, refuse here when !user.isEmailVerified.
 
   const isMatch = await user.comparePassword(password);
   if (!isMatch) {
