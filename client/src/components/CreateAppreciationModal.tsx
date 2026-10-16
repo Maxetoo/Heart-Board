@@ -1250,6 +1250,9 @@ export const CanvasReadOnlyCard: React.FC<CanvasReadOnlyCardProps> = ({
 import { moderateContent } from '../services/geminiService';
 import { EntityType, PostVisibility, Post, Contribution } from '../types';
 
+/** A toolbar icon shown inline in the tool guide, in place of its name. */
+const GUIDE_ICON = 'inline-block align-[-5px] mr-0.5';
+
 export interface CreateAppreciationModalProps {
   onClose: () => void;
   onPostCreated: (post: any) => void;
@@ -1659,6 +1662,16 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   /** First-time tip: elements are edited by double-tapping them. */
   const [composerGuideSeen, markComposerGuideSeen, composerGuideShown] = useGuideSeen('composer-elements');
+  // What each tool in the bottom row does — creating a board, adding a message
+  // or editing either. Shown once on its own; the "What do these tools do?"
+  // link under the tools brings it back any time.
+  const [toolkitGuideSeen, markToolkitGuideSeen, toolkitGuideShown] = useGuideSeen('composer-toolkit');
+  const [isToolkitGuideOpen, setIsToolkitGuideOpen] = useState(false);
+  const showToolkitGuide = isToolkitGuideOpen || !toolkitGuideSeen;
+  const closeToolkitGuide = () => {
+    setIsToolkitGuideOpen(false);
+    markToolkitGuideSeen();
+  };
   const [selectedHearts, setSelectedHearts] = useState<string[]>(() => {
     // Contributions carry their own hearts (message content.hearts); only fall
     // back to the board's when editing the board itself.
@@ -3883,8 +3896,30 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
 
           {/* D. BOTTOM EDITING CONTROLS BAR (Exclusive to Text tab) */}
           {activeType === 'text' && (
-            <div className="w-full pb-8 pt-2 px-6 flex flex-col items-center gap-3 shrink-0">
+            <div className="relative w-full pb-8 pt-2 px-6 flex flex-col items-center gap-3 shrink-0">
               
+              {/* What each tool does. It floats over the canvas, just above the
+                  tools, so opening or closing it never moves anything. */}
+              {showToolkitGuide && (
+                <FeatureGuide
+                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-[calc(100%-2rem)] max-w-[400px] z-30"
+                  tail="bottom-right"
+                  lines={[
+                    { action: <FlowerLotus size={20} className={GUIDE_ICON} role="img" aria-label="Template" />, result: 'starts your message from a ready-made design.' },
+                    ...(currentUser ? [{ action: <PhImage size={20} className={GUIDE_ICON} role="img" aria-label="Image" />, result: 'adds a photo you can frame and reposition.' }] : []),
+                    { action: <TextAUnderline size={20} className={GUIDE_ICON} role="img" aria-label="Text" />, result: 'adds a text box. Change its font, size, colour and alignment.' },
+                    { action: <ScribbleLoop size={20} className={GUIDE_ICON} role="img" aria-label="Sticker" />, result: 'adds a sticker; choose its shape and colour.' },
+                    ...(!isContributorFlow && editMode !== 'message'
+                      ? [{ action: <PhPalette size={20} className={GUIDE_ICON} role="img" aria-label="Background" />, result: "changes the board's background colour." }]
+                      : []),
+                    { action: <PhConfetti size={20} className={GUIDE_ICON} role="img" aria-label="Confetti" />, result: 'plays an animation when your message is opened.' },
+                    { action: 'Double-tap', result: 'anything on the card to edit or delete it.' },
+                  ]}
+                  onDismiss={closeToolkitGuide}
+                  onShown={toolkitGuideShown}
+                />
+              )}
+
               {/* Tool row: plain icons, spread across the width of the board. */}
               <div className="flex items-center justify-between w-full max-w-[400px] px-1">
                 {/* 1. Template */}
@@ -3961,6 +3996,18 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   <PhConfetti size={30} />
                 </button>
               </div>
+
+              {/* Always takes its space (just hidden while the guide is open),
+                  so the layout is identical with the guide open or closed. */}
+              <button
+                type="button"
+                onClick={() => setIsToolkitGuideOpen(true)}
+                aria-hidden={showToolkitGuide}
+                tabIndex={showToolkitGuide ? -1 : 0}
+                className={`text-[11px] font-bold text-[#808897] hover:text-[#1A1B25] underline underline-offset-2 cursor-pointer ${showToolkitGuide ? 'invisible' : ''}`}
+              >
+                What do these tools do?
+              </button>
 
               {/* Moderation Error Display */}
               {moderationError && (

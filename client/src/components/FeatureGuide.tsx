@@ -70,10 +70,12 @@ interface FeatureGuideProps {
   /** Called once as the guide appears, to save it as seen. */
   onShown?: () => void;
   className?: string;
+  /** A speech-bubble pointer on the card's bottom-right edge. */
+  tail?: 'bottom-right';
 }
 
 /** A small dark tip card: what to tap, and what it does. */
-export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, onShown, className = '' }) => {
+export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, onShown, className = '', tail }) => {
   // Saved as seen the moment it is on screen: a guide is shown once, ever.
   useEffect(() => {
     onShown?.();
@@ -105,6 +107,12 @@ export const FeatureGuide: React.FC<FeatureGuideProps> = ({ lines, onDismiss, on
     >
       <X size={16} weight="bold" />
     </button>
+    {tail === 'bottom-right' && (
+      <span
+        aria-hidden
+        className="absolute top-full right-6 w-4 h-2 bg-[#1A1B25]/90 [clip-path:polygon(0_0,100%_0,50%_100%)]"
+      />
+    )}
   </div>
 );
 };
