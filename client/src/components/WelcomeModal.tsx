@@ -17,11 +17,19 @@ interface WelcomeModalProps {
 const HEART_PATH =
   'M50 92 C22 72 4 56 4 33 C4 16 17 4 32 4 C41 4 47 9 50 15 C53 9 59 4 68 4 C83 4 96 16 96 33 C96 56 78 72 50 92 Z';
 
-/** Photos are stored in /public/welcome (Unsplash licence). Back to front. */
+/**
+ * The photos live on Cloudinary (boardapp/site/welcome), not in the app
+ * bundle. Each is delivered as a 400px square cropped around its subject, in
+ * whichever format and quality the browser handles best — a few KB each.
+ */
+const welcomePhoto = (name: string, version: string) =>
+  `https://res.cloudinary.com/dertr1bwm/image/upload/f_auto,q_auto,c_fill,g_auto,w_400,h_400/${version}/boardapp/site/welcome/${name}.webp`;
+
+/** Back to front. */
 const HEARTS = [
-  { id: 'love', src: '/welcome/love.webp', x: 100, y: 0, size: 104 },
-  { id: 'birthday', src: '/welcome/birthday.webp', x: 38, y: 50, size: 112 },
-  { id: 'graduation', src: '/welcome/graduation.webp', x: 150, y: 50, size: 112 },
+  { id: 'love', src: welcomePhoto('love', 'v1792496627'), x: 100, y: 0, size: 104 },
+  { id: 'birthday', src: welcomePhoto('birthday', 'v1792496669'), x: 38, y: 50, size: 112 },
+  { id: 'graduation', src: welcomePhoto('graduation', 'v1792496739'), x: 150, y: 50, size: 112 },
 ];
 
 /** Three photos cut into overlapping hearts, each with a soft pink rim. */
