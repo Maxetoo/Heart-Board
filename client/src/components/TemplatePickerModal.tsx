@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
 import type { CanvasElement } from './CreateAppreciationModal';
@@ -264,9 +264,28 @@ interface TemplatePickerModalProps {
   onClose: () => void;
 }
 
+/** A template with photo slots to fill, as opposed to a text-only design. */
+const hasPhotos = (template: MessageTemplate) => template.elements.some((el) => el.type === 'image');
+
+const TABS = [
+  { id: 'photo', label: 'Image & Text' },
+  { id: 'text', label: 'Text Only' },
+] as const;
+
 export const TemplatePickerModal: React.FC<TemplatePickerModalProps> = ({ onUseTemplate, onClose }) => {
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('photo');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = MESSAGE_TEMPLATES.find((t) => t.id === selectedId) ?? null;
+  const templates = MESSAGE_TEMPLATES.filter((t) => hasPhotos(t) === (tab === 'photo'));
+  const selected = templates.find((t) => t.id === selectedId) ?? null;
+
+  // No close button in this design: tapping outside or Escape closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   return (
     <div
@@ -277,22 +296,37 @@ export const TemplatePickerModal: React.FC<TemplatePickerModalProps> = ({ onUseT
     >
       <div className="bg-white rounded-[2rem] max-w-md w-full max-h-[90dvh] sm:max-h-[85vh] shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200 font-sans overflow-hidden select-none">
         {/* Header */}
-        <div className="px-6 pt-6 pb-4 flex items-center justify-between shrink-0">
-          <h3 className="text-lg font-bold text-[#1A1B25]">Select Template</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-9 h-9 -mr-2 rounded-full flex items-center justify-center text-gray-500 hover:text-[#1A1B25] hover:bg-gray-100 transition-all cursor-pointer"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
+        <div className="px-7 pt-8 pb-5 shrink-0">
+          <h3 className="text-xl font-bold text-[#1A1B25]">Select Template</h3>
         </div>
-        <div className="mx-6 border-t border-[#ECEFF3]" />
+        <div className="mx-7 border-t border-[#ECEFF3]" />
+
+        {/* Image & Text / Text Only */}
+        <div className="px-7 pt-5 pb-1 shrink-0">
+          <div role="tablist" className="flex p-1 rounded-full bg-[#F5F6F8]">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => {
+                  setTab(t.id);
+                  setSelectedId(null);
+                }}
+                className={`flex-1 h-10 rounded-full text-[15px] font-bold transition-all cursor-pointer ${
+                  tab === t.id ? 'bg-white text-[#1A1B25] shadow-xs' : 'text-[#808897] hover:text-[#1A1B25]'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Templates */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 min-h-0 scrollbar-thin">
-          {MESSAGE_TEMPLATES.map((template) => {
+        <div className="flex-1 overflow-y-auto px-7 py-5 space-y-4 min-h-0 scrollbar-thin">
+          {templates.map((template) => {
             const isSelected = template.id === selectedId;
             return (
               <div key={template.id} className="relative">
@@ -329,7 +363,7 @@ export const TemplatePickerModal: React.FC<TemplatePickerModalProps> = ({ onUseT
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-6 bg-[#F8F2EF] shrink-0">
+        <div className="px-7 py-6 bg-[#F8F2EF] shrink-0">
           <button
             type="button"
             disabled={!selected}

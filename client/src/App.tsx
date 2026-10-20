@@ -36,6 +36,7 @@ import { HeartboardView } from './components/HeartboardView';
 import { HashtagView } from './components/HashtagView';
 import { AuthView } from './components/AuthModal';
 import { WelcomeModal } from './components/WelcomeModal';
+import { useGuideSeen } from './components/FeatureGuide';
 import { EngagementPromptModal } from './components/EngagementPromptModal';
 import { useEngagementPrompt } from './hooks/useEngagementPrompt';
 import { useHeartboardNotifications } from './hooks/useHeartboardNotifications';
@@ -773,49 +774,92 @@ interface BottomNavProps {
   activeTab: 'home' | 'hearts';
   setActiveTab: (tab: 'home' | 'hearts') => void;
   onPlusClick: () => void;
+  /** False while something covers the nav (the welcome window), so the
+      first-visit label tour waits until it can actually be seen. */
+  tourEnabled?: boolean;
 }
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, onPlusClick }) => {
+const NAV_TOUR_STEP_MS = 1400;
+
+/**
+ * Bottom navigation. Each icon has a small floating label ("Home", "Create
+ * Message", "Profile"), the same as the composer's tools: the first visit
+ * steps through them once, and after that a label shows on hover (desktop).
+ * Labels float above the bar, so nothing moves.
+ */
+const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, onPlusClick, tourEnabled = true }) => {
+  const [tourSeen, markTourSeen, tourShown] = useGuideSeen('bottom-nav-labels');
+  const [tourIndex, setTourIndex] = useState<number | null>(null);
+
+  const items = [
+    {
+      id: 'bottom-nav-home',
+      label: 'Home',
+      icon: <Home className="w-6 h-6" strokeWidth={1.8} />,
+      onClick: () => {
+        setActiveTab('home');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+    },
+    { id: 'bottom-nav-plus', label: 'Create Message', icon: <Plus className="w-6 h-6" strokeWidth={1.8} />, onClick: onPlusClick },
+    { id: 'bottom-nav-heart', label: 'Profile', icon: <Heart className="w-6 h-6" strokeWidth={1.8} />, onClick: () => setActiveTab('hearts') },
+  ];
+
+  useEffect(() => {
+    if (tourSeen || !tourEnabled) return;
+    let step = -1;
+    // A short pause first, so the labels are not lost in the page loading.
+    const timer = window.setInterval(() => {
+      step += 1;
+      if (step === 0) tourShown();
+      if (step >= items.length) {
+        window.clearInterval(timer);
+        setTourIndex(null);
+        markTourSeen();
+      } else {
+        setTourIndex(step);
+      }
+    }, NAV_TOUR_STEP_MS);
+    return () => {
+      window.clearInterval(timer);
+      setTourIndex(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tourSeen, tourEnabled]);
+
   return (
     <nav 
       id="main-bottom-navbar" 
       className="fixed bottom-0 left-0 right-0 z-[100] w-full bg-white py-3.5 px-6"
     >
       <div className="max-w-xs mx-auto flex items-center justify-center gap-12 sm:gap-16">
-        {/* Home Button */}
-        <button 
-          id="bottom-nav-home"
-          onClick={() => {
-            setActiveTab('home');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          aria-label="Home"
-          className="p-1.5 text-gray-600 hover:text-gray-900 transition-all duration-200 transform hover:scale-110 active:scale-90"
-        >
-          <Home className="w-6 h-6" strokeWidth={1.8} />
-        </button>
-
-        {/* Plus Button */}
-        <button 
-          id="bottom-nav-plus"
-          onClick={onPlusClick}
-          aria-label="Create Appreciation"
-          className="p-1.5 text-gray-600 hover:text-gray-900 transition-all duration-200 transform hover:scale-110 active:scale-90"
-        >
-          <Plus className="w-6 h-6" strokeWidth={1.8} />
-        </button>
-
-        {/* Heart Button */}
-        <button 
-          id="bottom-nav-heart"
-          onClick={() => {
-            setActiveTab('hearts');
-          }}
-          aria-label="Your Heartboard"
-          className="p-1.5 text-gray-600 hover:text-gray-900 transition-all duration-200 transform hover:scale-110 active:scale-90"
-        >
-          <Heart className="w-6 h-6" strokeWidth={1.8} />
-        </button>
+        {items.map((item, idx) => (
+          <div key={item.id} className="relative group/nav">
+            <button
+              id={item.id}
+              onClick={() => {
+                if (tourIndex !== null) markTourSeen();
+                item.onClick();
+              }}
+              aria-label={item.label}
+              className="p-1.5 text-gray-600 hover:text-gray-900 transition-all duration-200 transform hover:scale-110 active:scale-90"
+            >
+              {item.icon}
+            </button>
+            <span
+              role="tooltip"
+              className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-[#666D80] px-2.5 py-1 text-[13px] font-bold text-white transition-opacity duration-200 ${
+                tourIndex === idx ? 'opacity-100' : 'opacity-0 [@media(hover:hover)]:group-hover/nav:opacity-100'
+              }`}
+            >
+              {item.label}
+              <span
+                aria-hidden
+                className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-1.5 bg-[#666D80] [clip-path:polygon(0_0,100%_0,50%_100%)]"
+              />
+            </span>
+          </div>
+        ))}
       </div>
     </nav>
   );
@@ -2559,6 +2603,7 @@ const App: React.FC = () => {
         {!isAuthModalOpen && (
           <BottomNav 
             activeTab={activeNavTab} 
+            tourEnabled={!isWelcomeModalOpen}
             setActiveTab={(tab) => {
               if (tab === 'hearts' && !currentUser) {
                 handleOpenAuth('login', 'Please sign in or create an account to see your Heartboard.');
@@ -2620,6 +2665,11 @@ const App: React.FC = () => {
               setEditMode(null);
             }} 
             onPostCreated={handleNewPost}
+            onViewCreatedBoard={(created) => {
+              // Straight to the new board, in place of /create.
+              setIsCreateModalOpen(false);
+              navigate(`/board/${encodeURIComponent(created.slug)}`, { replace: true });
+            }}
             // The composer has always taken this prop and never been given it,
             // so every contribution it posted was attributed to "@guest" and
             // the send-heart flow had no idea who was blowing the heart.

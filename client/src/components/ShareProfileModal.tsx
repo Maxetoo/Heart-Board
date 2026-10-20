@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { HeartboardLogo, heartboardLogoSvg } from './HeartboardLogo';
+import { CanvasReadOnlyCard } from './CreateAppreciationModal';
+import type { CanvasElement } from './CreateAppreciationModal';
 
 /** Size, in card pixels, of the mark stamped into the downloaded image. */
 const LOGO_SIZE = 92;
@@ -58,6 +60,13 @@ export interface ShareData {
   boardMediaType?: string;
   boardAuthorName?: string;
   boardRecipientName?: string;
+  /**
+   * The board's own artwork. When given, the card shows the board itself with
+   * its title over it, instead of the generic striped card.
+   */
+  boardCanvasElements?: CanvasElement[];
+  boardContent?: string;
+  boardImage?: string;
   // URL override if needed
   url?: string;
 }
@@ -71,6 +80,8 @@ export interface ShareModalProps {
   userName?: string;
   profileImage?: string | null;
   onShowToast?: (message: string) => void;
+  /** Stacking for the overlay, when opened above another full-screen layer. */
+  overlayClassName?: string;
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -81,9 +92,20 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   userName: propUserName,
   profileImage: propProfileImage,
   onShowToast,
+  overlayClassName = 'z-[1300]',
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [downloading, setDownloading] = useState(false);
+
+  // The board card has no close button (as designed): tap outside or Escape.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -96,15 +118,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   const isProfile = effectiveData.type === 'profile';
+  /** A real board with artwork to show: the photo-and-title card. */
+  const isBoardArt =
+    !isProfile && Boolean(effectiveData.boardCanvasElements?.length || effectiveData.boardImage);
+  /** The first photo on the board, for the downloaded card. */
+  const boardPhoto =
+    effectiveData.boardCanvasElements?.find((el) => el.type === 'image' && el.imageUrl)?.imageUrl ||
+    effectiveData.boardImage ||
+    effectiveData.boardThumbnail;
 
   // Format Display texts
   const displayTitle = isProfile 
     ? (effectiveData.userHandle?.startsWith('@') ? effectiveData.userHandle : `@${effectiveData.userHandle || 'user'}`)
     : (effectiveData.boardTitle || (effectiveData.boardAuthorName ? `${effectiveData.boardAuthorName}'s Board` : 'Heartboard'));
 
-  const displaySubtitle = isProfile 
+  const displaySubtitle = isProfile
     ? 'Write messages on my Heartboard wall'
-    : 'Write messages on this heartboard';
+    : isBoardArt
+      ? 'Leave your message on this board'
+      : 'Write messages on this heartboard';
 
   // Construct target URL.
   //
@@ -186,8 +218,93 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
   };
 
+  /**
+   * The downloaded card for a board: its photo filling the card, darkened at
+   * the bottom, with the title and "Leave your message on this board" over it
+   * — the same look as the card on screen. Boards without a photo use their
+   * frame colour.
+   */
+  const generateBoardArtImage = async (): Promise<string | null> => {
+    const W = 760;
+    const H = 672;
+    const logoImage = await loadHeartboardLogoImage(LOGO_SIZE);
+    const photo = boardPhoto
+      ? await new Promise<HTMLImageElement | null>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = boardPhoto;
+        })
+      : null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.beginPath();
+      ctx.roundRect(0, 0, W, H, 48);
+      ctx.clip();
+      ctx.fillStyle = getBoardFrameBg();
+      ctx.fillRect(0, 0, W, H);
+
+      if (photo) {
+        // Cover the card, centred like the card on screen.
+        const scale = Math.max(W / photo.naturalWidth, H / photo.naturalHeight);
+        const dw = photo.naturalWidth * scale;
+        const dh = photo.naturalHeight * scale;
+        ctx.drawImage(photo, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      }
+
+      const shade = ctx.createLinearGradient(0, H * 0.35, 0, H);
+      shade.addColorStop(0, 'rgba(0,0,0,0)');
+      shade.addColorStop(0.5, 'rgba(0,0,0,0.6)');
+      shade.addColorStop(1, 'rgba(0,0,0,0.9)');
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, W, H);
+
+      if (logoImage) ctx.drawImage(logoImage, 36, 36, LOGO_SIZE, LOGO_SIZE);
+
+      // Title, wrapped to at most two lines.
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 54px Nunito, sans-serif';
+      const words = displayTitle.split(/\s+/);
+      const lines: string[] = [];
+      let line = '';
+      for (const word of words) {
+        const next = line ? `${line} ${word}` : word;
+        if (ctx.measureText(next).width > W - 96 && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      }
+      if (line) lines.push(line);
+      const shown = lines.slice(0, 2);
+      if (lines.length > 2) shown[1] = `${shown[1].replace(/.{0,2}$/, '')}…`;
+      const subtitleY = H - 52;
+      shown.forEach((l, i) => ctx.fillText(l, W / 2, subtitleY - 58 - (shown.length - 1 - i) * 62));
+
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.font = '600 28px Nunito, sans-serif';
+      ctx.fillText(displaySubtitle, W / 2, subtitleY);
+
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      // A cross-origin photo without CORS taints the canvas; say so quietly.
+      console.error('Share card generation error:', err);
+      return null;
+    }
+  };
+
   // Generate Canvas Card Image matching Images 3 & 4
   const generateCanvasImage = async (): Promise<string | null> => {
+    if (isBoardArt) return generateBoardArtImage();
+
     // Rasterise the mark up front so the card itself can be painted in one
     // synchronous pass below.
     const logoImage = await loadHeartboardLogoImage(LOGO_SIZE);
@@ -499,13 +616,51 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-in fade-in duration-200"
+      className={`fixed inset-0 ${overlayClassName} flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-in fade-in duration-200`}
       onClick={onClose}
     >
       <div 
         className="relative w-full max-w-[380px] bg-white rounded-[2.2rem] sm:rounded-[2.6rem] shadow-2xl flex flex-col font-sans animate-in zoom-in-95 duration-200 overflow-hidden select-none"
         onClick={(e) => e.stopPropagation()}
       >
+        {isBoardArt ? (
+          /* The board itself, its title over a darkened bottom edge. */
+          <div
+            className="relative w-full aspect-[466/412] overflow-hidden"
+            style={{ backgroundColor: getBoardFrameBg() }}
+          >
+            {/* Centred on a photo; a text-only board sits higher, so its own
+                words stay clear of the title. */}
+            <div
+              className={`absolute inset-x-0 -translate-y-1/2 aspect-[254/350] pointer-events-none ${
+                effectiveData.boardCanvasElements?.some((el) => el.type === 'image' && el.imageUrl) || effectiveData.boardImage
+                  ? 'top-1/2'
+                  : 'top-[36%]'
+              }`}
+            >
+              <CanvasReadOnlyCard
+                canvasElements={effectiveData.boardCanvasElements || []}
+                content={effectiveData.boardContent}
+                uploadedImage={effectiveData.boardImage}
+                selectedConfetti={null}
+                showMetadata={false}
+                square
+                fill
+              />
+            </div>
+            <div className="absolute inset-x-0 bottom-0 h-[65%] bg-gradient-to-t from-black/90 via-black/60 to-transparent pointer-events-none z-20" />
+            <div className="absolute top-4 left-4 z-30">
+              <HeartboardLogo className="w-12 h-12" />
+            </div>
+            <div className="absolute inset-x-5 bottom-5 z-30 text-center">
+              <h3 className="text-[26px] sm:text-[28px] font-extrabold text-white leading-tight tracking-tight line-clamp-2">
+                {displayTitle}
+              </h3>
+              <p className="mt-1.5 text-[15px] font-medium text-white/85 leading-snug">{displaySubtitle}</p>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Close Button Top-Right */}
         <button
           onClick={onClose}
@@ -610,6 +765,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             {displaySubtitle}
           </p>
         </div>
+        </>
+        )}
 
         {/* 
           2. Bottom Buttons Area (Images 1 & 2):

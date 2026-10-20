@@ -67,6 +67,7 @@ import { ChooseColor } from './ColorPicker';
 import { ConfettiOverlay, ConfettiType } from './ConfettiOverlay';
 import { ConfettiPickerModal } from './ConfettiPickerModal';
 import { FeatureGuide, useGuideSeen } from './FeatureGuide';
+import { ShareProfileModal } from './ShareProfileModal';
 import { BOARD_CATEGORIES, categoryIdOf, categoryLabelOf } from '../lib/categories';
 import { TemplatePickerModal, instantiateTemplate } from './TemplatePickerModal';
 import type { MessageTemplate } from './TemplatePickerModal';
@@ -1256,6 +1257,8 @@ const GUIDE_ICON = 'inline-block align-[-5px] mr-0.5';
 export interface CreateAppreciationModalProps {
   onClose: () => void;
   onPostCreated: (post: any) => void;
+  /** "View on Heartboard" after creating a board: open that board. */
+  onViewCreatedBoard?: (post: any) => void;
   initialRecipient?: { id?: string; name: string; handle: string; avatar?: string };
   initialHashtag?: string;
   initialMode?: 'create_message' | 'send_heart';
@@ -1580,6 +1583,7 @@ const COLOR_OPTIONS = [
 export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = ({ 
   onClose, 
   onPostCreated,
+  onViewCreatedBoard,
   initialRecipient,
   initialHashtag,
   initialMode,
@@ -1662,16 +1666,6 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   /** First-time tip: elements are edited by double-tapping them. */
   const [composerGuideSeen, markComposerGuideSeen, composerGuideShown] = useGuideSeen('composer-elements');
-  // What each tool in the bottom row does — creating a board, adding a message
-  // or editing either. Shown once on its own; the "What do these tools do?"
-  // link under the tools brings it back any time.
-  const [toolkitGuideSeen, markToolkitGuideSeen, toolkitGuideShown] = useGuideSeen('composer-toolkit');
-  const [isToolkitGuideOpen, setIsToolkitGuideOpen] = useState(false);
-  const showToolkitGuide = isToolkitGuideOpen || !toolkitGuideSeen;
-  const closeToolkitGuide = () => {
-    setIsToolkitGuideOpen(false);
-    markToolkitGuideSeen();
-  };
   const [selectedHearts, setSelectedHearts] = useState<string[]>(() => {
     // Contributions carry their own hearts (message content.hearts); only fall
     // back to the board's when editing the board itself.
@@ -2103,6 +2097,40 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   const [isExpanded, setIsExpanded] = useState(() => {
     return Boolean(isContributorFlow || editMode === 'message');
   });
+
+  /**
+   * Tool tips: each tool in the bottom row has a small label ("Template",
+   * "Image", ...) that floats above its icon. The first time someone opens
+   * the editor the labels step through the tools one by one; after that a
+   * label shows on hover (desktop). Labels float, so nothing ever moves.
+   */
+  // The background tool belongs to the board, so a message never gets it.
+  const canChangeBackground = !isContributorFlow && editMode !== 'message';
+  const toolCount = 4 + (currentUser ? 1 : 0) + (canChangeBackground ? 1 : 0);
+  const [toolTipsSeen, markToolTipsSeen, toolTipsShown] = useGuideSeen('composer-tool-tips');
+  // The fuller guide: what every tool does, opened from "What do these tools do?".
+  const [isToolkitGuideOpen, setIsToolkitGuideOpen] = useState(false);
+  const [toolTourIndex, setToolTourIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (toolTipsSeen || !isExpanded || activeType !== 'text') return;
+    toolTipsShown();
+    let step = 0;
+    setToolTourIndex(0);
+    const timer = window.setInterval(() => {
+      step += 1;
+      if (step >= toolCount) {
+        window.clearInterval(timer);
+        setToolTourIndex(null);
+        markToolTipsSeen();
+      } else {
+        setToolTourIndex(step);
+      }
+    }, 1400);
+    return () => {
+      window.clearInterval(timer);
+      setToolTourIndex(null);
+    };
+  }, [toolTipsSeen, isExpanded, activeType, toolCount, toolTipsShown, markToolTipsSeen]);
   const [expandedActiveTool, setExpandedActiveTool] = useState<'none' | 'image' | 'text' | 'vector' | 'bg'>('none');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isHeartsOnlyPickerOpen, setIsHeartsOnlyPickerOpen] = useState(false);
@@ -2161,6 +2189,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
   /** Surfaced on the Send Heart panel when the blow could not be saved. */
   const [sendHeartError, setSendHeartError] = useState<string | null>(null);
   const [createdPostConfirmation, setCreatedPostConfirmation] = useState<any | null>(null);
+  const [isCreatedShareOpen, setIsCreatedShareOpen] = useState(false);
 
   // Real accounts from GET /search. There is no "browse all users" state —
   // the empty-query case is handled explicitly in the empty-state UI below.
@@ -3817,14 +3846,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                         const visibleElements = canvasElements.filter(isRenderableElement);
                         if (visibleElements.length === 0) {
                           return (
-                            <div className="text-center w-full px-4 space-y-0.5 py-1 pointer-events-none">
-                              <h3 className="text-[15px] font-semibold text-gray-600 tracking-tight">
-                                Tap to create message
-                              </h3>
-                              <p className="text-[11px] text-[#808897] font-semibold">
-                                {isContributorFlow ? "Add your tribute to this board" : "Create beautiful message with stunning visuals"}
-                              </p>
-                            </div>
+                            <p className="text-center max-w-[190px] mx-auto text-[14px] leading-snug font-semibold text-[#A4ABB8] pointer-events-none">
+                              Tap to add a message or use a template.
+                            </p>
                           );
                         }
                         return visibleElements.map((el) => (
@@ -3898,9 +3922,9 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           {activeType === 'text' && (
             <div className="relative w-full pb-8 pt-2 px-6 flex flex-col items-center gap-3 shrink-0">
               
-              {/* What each tool does. It floats over the canvas, just above the
+              {/* What each tool does. Floats over the canvas, just above the
                   tools, so opening or closing it never moves anything. */}
-              {showToolkitGuide && (
+              {isToolkitGuideOpen && (
                 <FeatureGuide
                   className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-[calc(100%-2rem)] max-w-[400px] z-30"
                   tail="bottom-right"
@@ -3909,102 +3933,72 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                     ...(currentUser ? [{ action: <PhImage size={20} className={GUIDE_ICON} role="img" aria-label="Image" />, result: 'adds a photo you can frame and reposition.' }] : []),
                     { action: <TextAUnderline size={20} className={GUIDE_ICON} role="img" aria-label="Text" />, result: 'adds a text box. Change its font, size, colour and alignment.' },
                     { action: <ScribbleLoop size={20} className={GUIDE_ICON} role="img" aria-label="Sticker" />, result: 'adds a sticker; choose its shape and colour.' },
-                    ...(!isContributorFlow && editMode !== 'message'
+                    ...(canChangeBackground
                       ? [{ action: <PhPalette size={20} className={GUIDE_ICON} role="img" aria-label="Background" />, result: "changes the board's background colour." }]
                       : []),
                     { action: <PhConfetti size={20} className={GUIDE_ICON} role="img" aria-label="Confetti" />, result: 'plays an animation when your message is opened.' },
                     { action: 'Double-tap', result: 'anything on the card to edit or delete it.' },
                   ]}
-                  onDismiss={closeToolkitGuide}
-                  onShown={toolkitGuideShown}
+                  onDismiss={() => setIsToolkitGuideOpen(false)}
                 />
               )}
 
-              {/* Tool row: plain icons, spread across the width of the board. */}
+              {/* Tool row: plain icons, spread across the width of the board,
+                  each with a floating label — see toolTourIndex. */}
               <div className="flex items-center justify-between w-full max-w-[400px] px-1">
-                {/* 1. Template */}
-                <button
-                  type="button"
-                  onClick={() => setIsTemplatePickerOpen(true)}
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
-                  title="Choose a template"
-                  aria-label="Choose a template"
-                >
-                  <FlowerLotus size={30} />
-                </button>
-
-                {/* 2. Image — photos need an account, so guests do not get the button. */}
-
-                {currentUser && (
-                <button
-                  type="button"
-                  onClick={handleAddImageElement}
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
-                  title="Add an image"
-                  aria-label="Add an image"
-                >
-                  <PhImage size={30} />
-                </button>
-                )}
-
-                {/* 3. Text */}
-                <button
-                  type="button"
-                  onClick={handleAddTextElement}
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
-                  title="Add text"
-                  aria-label="Add text"
-                >
-                  <TextAUnderline size={30} />
-                </button>
-
-                {/* 4. Vector */}
-                <button
-                  type="button"
-                  onClick={handleAddVectorElement}
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
-                  title="Add a sticker"
-                  aria-label="Add a sticker"
-                >
-                  <ScribbleLoop size={30} />
-                </button>
-
-                {/* 5. BG — the board's own setting, so it belongs to board
-                       creation and board editing only. A message written onto
-                       someone's board does not get to repaint it, whether it is
-                       a new contribution or an edit of an existing message. */}
-                {!isContributorFlow && editMode !== 'message' && (
-                  <button
-                    type="button"
-                    onClick={handleAddBgElement}
-                    className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
-                    title="Change the background"
-                    aria-label="Change the background"
-                  >
-                    <PhPalette size={30} />
-                  </button>
-                )}
-
-                {/* 6. Confetti */}
-                <button
-                  type="button"
-                  onClick={() => setIsConfettiPickerOpen(true)}
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
-                  title="Choose a confetti animation"
-                  aria-label="Choose a confetti animation"
-                >
-                  <PhConfetti size={30} />
-                </button>
+                {[
+                  { id: 'template', label: 'Template', aria: 'Choose a template', icon: <FlowerLotus size={30} />, onClick: () => setIsTemplatePickerOpen(true) },
+                  // Photos need an account, so guests do not get the button.
+                  ...(currentUser
+                    ? [{ id: 'image', label: 'Image', aria: 'Add an image', icon: <PhImage size={30} />, onClick: handleAddImageElement }]
+                    : []),
+                  { id: 'text', label: 'Text', aria: 'Add text', icon: <TextAUnderline size={30} />, onClick: handleAddTextElement },
+                  { id: 'sticker', label: 'Sticker', aria: 'Add a sticker', icon: <ScribbleLoop size={30} />, onClick: handleAddVectorElement },
+                  // The board's own setting: board creation and board editing only.
+                  ...(canChangeBackground
+                    ? [{ id: 'bg', label: 'Background', aria: 'Change the background', icon: <PhPalette size={30} />, onClick: handleAddBgElement }]
+                    : []),
+                  { id: 'confetti', label: 'Confetti', aria: 'Choose a confetti animation', icon: <PhConfetti size={30} />, onClick: () => setIsConfettiPickerOpen(true) },
+                ].map((tool, idx) => (
+                  <div key={tool.id} className="relative group/tool">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (toolTourIndex !== null) markToolTipsSeen();
+                        tool.onClick();
+                      }}
+                      className="w-12 h-12 rounded-full flex items-center justify-center text-[#666D80] hover:text-[#1A1B25] hover:bg-black/5 cursor-pointer transition-all active:scale-90"
+                      aria-label={tool.aria}
+                    >
+                      {tool.icon}
+                    </button>
+                    <span
+                      role="tooltip"
+                      className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded-lg bg-[#666D80] px-2.5 py-1 text-[13px] font-bold text-white transition-opacity duration-200 z-30 ${
+                        toolTourIndex === idx ? 'opacity-100' : 'opacity-0 [@media(hover:hover)]:group-hover/tool:opacity-100'
+                      }`}
+                    >
+                      {tool.label}
+                      <span
+                        aria-hidden
+                        className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-1.5 bg-[#666D80] [clip-path:polygon(0_0,100%_0,50%_100%)]"
+                      />
+                    </span>
+                  </div>
+                ))}
               </div>
 
               {/* Always takes its space (just hidden while the guide is open),
-                  so the layout is identical with the guide open or closed. */}
+                  so the layout is identical either way. */}
               <button
                 type="button"
-                onClick={() => setIsToolkitGuideOpen(true)}
-                aria-hidden={showToolkitGuide}
-                tabIndex={showToolkitGuide ? -1 : 0}
-                className={`text-[11px] font-bold text-[#808897] hover:text-[#1A1B25] underline underline-offset-2 cursor-pointer ${showToolkitGuide ? 'invisible' : ''}`}
+                onClick={() => {
+                  setIsToolkitGuideOpen(true);
+                  markToolTipsSeen();
+                }}
+                aria-hidden={isToolkitGuideOpen}
+                tabIndex={isToolkitGuideOpen ? -1 : 0}
+                className={`text-[11px] font-bold text-[#808897] hover:text-[#1A1B25] underline underline-offset-2 cursor-pointer ${isToolkitGuideOpen ? 'invisible' : ''}`}
               >
                 What do these tools do?
               </button>
@@ -5057,16 +5051,13 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         </div>
       )}
 
-      {/* Full Page Confirmation Screen for Published Appreciation Card.
-          Same scroll/centre structure as the Send Heart confirmation above —
-          see the note there for what the fixed-vh version broke. */}
+      {/* After a board is created: "Message Created", with sharing first. */}
       {createdPostConfirmation && (
-        <div className="fixed inset-0 z-[6000] bg-[#FCF9F8] overflow-y-auto animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[6000] bg-[#FCF8F7] overflow-y-auto animate-in fade-in duration-300">
           <ConfettiOverlay type={createdPostConfirmation.confetti || "heart"} />
 
-          <div className="relative z-10 w-full max-w-[440px] mx-auto min-h-full flex flex-col items-center justify-center p-4 sm:p-8">
-            {/* Close Button Top Right */}
-            <div className="w-full flex justify-end mb-3 sm:mb-4">
+          <div className="relative z-10 w-full max-w-[440px] mx-auto min-h-[100dvh] flex flex-col items-center text-center px-5 pt-5 pb-8">
+            <div className="w-full flex justify-end">
               <button
                 type="button"
                 onClick={() => {
@@ -5074,115 +5065,80 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   setIsPreviewOpen(false);
                   onClose();
                 }}
-                className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#F0F2F5] hover:bg-[#E4E7EB] text-[#666D80] flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                className="w-11 h-11 rounded-full bg-[#ECEFF3] hover:bg-[#E2E6EC] text-[#666D80] flex items-center justify-center transition-colors cursor-pointer"
+                aria-label="Close"
               >
-                <X className="w-5 h-5" strokeWidth={2.5} />
+                <X className="w-5 h-5" strokeWidth={2} />
               </button>
             </div>
 
-            {/* Main Card */}
-            <div className="w-full bg-white rounded-[2.5rem] p-6 sm:p-8 flex flex-col items-center text-center shadow-xs border border-gray-100/60">
-              {/* Circular Envelope Icon Top */}
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#FAF0EC] flex items-center justify-center mb-6 relative shadow-xs">
-                <svg width="68" height="68" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-xs">
-                  {/* Back paper sheet poking out */}
-                  <rect x="18" y="14" width="36" height="30" rx="4" fill="#FFFFFF" />
-                  {/* Heart on top of paper sheet */}
-                  <path d="M36 29C36 29 29 23.5 29 19.8C29 17.7 30.7 16 32.8 16C34.2 16 35.3 16.7 36 17.5C36.7 16.7 37.8 16 39.2 16C41.3 16 43 17.7 43 19.8C43 23.5 36 29 36 29Z" fill="#E52E40" />
-
-                  {/* Envelope back interior */}
-                  <path d="M12 28L36 14L60 28" fill="#FCA5A5" opacity="0.4" />
-
-                  {/* Envelope Main Body */}
-                  <path d="M10 26C10 23.7909 11.7909 22 14 22H58C60.2091 22 62 23.7909 62 26V49C62 51.7614 59.7614 54 57 54H15C12.2386 54 10 51.7614 10 49V26Z" fill="#E52E40" />
-
-                  {/* Envelope Side Flaps / Folds */}
-                  <path d="M10 26L36 43L62 26" stroke="#C51E30" strokeWidth="2.5" strokeLinejoin="round" />
-                  <path d="M10 54L28 37" stroke="#C51E30" strokeWidth="2.5" strokeLinecap="round" />
-                  <path d="M62 54L44 37" stroke="#C51E30" strokeWidth="2.5" strokeLinecap="round" />
-
-                  {/* Bottom fold fill / shaded flap */}
-                  <path d="M10 26L36 43L62 26V49C62 51.7614 59.7614 54 57 54H15C12.2386 54 10 51.7614 10 49V26Z" fill="#DC2626" opacity="0.35" />
-
-                  {/* Central Heart Seal Badge */}
-                  <circle cx="36" cy="36" r="9.5" fill="#FFFFFF" />
-                  <path d="M36 41C36 41 31 37.2 31 34.2C31 32.5 32.3 31.2 34 31.2C35.1 31.2 35.9 31.8 36 32.4C36.1 31.8 36.9 31.2 38 31.2C39.7 31.2 41 32.5 41 34.2C41 37.2 36 41 36 41Z" fill="#E52E40" />
-                </svg>
-              </div>
-
-              {/* Heading */}
-              <h2 className="text-2xl sm:text-[28px] font-extrabold text-[#1A1B25] tracking-tight mb-2">
-                Appreciation Sent
-              </h2>
-
-              {/* Subtitle */}
-              <p className="text-sm sm:text-base font-normal text-[#666D80] max-w-sm mb-6 leading-relaxed">
-                Your heartfelt has been published and delivered to{' '}
-                <strong className="text-[#1A1B25] font-bold">
-                  {confirmationRecipientLabel(createdPostConfirmation)}
-                </strong>
-              </p>
-
-              {/* Details Summary Container */}
-              <div className="w-full bg-[#FAF9F8] rounded-3xl p-5 sm:p-6 space-y-3.5 text-left">
-                <div className="flex items-center justify-between text-sm sm:text-base">
-                  <span className="text-[#808897] font-medium">Recipient</span>
-                  <span className="text-[#1A1B25] font-bold truncate max-w-[200px] text-right">
-                    {confirmationRecipientLabel(createdPostConfirmation)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-sm sm:text-base">
-                  <span className="text-[#808897] font-medium">Visibility</span>
-                  <span className="text-[#1A1B25] font-bold">
-                    {privacyLayer === PostVisibility.PRIVATE ? 'Recipient Only (Private)' : privacyLayer === PostVisibility.ANONYMOUS ? 'Board (Anonymous)' : 'Board (Public)'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-sm sm:text-base">
-                  <span className="text-[#808897] font-medium">Event Type</span>
-                  <span className="text-[#1A1B25] font-bold capitalize">
-                    {createdPostConfirmation.eventType || selectedEventType || 'Wedding'}
-                  </span>
-                </div>
-
-                {/* Inner Pill Quote */}
-                <div className="w-full bg-white rounded-2xl sm:rounded-3xl py-3.5 px-5 text-left mt-2 shadow-2xs border border-gray-100/40">
-                  <p className="text-sm sm:text-base font-extrabold text-[#1A1B25] tracking-tight">
-                    “{createdPostConfirmation.caption || createdPostConfirmation.content || 'Jesus is King'}”
-                  </p>
-                </div>
-              </div>
+            {/* Open envelope with a heart letter */}
+            <div className="mt-14 w-[136px] h-[136px] rounded-full bg-[#F8ECE8] flex items-center justify-center">
+              <svg width="76" height="76" viewBox="0 0 76 76" fill="none" aria-hidden="true">
+                <path d="M8 34 L38 12 L68 34 Z" fill="#C8303F" />
+                <rect x="18" y="16" width="40" height="34" rx="3" fill="#FFFFFF" />
+                <rect x="18" y="16" width="40" height="34" rx="3" fill="#FBE3E1" opacity="0.5" />
+                <path d="M38 37 C38 37 29.5 31.2 29.5 26.2 C29.5 23.6 31.6 21.6 34.1 21.6 C35.8 21.6 37.2 22.5 38 23.6 C38.8 22.5 40.2 21.6 41.9 21.6 C44.4 21.6 46.5 23.6 46.5 26.2 C46.5 31.2 38 37 38 37 Z" fill="#E5404F" />
+                <path d="M8 34 V62 C8 64.2 9.8 66 12 66 H64 C66.2 66 68 64.2 68 62 V34 L38 54 Z" fill="#E5404F" />
+                <path d="M8 66 L33 48 M68 66 L43 48" stroke="#B82535" strokeWidth="2" strokeLinecap="round" opacity="0.55" />
+                <path d="M8 34 L38 54 L68 34" stroke="#F27A85" strokeWidth="1.5" strokeLinejoin="round" opacity="0.6" />
+              </svg>
             </div>
 
-            {/* Action Buttons Below Card */}
-            <div className="w-full space-y-3 pt-6 sm:pt-6">
+            <h2 className="mt-6 text-[28px] leading-tight font-extrabold text-[#1A1B25] tracking-tight">
+              Message Created
+            </h2>
+            <p className="mt-2 max-w-[290px] text-[15px] leading-relaxed text-[#808897]">
+              Your heartfelt message was successfully created and delivered
+            </p>
+
+            {/* Pushes the share prompt and buttons to the bottom. */}
+            <div className="flex-1 min-h-[64px]" />
+
+            <p className="max-w-[320px] text-[15px] leading-snug font-bold text-[#353849]">
+              Want to share this board with someone or invite more people to contribute?
+            </p>
+
+            <div className="w-full space-y-3 pt-5">
+              <button
+                type="button"
+                onClick={() => setIsCreatedShareOpen(true)}
+                className="w-full h-14 rounded-full bg-[#FE6349] hover:bg-[#e05234] text-white font-bold text-base active:scale-[0.98] transition-all cursor-pointer"
+              >
+                Share Message
+              </button>
               <button
                 type="button"
                 onClick={() => {
+                  const created = createdPostConfirmation;
                   setCreatedPostConfirmation(null);
                   setIsPreviewOpen(false);
-                  onClose();
+                  if (onViewCreatedBoard && created?.slug) onViewCreatedBoard(created);
+                  else onClose();
                 }}
-                className="w-full py-4 rounded-full bg-[#FE6349] hover:bg-[#e05234] text-white font-extrabold text-base shadow-xs active:scale-[0.98] transition-all cursor-pointer text-center"
+                className="w-full h-14 rounded-full bg-[#EDF0F5] hover:bg-[#E2E6EE] text-[#1A1B25] font-bold text-base active:scale-[0.98] transition-all cursor-pointer"
               >
                 View on Heartboard
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCreatedPostConfirmation(null);
-                  setIsPreviewOpen(false);
-                  setContent('');
-                  setRecipient('');
-                  setCaption('');
-                }}
-                className="w-full py-4 rounded-full bg-[#F0F4F8] hover:bg-[#E4E9F0] text-[#1A1B25] font-extrabold text-base transition-all active:scale-[0.98] cursor-pointer text-center"
-              >
-                Send another message
-              </button>
             </div>
           </div>
+
+          {isCreatedShareOpen && (
+            <ShareProfileModal
+              isOpen
+              overlayClassName="z-[6100]"
+              onClose={() => setIsCreatedShareOpen(false)}
+              shareData={{
+                type: 'board',
+                boardId: createdPostConfirmation.slug || createdPostConfirmation.id,
+                boardTitle: createdPostConfirmation.caption || createdPostConfirmation.content,
+                boardTheme: createdPostConfirmation.theme,
+                boardCanvasElements: createdPostConfirmation.canvasElements,
+                boardContent: createdPostConfirmation.content,
+                boardImage: createdPostConfirmation.imageUrl,
+              }}
+            />
+          )}
         </div>
       )}
 

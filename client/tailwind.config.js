@@ -3,6 +3,11 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      screens: {
+        // Large AND tall: a laptop's short screen keeps the regular size, so
+        // tall dialogs (the welcome window) never push their buttons away.
+        'tall-lg': { raw: '(min-width: 1024px) and (min-height: 820px)' },
+      },
       colors: {
         brand: {
           DEFAULT: '#FE6349',

@@ -162,7 +162,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [showContributorDetails, setShowContributorDetails] = useState(false);
   /** The action bar stays out of the way until the message is tapped. */
-  const [showActions, setShowActions] = useState(false);
+  // The react / flag / add pill is always on the message; it used to appear
+  // only after a tap, which hid reacting behind a gesture nobody guessed.
+  const showActions = true;
   /** First-visit tip explaining tap and double-tap. */
   const [boardGuideSeen, markBoardGuideSeen, boardGuideShown] = useGuideSeen('board-viewer');
   /** First-visit tip for the main board / contributions switch. */
@@ -347,7 +349,6 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       setActiveTab('main');
       setMessagePosition(0);
       setShowContributorDetails(false);
-      setShowActions(false);
       setIsActionMenuOpen(false);
       setIsReactionPickerOpen(false);
       setReactionCounts(getInitialReactionCounts(post));
@@ -417,10 +418,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       clickTimerRef.current = setTimeout(() => {
         clickTimerRef.current = null;
         setShowContributorDetails((prev) => !prev);
-        setShowActions((prev) => {
-          if (prev) setIsReactionPickerOpen(false);
-          return !prev;
-        });
+        setIsReactionPickerOpen(false);
       }, DOUBLE_TAP_MS);
     }
   };
@@ -1013,15 +1011,25 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             ))}
         </div>
 
-        {/* Top-Right: Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-10 h-10 rounded-full bg-[#222330] hover:bg-[#2c2e3e] active:scale-95 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
-          aria-label="Close message board"
-        >
-          <X className="w-5 h-5 text-white/60 hover:text-white transition-colors" />
-        </button>
+        {/* Top-Right: Share and Close */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
+            className="w-10 h-10 rounded-full bg-[#222330] hover:bg-[#2c2e3e] active:scale-95 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+            aria-label="Share board link & image"
+          >
+            <ShareFat size={20} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-10 h-10 rounded-full bg-[#222330] hover:bg-[#2c2e3e] active:scale-95 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+            aria-label="Close message board"
+          >
+            <X className="w-5 h-5 text-white/60 hover:text-white transition-colors" />
+          </button>
+        </div>
       </header>
 
       {/* Desktop-only chevrons. They move between BOARDS on the board's own
@@ -1118,7 +1126,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               <FeatureGuide
                 className="absolute top-3 left-3 right-3 z-50"
                 lines={[
-                  { action: 'Tap', result: 'the message to react, share or flag it.' },
+                  { action: 'Tap', result: 'the message to see who wrote it.' },
                   { action: 'Double-tap', result: 'to add a message, edit your message or edit the board.' },
                 ]}
                 onDismiss={markBoardGuideSeen}
@@ -1215,7 +1223,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 left. Its own taps never reach the board underneath, which would
                 otherwise read them as a click on the card or the start of a swipe. */}
             <div
-              className={`absolute left-5 bottom-5 z-40 w-fit flex flex-col items-start transition-all duration-200 ${
+              className={`absolute left-4 bottom-4 z-40 w-fit flex flex-col items-start transition-all duration-200 ${
                 showActions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
               }`}
               aria-hidden={!showActions}
@@ -1237,7 +1245,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                 <div
                   // Five reactions now rather than four, so the gap tightens on a
                   // phone to keep the pill inside the viewport once counts appear.
-                  className="absolute bottom-[calc(100%+5px)] left-0 w-fit whitespace-nowrap flex items-center justify-start gap-3 bg-[#272835] rounded-full px-3.5 h-[58px] animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
+                  className="absolute bottom-[calc(100%+5px)] left-0 w-fit whitespace-nowrap flex items-center justify-start gap-3 bg-[#272835] rounded-full px-4 h-[46px] animate-in fade-in slide-in-from-bottom-2 duration-150 z-30"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* 1. Clap */}
@@ -1338,7 +1346,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
               )}
 
               {/* Bottom Pill: Action Bar */}
-              <div className="w-fit flex items-center justify-center gap-5 bg-[#272835] rounded-full px-6 h-[58px] relative z-30">
+              <div className="w-fit flex items-center justify-center gap-3 bg-[#272835] rounded-full px-4 h-[46px] relative z-30">
 
                 {/* 1. Reaction Button (Smiley) - Default State has no count, only icon */}
                 <button
@@ -1352,17 +1360,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <PhosphorSmiley size={24} weight="bold" color="#FFFFFF" />
                 </button>
 
-                {/* 2. Share Button */}
-                <button
-                  type="button"
-                  onClick={() => setIsShareModalOpen(true)}
-                  className="text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
-                  title="Share board link & image"
-                >
-                  <ShareFat size={24} weight="bold" color="#FFFFFF" />
-                </button>
-
-                {/* 3. Flag Button */}
+                {/* 2. Flag Button (Share lives at the top right) */}
                 <button
                   type="button"
                   onClick={handleFlagClick}
@@ -1372,7 +1370,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                   <PhosphorFlag size={24} weight="bold" color="#FFFFFF" />
                 </button>
 
-                {/* 4. + / Add Message Button (ONLY if collaborative and capacity not reached) */}
+                {/* 3. + / Add Message Button (ONLY if collaborative and capacity not reached) */}
                 {!isSoloMode && !isCapacityReached && onAddContributionClick && (
                   <button
                     type="button"
@@ -1486,6 +1484,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
             boardTheme: post.theme || '#BEE27C',
             boardAuthorName: post.authorName,
             boardRecipientName: post.recipientName || (Array.isArray(post.recipients) ? post.recipients[0] : undefined),
+            // The board's own message — the card shows the board itself.
+            boardCanvasElements: post.canvasElements,
+            boardContent: post.content,
+            boardImage: post.imageUrl || post.mediaUrl,
             // No `url`: ShareProfileModal builds /board/:slug itself. This used
             // to pass /?board=<id>, a prototype HashRouter link that resolves
             // to nothing under BrowserRouter.
