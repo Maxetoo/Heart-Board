@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Post, Contribution, PostVisibility, ReactionCounts, ReactionType, RegisteredUser } from '../types';
-import { userFromHandle, avatarFromParts, usernameOf, toHandle, toUsername, recipientOf } from '../lib/adapters';
+import { userFromHandle, avatarFromParts, usernameOf, toHandle, toUsername, recipientOf, FREE_BOARD_MESSAGE_CAP } from '../lib/adapters';
 import {
   X,
   ChevronLeft,
@@ -243,9 +243,10 @@ export const MediaModal: React.FC<MediaModalProps> = ({
       return false;
     });
   }, [contributions, currentUser]);
-  const maxCapacity = post.maxCapacity || (post.boardCapacity === 'solo' ? 1 : 20);
+  const maxCapacity = post.maxCapacity || (post.boardCapacity === 'solo' ? 1 : FREE_BOARD_MESSAGE_CAP);
   const isSoloMode = post.boardCapacity === 'solo' || maxCapacity === 1;
-  const isCapacityReached = contributions.length >= maxCapacity;
+  // + 1: the board's own message counts towards the cap, as it does on the server.
+  const isCapacityReached = contributions.length + 1 >= maxCapacity;
   const canToggleContributions = !isSoloMode && contributions.length > 0;
   const effectiveActiveTab = canToggleContributions ? activeTab : 'main';
 

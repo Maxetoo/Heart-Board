@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as messageApi from '../services/message.api';
 import * as boardApi from '../services/board.api';
-import { messageToContribution, boardToPost } from '../lib/adapters';
+import { messageToContribution, boardToPost, FREE_BOARD_MESSAGE_CAP } from '../lib/adapters';
 import type { Post } from '../types';
 import type { BoardDTO, UserRefDTO } from '../types/api';
 
@@ -47,7 +47,7 @@ export function useBoardMessages(
       try {
         const [detail, messages] = await Promise.all([
           boardApi.getBoardBySlug(slug).catch(() => null),
-          messageApi.getBoardMessages(slug, { limit: 50 }).catch(() => null),
+          messageApi.getBoardMessages(slug, { limit: FREE_BOARD_MESSAGE_CAP }).catch(() => null),
         ]);
         if (cancelled) return;
 

@@ -32,6 +32,9 @@ import type {
 
 // ── Visibility ───────────────────────────────────────────────────────────────
 
+/** Messages a free board holds, its own first message included. Server: BOARD_TIER_LIMITS.basic. */
+export const FREE_BOARD_MESSAGE_CAP = 100;
+
 export function toPostVisibility(v?: BoardVisibility | null): PostVisibility {
   if (v === 'private') return PostVisibility.PRIVATE;
   if (v === 'anonymous') return PostVisibility.ANONYMOUS;

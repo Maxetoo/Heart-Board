@@ -50,6 +50,7 @@ import {
   fromPostVisibility,
   usernameOf,
   wrapCanvasData,
+  FREE_BOARD_MESSAGE_CAP,
 } from '../lib/adapters';
 import { useSearch } from '../hooks/useSearch';
 import type { BoardEvent } from '../types/api';
@@ -2418,7 +2419,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
           recipients: editingPost.recipients ?? recipients,
           hashtags: extractedHashtags,
           boardCapacity: boardCapacity,
-          maxCapacity: boardCapacity === 'solo' ? 1 : 20,
+          maxCapacity: boardCapacity === 'solo' ? 1 : FREE_BOARD_MESSAGE_CAP,
           type: activeType,
           mediaType: activeType === 'text' ? 'note' : activeType,
           // targetId and targetType come from the spread above. targetId is the
@@ -2627,7 +2628,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
         recipientName: recipients.filter(r => r !== '@you').join(', ') || recipient || 'Curator',
         hashtags: extractedHashtags,
         boardCapacity: boardCapacity,
-        maxCapacity: boardCapacity === 'solo' ? 1 : 20,
+        maxCapacity: boardCapacity === 'solo' ? 1 : FREE_BOARD_MESSAGE_CAP,
         contributions: [],
         type: activeType,
         mediaType: activeType === 'text' ? 'note' : activeType,
@@ -4828,7 +4829,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                   >
                     <span className="text-sm font-normal text-[#1A1B25]">Select board capacity</span>
                     <span className="text-sm font-normal text-gray-500 flex items-center gap-1">
-                      {boardCapacity === 'collaborative' ? '20 Contributions (Free)' : 'Only Me (1 message)'}
+                      {boardCapacity === 'collaborative' ? '100 Contributions (Free)' : 'Only Me (1 message)'}
                       <ChevronRight className={`w-4 h-4 text-gray-400 shrink-0 transition-transform duration-200 ${isCapacityModalOpen ? 'rotate-90' : ''}`} />
                     </span>
                   </button>
@@ -4859,7 +4860,7 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                         </div>
                       </button>
 
-                      {/* Option 2: 20 Contributions (Free) */}
+                      {/* Option 2: 100 Contributions (Free) */}
                       <button
                         type="button"
                         onClick={() => {
@@ -4877,8 +4878,8 @@ export const CreateAppreciationModal: React.FC<CreateAppreciationModalProps> = (
                             <div className="w-5 h-5 rounded-full border-2 border-gray-300 shrink-0" />
                           )}
                           <div>
-                            <span className="text-sm font-medium text-[#1A1B25]">20 Contributions (Free)</span>
-                            <p className="text-xs text-gray-400 mt-0.5">20 messages total</p>
+                            <span className="text-sm font-medium text-[#1A1B25]">100 Contributions (Free)</span>
+                            <p className="text-xs text-gray-400 mt-0.5">100 messages total</p>
                           </div>
                         </div>
                         <span className="text-xs font-semibold text-[#1A1B25]">Free</span>

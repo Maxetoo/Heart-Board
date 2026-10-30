@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { FREE_BOARD_MESSAGE_CAP } from '../lib/adapters';
 import { Post, Contribution } from '../types';
 import { Plus, Share2, Pencil, Trash2, X, AlertTriangle, MessageSquare } from 'lucide-react';
 
@@ -45,7 +46,7 @@ export const ActionMenuModal: React.FC<ActionMenuModalProps> = ({
 
   const allContributions = post.contributions || [];
   const totalMessages = 1 + allContributions.length;
-  const maxCapacity = post.maxCapacity || (post.boardCapacity === 'solo' ? 1 : 20);
+  const maxCapacity = post.maxCapacity || (post.boardCapacity === 'solo' ? 1 : FREE_BOARD_MESSAGE_CAP);
   const isSolo = post.boardCapacity === 'solo' || maxCapacity === 1;
 
   // Frame Background resolution

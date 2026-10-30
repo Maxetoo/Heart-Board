@@ -490,7 +490,7 @@ export const HeartboardView: React.FC<HeartboardViewProps> = ({
   const handleToggleLimit = () => {
     const nextLimit = contributionLimit === 'Free' ? 'Unlimited' : 'Free';
     setContributionLimit(nextLimit);
-    showToast(`Contribution Mode: ${nextLimit === 'Free' ? 'Free (20 Curators)' : 'Unlimited (Pro Space)'}`);
+    showToast(`Contribution Mode: ${nextLimit === 'Free' ? 'Free (100 Curators)' : 'Unlimited (Pro Space)'}`);
   };
 
   const handleAddTag = () => {

@@ -5,8 +5,8 @@ const { nanoid } = require('nanoid');
 
 
 const BOARD_TIER_LIMITS = {
-  basic:    30,
-  standard: 50,
+  basic:    100,
+  standard: 200,
   premium:  -1,
 };
 
