@@ -7,15 +7,16 @@
     <meta name="theme-color" content="#FE6349" />
 
     <!--
-      The Heartboard mark, cropped square out of src/assets/heartboard logo.png.
-      That source is 611x408 with the mark occupying ~137px in the middle, so
-      pointing a favicon straight at it would render the artwork a few pixels
-      wide in the tab; these are cropped to the artwork and sized properly.
-      Largest first — browsers take the first one they can use.
+      Rendered from the vector mark in src/components/HeartboardLogo.tsx, each
+      at its exact size. The SVG comes first: browsers that support it draw it
+      sharp at any size; the PNGs and the .ico are for everything else.
     -->
-    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <!-- Opaque on purpose: iOS composites a transparent touch icon on black. -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />

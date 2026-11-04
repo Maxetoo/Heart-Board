@@ -1,8 +1,77 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { toPng } from 'html-to-image';
 import { Check, X } from 'lucide-react';
 import { HeartboardLogo, heartboardLogoSvg } from './HeartboardLogo';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
 import type { CanvasElement } from './CreateAppreciationModal';
+
+/** Width, in CSS pixels, of the hidden full-size copy of the message that is exported. */
+const EXPORT_CARD_WIDTH = 381;
+
+/**
+ * Resolves once every <img> under `node` has loaded or failed, and the fonts
+ * are ready — capped, so one stuck image cannot hold the export forever.
+ */
+async function whenRendered(node: HTMLElement, capMs = 8000): Promise<void> {
+  const images = Array.from(node.querySelectorAll('img'));
+  const loaded = Promise.all(
+    images.map((img) =>
+      img.complete && img.naturalWidth > 0
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            img.addEventListener('load', () => resolve(), { once: true });
+            img.addEventListener('error', () => resolve(), { once: true });
+          }),
+    ),
+  );
+  await Promise.race([loaded, new Promise((r) => setTimeout(r, capMs))]);
+  await document.fonts?.ready;
+  // Photos fade in over 300ms once loaded; capture after the fade.
+  await new Promise((r) => setTimeout(r, 350));
+}
+
+/**
+ * The app's Google Fonts as self-contained @font-face CSS (fonts inlined as
+ * data URLs), for the exported image. html-to-image cannot read a
+ * cross-origin stylesheet's rules, so without this the export falls back to
+ * system fonts and handwriting turns into a plain serif. Latin subsets only,
+ * built once per page load.
+ */
+let fontEmbedCssPromise: Promise<string> | null = null;
+function fontEmbedCss(): Promise<string> {
+  fontEmbedCssPromise ??= (async () => {
+    const links = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href*="fonts.googleapis.com"]'),
+    );
+    const blocks: string[] = [];
+    for (const link of links) {
+      const css = await (await fetch(link.href)).text();
+      // Google labels each @font-face with its subset: /* latin */ { ... }
+      for (const m of css.matchAll(/\/\*\s*(latin(?:-ext)?)\s*\*\/\s*(@font-face\s*\{[^}]*\})/g)) {
+        blocks.push(m[2]);
+      }
+    }
+    const inlined = await Promise.all(
+      blocks.map(async (block) => {
+        const url = block.match(/url\((https:[^)]+)\)/)?.[1];
+        if (!url) return block;
+        const blob = await (await fetch(url)).blob();
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.readAsDataURL(blob);
+        });
+        return block.replace(url, dataUrl);
+      }),
+    );
+    return inlined.join('\n');
+  })().catch((err) => {
+    fontEmbedCssPromise = null; // try again next time
+    console.error('Could not embed fonts for export:', err);
+    return '';
+  });
+  return fontEmbedCssPromise;
+}
 
 /** Size, in card pixels, of the mark stamped into the downloaded image. */
 const LOGO_SIZE = 92;
@@ -95,6 +164,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   overlayClassName = 'z-[1300]',
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
+  /** A hidden, uncropped copy of the board's message, captured for the download. */
+  const exportCardRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
 
   // The board card has no close button (as designed): tap outside or Escape.
@@ -224,6 +295,31 @@ export const ShareModal: React.FC<ShareModalProps> = ({
    * — the same look as the card on screen. Boards without a photo use their
    * frame colour.
    */
+  /**
+   * The download for a board: the message itself, exactly as it looks on the
+   * board — every text box, photo, sticker and its background — captured from
+   * a hidden full-size copy. Falls back to the photo-and-title card if the
+   * capture fails (e.g. an image host that refuses cross-origin reads).
+   */
+  const captureFullMessage = async (): Promise<string | null> => {
+    const node = exportCardRef.current;
+    if (!node) return null;
+    try {
+      const [fontCss] = await Promise.all([fontEmbedCss(), whenRendered(node)]);
+      return await toPng(node, {
+        pixelRatio: 3,
+        backgroundColor: getBoardFrameBg(),
+        // Our own font CSS, so html-to-image skips reading the stylesheets
+        // (which it cannot do for Google Fonts) and the handwriting survives.
+        fontEmbedCSS: fontCss || undefined,
+        skipFonts: !fontCss,
+      });
+    } catch (err) {
+      console.error('Full message export failed:', err);
+      return null;
+    }
+  };
+
   const generateBoardArtImage = async (): Promise<string | null> => {
     const W = 760;
     const H = 672;
@@ -303,7 +399,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   // Generate Canvas Card Image matching Images 3 & 4
   const generateCanvasImage = async (): Promise<string | null> => {
-    if (isBoardArt) return generateBoardArtImage();
+    if (isBoardArt) return (await captureFullMessage()) ?? generateBoardArtImage();
 
     // Rasterise the mark up front so the card itself can be painted in one
     // synchronous pass below.
@@ -585,11 +681,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             sharePayload.files = [shareFile];
           }
 
-          try {
-            await navigator.share(sharePayload);
-          } catch (shareErr) {
-            // User cancelled share or window error, non-fatal
-          }
+          // Not awaited: the share sheet's promise only settles once the
+          // sheet closes — and on some desktop browsers never does — which
+          // left this button spinning long after the download had finished.
+          navigator.share(sharePayload).catch(() => {
+            // Cancelled, or the browser refused (e.g. no recent tap): non-fatal.
+          });
         }
 
         onShowToast?.('Share link copied & preview card downloaded!');
@@ -623,6 +720,28 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         className="relative w-full max-w-[380px] bg-white rounded-[2.2rem] sm:rounded-[2.6rem] shadow-2xl flex flex-col font-sans animate-in zoom-in-95 duration-200 overflow-hidden select-none"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Hidden, uncropped copy of the message for the download. Inside the
+            viewport (so its lazy photos load) but invisible and inert. */}
+        {isBoardArt && (
+          <div aria-hidden className="fixed left-0 top-0 -z-10 opacity-0 pointer-events-none" style={{ width: EXPORT_CARD_WIDTH }}>
+            <div
+              ref={exportCardRef}
+              className="relative aspect-[254/350] overflow-hidden"
+              style={{ width: EXPORT_CARD_WIDTH, backgroundColor: getBoardFrameBg() }}
+            >
+              <CanvasReadOnlyCard
+                canvasElements={effectiveData.boardCanvasElements || []}
+                content={effectiveData.boardContent}
+                uploadedImage={effectiveData.boardImage}
+                selectedConfetti={null}
+                showMetadata={false}
+                square
+                fill
+              />
+            </div>
+          </div>
+        )}
+
         {isBoardArt ? (
           /* The board itself, its title over a darkened bottom edge. */
           <div
