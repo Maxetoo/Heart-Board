@@ -5,8 +5,21 @@ import { HeartboardLogo, heartboardLogoSvg } from './HeartboardLogo';
 import { CanvasReadOnlyCard } from './CreateAppreciationModal';
 import type { CanvasElement } from './CreateAppreciationModal';
 
-/** Width, in CSS pixels, of the hidden full-size copy of the message that is exported. */
+/** Size, in CSS pixels, of the hidden full-size copy of the message that is exported. */
 const EXPORT_CARD_WIDTH = 381;
+// A whole number: a fractional height left a faint strip along one edge.
+const EXPORT_CARD_HEIGHT = Math.round((EXPORT_CARD_WIDTH * 350) / 254);
+
+/**
+ * Safari and every iOS browser (all WebKit) draw the capture before the photos
+ * and fonts inside it have decoded, so the first pass comes out with blank
+ * photos and fallback fonts. Later passes are complete. Chromium and Firefox
+ * get it right first time.
+ */
+const IS_WEBKIT =
+  typeof navigator !== 'undefined' &&
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg|OPR/.test(navigator.userAgent);
 
 /**
  * Resolves once every <img> under `node` has loaded or failed, and the fonts
@@ -306,14 +319,24 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     if (!node) return null;
     try {
       const [fontCss] = await Promise.all([fontEmbedCss(), whenRendered(node)]);
-      return await toPng(node, {
+      const options = {
         pixelRatio: 3,
         backgroundColor: getBoardFrameBg(),
+        width: EXPORT_CARD_WIDTH,
+        height: EXPORT_CARD_HEIGHT,
         // Our own font CSS, so html-to-image skips reading the stylesheets
         // (which it cannot do for Google Fonts) and the handwriting survives.
         fontEmbedCSS: fontCss || undefined,
         skipFonts: !fontCss,
-      });
+      };
+      // WebKit: throwaway passes first, so the kept one has photos and fonts.
+      if (IS_WEBKIT) {
+        for (let pass = 0; pass < 2; pass++) {
+          await toPng(node, options);
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      }
+      return await toPng(node, options);
     } catch (err) {
       console.error('Full message export failed:', err);
       return null;
@@ -726,8 +749,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           <div aria-hidden className="fixed left-0 top-0 -z-10 opacity-0 pointer-events-none" style={{ width: EXPORT_CARD_WIDTH }}>
             <div
               ref={exportCardRef}
-              className="relative aspect-[254/350] overflow-hidden"
-              style={{ width: EXPORT_CARD_WIDTH, backgroundColor: getBoardFrameBg() }}
+              className="relative overflow-hidden"
+              style={{ width: EXPORT_CARD_WIDTH, height: EXPORT_CARD_HEIGHT, backgroundColor: getBoardFrameBg() }}
             >
               <CanvasReadOnlyCard
                 canvasElements={effectiveData.boardCanvasElements || []}
